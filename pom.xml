@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.4.1</version>
+        <relativePath/> <!-- lookup from repository -->
+    </parent>
+
+    <groupId>com.ticket</groupId>
+    <artifactId>ticket-booking-parent</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>Ticket Booking Parent</name>
+    <description>Enterprise Modular Monolith Ticket Booking System (DDD Architecture)</description>
+
+    <properties>
+        <java.version>21</java.version>
+        <jjwt.version>0.12.6</jjwt.version>
+        <redisson.version>3.40.2</redisson.version>
+    </properties>
+
+    <modules>
+        <module>shared-kernel</module>
+        <module>context-identity</module>
+        <module>context-catalog</module>
+        <module>context-booking</module>
+        <module>context-payment</module>
+        <module>ticket-start</module>
+    </modules>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Internal Submodules -->
+            <dependency>
+                <groupId>com.ticket</groupId>
+                <artifactId>shared-kernel</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- Context Identity -->
+            <dependency>
+                <groupId>com.ticket</groupId>
+                <artifactId>identity-domain</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ticket</groupId>
+                <artifactId>identity-application</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ticket</groupId>
+                <artifactId>identity-infrastructure</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ticket</groupId>
+                <artifactId>identity-presentation</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- Context Catalog -->
+            <dependency>
+                <groupId>com.ticket</groupId>
+                <artifactId>catalog-domain</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ticket</groupId>
+                <artifactId>catalog-application</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ticket</groupId>
+                <artifactId>catalog-infrastructure</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ticket</groupId>
+                <artifactId>catalog-presentation</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- Context Booking -->
+            <dependency>
+                <groupId>com.ticket</groupId>
+                <artifactId>booking-domain</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ticket</groupId>
+                <artifactId>booking-application</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ticket</groupId>
+                <artifactId>booking-infrastructure</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ticket</groupId>
+                <artifactId>booking-presentation</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- Context Payment -->
+            <dependency>
+                <groupId>com.ticket</groupId>
+                <artifactId>payment-domain</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ticket</groupId>
+                <artifactId>payment-application</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ticket</groupId>
+                <artifactId>payment-infrastructure</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ticket</groupId>
+                <artifactId>payment-presentation</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- JJWT -->
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-api</artifactId>
+                <version>${jjwt.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-impl</artifactId>
+                <version>${jjwt.version}</version>
+                <scope>runtime</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-jackson</artifactId>
+                <version>${jjwt.version}</version>
+                <scope>runtime</scope>
+            </dependency>
+
+            <!-- Redisson -->
+            <dependency>
+                <groupId>org.redisson</groupId>
+                <artifactId>redisson-spring-boot-starter</artifactId>
+                <version>${redisson.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- Common Dependencies across all modules -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

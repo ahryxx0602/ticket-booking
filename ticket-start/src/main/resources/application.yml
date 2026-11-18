@@ -1,0 +1,21 @@
+server:
+  port: 8080
+  shutdown: graceful
+
+spring:
+  application:
+    name: ticket-booking-service
+  profiles:
+    active: dev
+  threads:
+    virtual:
+      enabled: true
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:local-dev-dummy-secret-key-must-be-at-least-32-chars!}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000} # 24 hours
+  payment:
+    vnpay:
+      hash-secret: ${VNPAY_HASH_SECRET:sandbox_vnpay_hash_secret_placeholder}
+      pay-url: ${VNPAY_PAY_URL:https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}

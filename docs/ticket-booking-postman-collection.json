@@ -1,0 +1,563 @@
+{
+	"info": {
+		"_postman_id": "c1f7a8b9-4567-4e89-9a12-3b4c5d6e7f80",
+		"name": "Ticket Booking Platform - API Collection",
+		"description": "Bộ Collection kiểm thử toàn diện các API của hệ thống Ticket Booking (Modular Monolith, DDD, Spring Boot 3.4)",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8080",
+			"type": "string"
+		},
+		{
+			"key": "admin_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "customer_token",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "1. Authentication (Public)",
+			"item": [
+				{
+					"name": "1.1 Login as Admin (Auto-save Token)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.success && jsonData.data && jsonData.data.accessToken) {",
+									"    pm.collectionVariables.set('admin_token', jsonData.data.accessToken);",
+									"    console.log('Admin token saved successfully!');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin_dev_password\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"login"
+							]
+						}
+					}
+				},
+				{
+					"name": "1.2 Login as Customer (Auto-save Token)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.success && jsonData.data && jsonData.data.accessToken) {",
+									"    pm.collectionVariables.set('customer_token', jsonData.data.accessToken);",
+									"    console.log('Customer token saved successfully!');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"customer1\",\n  \"password\": \"customer_dev_password\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"login"
+							]
+						}
+					}
+				},
+				{
+					"name": "1.3 Register New Customer",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"newuser2026\",\n  \"email\": \"newuser2026@example.com\",\n  \"password\": \"sample_dev_password\",\n  \"fullName\": \"Nguyen Van Moi\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/register",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"register"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "2. Admin - User Management (ROLE_ADMIN)",
+			"item": [
+				{
+					"name": "2.1 Get Users (Filter & Pagination)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/users?keyword=customer&role=ROLE_CUSTOMER&page=0&size=10",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"users"
+							],
+							"query": [
+								{
+									"key": "keyword",
+									"value": "customer"
+								},
+								{
+									"key": "role",
+									"value": "ROLE_CUSTOMER"
+								},
+								{
+									"key": "page",
+									"value": "0"
+								},
+								{
+									"key": "size",
+									"value": "10"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "2.2 Get User Detail By ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/users/2",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"users",
+								"2"
+							]
+						}
+					}
+				},
+				{
+					"name": "2.3 Lock User Account",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"status\": \"LOCKED\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/users/2/status",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"users",
+								"2",
+								"status"
+							]
+						}
+					}
+				},
+				{
+					"name": "2.4 Unlock User Account (Active)",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"status\": \"ACTIVE\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/users/2/status",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"users",
+								"2",
+								"status"
+							]
+						}
+					}
+				},
+				{
+					"name": "2.5 Change User Role",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"role\": \"ROLE_ADMIN\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/users/2/role",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"users",
+								"2",
+								"role"
+							]
+						}
+					}
+				},
+				{
+					"name": "2.6 Reset Password by Admin",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"newPassword\": \"sample_new_password\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/users/2/reset-password",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"users",
+								"2",
+								"reset-password"
+							]
+						}
+					}
+				},
+				{
+					"name": "2.7 Test Invariant: Admin Locks Self (Expect 400)",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"status\": \"LOCKED\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/users/1/status",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"users",
+								"1",
+								"status"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "3. Catalog (Public)",
+			"item": [
+				{
+					"name": "3.1 Search Trips (Cache-Aside)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/catalog/trips?departureCity=Hà Nội&arrivalCity=Hồ Chí Minh&departureDate=2026-11-20",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"catalog",
+								"trips"
+							],
+							"query": [
+								{
+									"key": "departureCity",
+									"value": "Hà Nội"
+								},
+								{
+									"key": "arrivalCity",
+									"value": "Hồ Chí Minh"
+								},
+								{
+									"key": "departureDate",
+									"value": "2026-11-20"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "4. Booking (ROLE_CUSTOMER)",
+			"item": [
+				{
+					"name": "4.1 Hold Seat (Redisson Distributed Lock 10m)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customer_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"userId\": 2,\n  \"tripId\": 1,\n  \"seatNumbers\": [\"12A\", \"12B\"]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/bookings/hold",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"bookings",
+								"hold"
+							]
+						}
+					}
+				},
+				{
+					"name": "4.2 Customer Cancel Booking",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customer_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/bookings/550e8400-e29b-41d4-a716-446655440000/cancel",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"bookings",
+								"550e8400-e29b-41d4-a716-446655440000",
+								"cancel"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "5. Payment (ROLE_CUSTOMER / Public IPN)",
+			"item": [
+				{
+					"name": "5.1 Create Payment Checkout URL",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customer_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"bookingId\": 105,\n  \"amount\": 3000000.00,\n  \"paymentMethod\": \"VNPAY\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/payments/checkout",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"payments",
+								"checkout"
+							]
+						}
+					}
+				},
+				{
+					"name": "5.2 VNPay Webhook IPN Callback (Public)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/payments/webhook/vnpay?vnp_TxnRef=PAY_1700000000_1&vnp_TransactionNo=14567890&vnp_ResponseCode=00&vnp_SecureHash=valid_hmac_sha512",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"payments",
+								"webhook",
+								"vnpay"
+							],
+							"query": [
+								{
+									"key": "vnp_TxnRef",
+									"value": "PAY_1700000000_1"
+								},
+								{
+									"key": "vnp_TransactionNo",
+									"value": "14567890"
+								},
+								{
+									"key": "vnp_ResponseCode",
+									"value": "00"
+								},
+								{
+									"key": "vnp_SecureHash",
+									"value": "valid_hmac_sha512"
+								}
+							]
+						}
+					}
+				}
+			]
+		}
+	]
+}
