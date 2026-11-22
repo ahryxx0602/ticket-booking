@@ -40,4 +40,25 @@ public interface SpringDataTripRepository extends JpaRepository<TripJpaEntity, L
             @Param("fromTime") LocalDateTime fromTime,
             @Param("toTime") LocalDateTime toTime
     );
+
+    @Query("SELECT COUNT(t) > 0 FROM TripJpaEntity t " +
+           "WHERE t.vehicleId = :vehicleId " +
+           "AND (:excludeTripId IS NULL OR t.id != :excludeTripId) " +
+           "AND t.departureTime < :end AND t.arrivalTime > :start")
+    boolean checkVehicleScheduleOverlap(
+            @Param("vehicleId") Long vehicleId,
+            @Param("start") LocalDateTime start,
+            @Param("end") LocalDateTime end,
+            @Param("excludeTripId") Long excludeTripId
+    );
+
+    @Query("SELECT t FROM TripJpaEntity t " +
+           "WHERE t.status != com.ticket.catalog.domain.model.TripStatus.CANCELLED " +
+           "AND t.settlementStatus = 'UNSETTLED' " +
+           "AND t.departureTime <= :threshold")
+    List<TripJpaEntity> findUnsettledTripsBefore(@Param("threshold") LocalDateTime threshold);
+
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("UPDATE TripJpaEntity t SET t.settlementStatus = 'SETTLED' WHERE t.id = :tripId AND t.settlementStatus = 'UNSETTLED'")
+    int markTripSettledIfUnsettled(@Param("tripId") Long tripId);
 }

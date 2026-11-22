@@ -70,6 +70,9 @@ public class TripRepositoryImpl implements TripRepository {
         entity.setTotalSeats(trip.getTotalSeats());
         entity.setBasePrice(trip.getBasePrice());
         entity.setStatus(trip.getStatus() != null ? trip.getStatus() : TripStatus.SCHEDULED);
+        entity.setOperatorId(trip.getOperatorId());
+        entity.setVehicleId(trip.getVehicleId());
+        entity.setSettlementStatus(trip.getSettlementStatus() != null ? trip.getSettlementStatus() : "UNSETTLED");
 
         TripJpaEntity savedEntity = springDataTripRepository.save(entity);
 
@@ -99,6 +102,9 @@ public class TripRepositoryImpl implements TripRepository {
                 .totalSeats(savedEntity.getTotalSeats())
                 .basePrice(savedEntity.getBasePrice())
                 .status(savedEntity.getStatus())
+                .operatorId(savedEntity.getOperatorId())
+                .vehicleId(savedEntity.getVehicleId())
+                .settlementStatus(savedEntity.getSettlementStatus())
                 .seats(trip.getSeats() != null ? trip.getSeats() : Collections.emptyList())
                 .build();
         savedDomain.setCreatedAt(savedEntity.getCreatedAt());
@@ -128,6 +134,9 @@ public class TripRepositoryImpl implements TripRepository {
                 .totalSeats(entity.getTotalSeats())
                 .basePrice(entity.getBasePrice())
                 .status(entity.getStatus() != null ? entity.getStatus() : TripStatus.SCHEDULED)
+                .operatorId(entity.getOperatorId())
+                .vehicleId(entity.getVehicleId())
+                .settlementStatus(entity.getSettlementStatus() != null ? entity.getSettlementStatus() : "UNSETTLED")
                 .seats(Collections.emptyList())
                 .build();
         trip.setCreatedAt(entity.getCreatedAt());

@@ -49,6 +49,15 @@ public class TripJpaEntity {
     @Column(nullable = false, length = 20)
     private TripStatus status;
 
+    @Column(name = "operator_id")
+    private Long operatorId;
+
+    @Column(name = "vehicle_id")
+    private Long vehicleId;
+
+    @Column(name = "settlement_status", length = 30)
+    private String settlementStatus = "UNSETTLED";
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 

@@ -23,6 +23,9 @@ public class IdentityDataSeeder implements CommandLineRunner {
     @org.springframework.beans.factory.annotation.Value("${app.seed.customer-password:customer_dev_password}")
     private String customerPassword;
 
+    @org.springframework.beans.factory.annotation.Value("${app.seed.operator-password:operator_dev_password}")
+    private String operatorPassword;
+
     public IdentityDataSeeder(SpringDataUserRepository userRepository, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
@@ -32,6 +35,7 @@ public class IdentityDataSeeder implements CommandLineRunner {
     public void run(String... args) {
         seedAdminUser();
         seedCustomerUser();
+        seedOperatorUser();
     }
 
     private void seedAdminUser() {
@@ -59,6 +63,20 @@ public class IdentityDataSeeder implements CommandLineRunner {
             customer.setStatus(UserStatus.ACTIVE);
             userRepository.save(customer);
             log.info("[IDENTITY SEEDER] Seeded default customer user");
+        }
+    }
+
+    private void seedOperatorUser() {
+        if (!userRepository.existsByUsername("operator1")) {
+            UserJpaEntity operator = new UserJpaEntity();
+            operator.setUsername("operator1");
+            operator.setEmail("operator1@ticketbooking.com");
+            operator.setPasswordHash(passwordEncoder.encode(operatorPassword));
+            operator.setFullName("Nguyen Van Operator");
+            operator.setRole("ROLE_OPERATOR");
+            operator.setStatus(UserStatus.ACTIVE);
+            userRepository.save(operator);
+            log.info("[IDENTITY SEEDER] Seeded default operator user");
         }
     }
 }

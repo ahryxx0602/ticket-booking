@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS stations (
 CREATE TABLE IF NOT EXISTS trips (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     trip_code VARCHAR(20) NOT NULL UNIQUE,
+    operator_id BIGINT NULL,
+    vehicle_id BIGINT NULL,
     departure_station_id BIGINT NOT NULL,
     arrival_station_id BIGINT NOT NULL,
     departure_time DATETIME NOT NULL,
@@ -36,10 +38,13 @@ CREATE TABLE IF NOT EXISTS trips (
     total_seats INT NOT NULL,
     base_price DECIMAL(12,2) NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'SCHEDULED',
+    settlement_status VARCHAR(30) NOT NULL DEFAULT 'UNSETTLED',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (departure_station_id) REFERENCES stations(id),
-    FOREIGN KEY (arrival_station_id) REFERENCES stations(id)
+    FOREIGN KEY (arrival_station_id) REFERENCES stations(id),
+    INDEX idx_trip_operator (operator_id),
+    INDEX idx_trip_settlement (status, settlement_status, departure_time)
 );
 
 CREATE TABLE IF NOT EXISTS seats (
@@ -145,6 +150,140 @@ CREATE TABLE IF NOT EXISTS notifications (
     INDEX idx_noti_user_created (user_id, created_at),
     INDEX idx_noti_status (status)
 );
+
+-- 6. Partner Marketplace & Fleet Management Tables (Phase 6)
+CREATE TABLE IF NOT EXISTS bus_operators (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL UNIQUE,
+    business_name VARCHAR(150) NOT NULL,
+    brand_name VARCHAR(100) NOT NULL,
+    tax_code VARCHAR(30) NOT NULL UNIQUE,
+    contact_phone VARCHAR(20) NOT NULL,
+    contact_email VARCHAR(100) NOT NULL,
+    logo_url VARCHAR(500) NULL,
+    description TEXT NULL,
+    commission_rate DECIMAL(5,2) NULL, -- NULL = dùng global rate sàn
+    status VARCHAR(30) NOT NULL DEFAULT 'PENDING_APPROVAL',
+    rejection_reason VARCHAR(500) NULL,
+    version BIGINT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_operator_status (status)
+);
+
+CREATE TABLE IF NOT EXISTS vehicles (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    operator_id BIGINT NOT NULL,
+    plate_number VARCHAR(30) NOT NULL UNIQUE,
+    model_name VARCHAR(100) NULL,
+    vehicle_type VARCHAR(30) NOT NULL, -- SEAT, SLEEPER, LIMOUSINE
+    total_seats INT NOT NULL,
+    seat_rows INT NOT NULL DEFAULT 10,
+    seats_per_row INT NOT NULL DEFAULT 4,
+    vip_rows INT NOT NULL DEFAULT 2,
+    status VARCHAR(30) NOT NULL DEFAULT 'ACTIVE',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_vehicle_operator (operator_id),
+    FOREIGN KEY (operator_id) REFERENCES bus_operators(id)
+);
+
+CREATE TABLE IF NOT EXISTS drivers (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    operator_id BIGINT NOT NULL,
+    full_name VARCHAR(100) NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    license_number VARCHAR(50) NOT NULL,
+    status VARCHAR(30) NOT NULL DEFAULT 'ACTIVE',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_driver_operator (operator_id),
+    FOREIGN KEY (operator_id) REFERENCES bus_operators(id)
+);
+
+CREATE TABLE IF NOT EXISTS operator_wallets (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    operator_id BIGINT NOT NULL UNIQUE,
+    available_balance DECIMAL(15,0) NOT NULL DEFAULT 0,
+    pending_settlement_balance DECIMAL(15,0) NOT NULL DEFAULT 0,
+    locked_balance DECIMAL(15,0) NOT NULL DEFAULT 0,
+    debt_balance DECIMAL(15,0) NOT NULL DEFAULT 0,
+    currency VARCHAR(10) NOT NULL DEFAULT 'VND',
+    version BIGINT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (operator_id) REFERENCES bus_operators(id)
+);
+
+CREATE TABLE IF NOT EXISTS wallet_transactions (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    wallet_id BIGINT NOT NULL,
+    operator_id BIGINT NOT NULL,
+    booking_id BIGINT NULL,
+    trip_id BIGINT NULL,
+    payment_reference VARCHAR(100) NULL,
+    transaction_type VARCHAR(40) NOT NULL,
+    gross_amount DECIMAL(15,0) NULL,
+    commission_rate DECIMAL(5,2) NULL,
+    commission_amount DECIMAL(15,0) NULL,
+    net_amount DECIMAL(15,0) NOT NULL,
+    balance_before DECIMAL(15,0) NULL,
+    balance_after DECIMAL(15,0) NOT NULL,
+    description VARCHAR(500) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_wtx_operator (operator_id, created_at),
+    INDEX idx_wtx_wallet (wallet_id),
+    FOREIGN KEY (wallet_id) REFERENCES operator_wallets(id)
+);
+
+CREATE TABLE IF NOT EXISTS withdrawal_requests (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    operator_id BIGINT NOT NULL,
+    amount DECIMAL(15,0) NOT NULL,
+    bank_name VARCHAR(100) NOT NULL,
+    account_number VARCHAR(50) NOT NULL,
+    account_holder_name VARCHAR(100) NOT NULL,
+    status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+    admin_note VARCHAR(500) NULL,
+    processed_by_admin_id BIGINT NULL,
+    processed_at DATETIME NULL,
+    idempotency_key VARCHAR(100) NULL UNIQUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_withdrawal_operator (operator_id),
+    INDEX idx_withdrawal_status (status),
+    FOREIGN KEY (operator_id) REFERENCES bus_operators(id)
+);
+
+CREATE TABLE IF NOT EXISTS banners (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    operator_id BIGINT NULL, -- NULL = platform banner
+    title VARCHAR(200) NOT NULL,
+    image_url VARCHAR(500) NOT NULL,
+    target_url VARCHAR(500) NULL,
+    position VARCHAR(40) NOT NULL DEFAULT 'HOMEPAGE_HERO',
+    start_date DATETIME NOT NULL,
+    end_date DATETIME NOT NULL,
+    priority INT NOT NULL DEFAULT 0,
+    status VARCHAR(30) NOT NULL DEFAULT 'PENDING_APPROVAL',
+    rejection_reason VARCHAR(500) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_banner_display (status, start_date, end_date, priority)
+);
+
+CREATE TABLE IF NOT EXISTS system_settings (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    setting_key VARCHAR(100) NOT NULL UNIQUE,
+    setting_value VARCHAR(500) NOT NULL,
+    description VARCHAR(255) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+INSERT INTO system_settings (setting_key, setting_value, description) VALUES
+('COMMISSION_RATE_DEFAULT', '10.0', 'Tỷ lệ hoa hồng mặc định toàn sàn (%)')
+ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value);
 
 -- Seed Data (Initial Stations & Sample Data)
 INSERT INTO stations (code, name, city) VALUES 
