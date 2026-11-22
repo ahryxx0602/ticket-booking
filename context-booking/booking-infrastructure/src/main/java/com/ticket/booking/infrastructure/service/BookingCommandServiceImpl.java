@@ -47,6 +47,7 @@ public class BookingCommandServiceImpl implements HoldSeatUseCase, CancelBooking
     private final IdentityUserPort identityUserPort;
     private final PaymentRefundPort paymentRefundPort;
     private final TransactionTemplate transactionTemplate;
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     private static final Duration HOLD_SEAT_DURATION = Duration.ofMinutes(10);
 
@@ -134,6 +135,7 @@ public class BookingCommandServiceImpl implements HoldSeatUseCase, CancelBooking
         Booking booking = Booking.builder()
                 .bookingReference(bookingReference)
                 .userId(user.userId())
+                .phone(user.phone())
                 .tripId(command.getTripId())
                 .status(BookingStatus.PENDING)
                 .totalAmount(totalAmount.setScale(2, RoundingMode.HALF_UP))
@@ -290,6 +292,17 @@ public class BookingCommandServiceImpl implements HoldSeatUseCase, CancelBooking
                 String token = booking.getBookingReference();
 
                 releaseLocksAfterCommit(tripId, seats, token);
+                if (eventPublisher != null) {
+                    eventPublisher.publishEvent(new com.ticket.shared.event.BookingExpiredEvent(
+                            UUID.randomUUID().toString(),
+                            token,
+                            booking.getId(),
+                            booking.getUserId(),
+                            null,
+                            booking.getPhone(),
+                            java.time.Instant.now()
+                    ));
+                }
                 log.info("Booking {} transitioned to EXPIRED by scheduler", token);
                 return true;
             }));

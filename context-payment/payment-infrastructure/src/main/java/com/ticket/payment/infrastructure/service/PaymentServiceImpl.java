@@ -15,17 +15,22 @@ import com.ticket.payment.domain.port.PaymentIdentityPort;
 import com.ticket.payment.domain.repository.PaymentRepository;
 import com.ticket.payment.infrastructure.config.VnPayProperties;
 import com.ticket.payment.infrastructure.crypto.VnPaySignUtil;
+import com.ticket.shared.event.PaymentConfirmedEvent;
+import com.ticket.shared.event.ReconciliationAlertEvent;
 import com.ticket.shared.exception.BusinessException;
 import com.ticket.shared.exception.EntityNotFoundException;
 import com.ticket.shared.exception.ForbiddenException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -40,6 +45,7 @@ public class PaymentServiceImpl implements CreatePaymentUseCase, HandlePaymentCa
     private final PaymentBookingConfirmPort paymentBookingConfirmPort;
     private final PaymentIdentityPort paymentIdentityPort;
     private final VnPayProperties vnPayProperties;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
     @Transactional
@@ -173,6 +179,17 @@ public class PaymentServiceImpl implements CreatePaymentUseCase, HandlePaymentCa
                 log.warn("Payment reference {} was marked FAILED, but bank confirmed success. Marking reconciliation.", payment.getPaymentReference());
                 payment.markReconciliationRequired(callbackDto.getVnp_TransactionNo(), "SUCCESS_CALLBACK_AFTER_FAILED_STATUS");
                 paymentRepository.save(payment);
+                String bkgRef = paymentBookingPort.findBookingById(payment.getBookingId())
+                        .map(PaymentBookingPort.BookingSnapshot::bookingReference)
+                        .orElse("BKG_" + payment.getBookingId());
+                eventPublisher.publishEvent(new ReconciliationAlertEvent(
+                        UUID.randomUUID().toString(),
+                        payment.getPaymentReference(),
+                        bkgRef,
+                        "SUCCESS_CALLBACK_AFTER_FAILED_STATUS",
+                        payment.getAmount(),
+                        Instant.now()
+                ));
                 return VnPayIpnResponse.success();
             } else {
                 return VnPayIpnResponse.success();
@@ -188,6 +205,17 @@ public class PaymentServiceImpl implements CreatePaymentUseCase, HandlePaymentCa
                 payment.markReconciliationRequired(callbackDto.getVnp_TransactionNo(), "DUPLICATE_PAYMENT_FOR_CONFIRMED_BOOKING");
                 paymentRepository.save(payment);
                 log.warn("Payment {} succeeded but booking was ALREADY CONFIRMED. Marked for reconciliation.", payment.getPaymentReference());
+                String bkgRef = paymentBookingPort.findBookingById(payment.getBookingId())
+                        .map(PaymentBookingPort.BookingSnapshot::bookingReference)
+                        .orElse("BKG_" + payment.getBookingId());
+                eventPublisher.publishEvent(new ReconciliationAlertEvent(
+                        UUID.randomUUID().toString(),
+                        payment.getPaymentReference(),
+                        bkgRef,
+                        "DUPLICATE_PAYMENT_FOR_CONFIRMED_BOOKING",
+                        payment.getAmount(),
+                        Instant.now()
+                ));
                 return VnPayIpnResponse.success();
             }
 
@@ -195,12 +223,45 @@ public class PaymentServiceImpl implements CreatePaymentUseCase, HandlePaymentCa
                 payment.markReconciliationRequired(callbackDto.getVnp_TransactionNo(), "PAID_AFTER_BOOKING_EXPIRED");
                 paymentRepository.save(payment);
                 log.warn("Payment {} succeeded but booking was EXPIRED. Marked for reconciliation.", payment.getPaymentReference());
+                String bkgRef = paymentBookingPort.findBookingById(payment.getBookingId())
+                        .map(PaymentBookingPort.BookingSnapshot::bookingReference)
+                        .orElse("BKG_" + payment.getBookingId());
+                eventPublisher.publishEvent(new ReconciliationAlertEvent(
+                        UUID.randomUUID().toString(),
+                        payment.getPaymentReference(),
+                        bkgRef,
+                        "PAID_AFTER_BOOKING_EXPIRED",
+                        payment.getAmount(),
+                        Instant.now()
+                ));
                 return VnPayIpnResponse.success();
             }
 
             payment.markSuccess(callbackDto.getVnp_TransactionNo());
             paymentRepository.save(payment);
             log.info("Payment reference {} succeeded with TxnNo: {}", payment.getPaymentReference(), callbackDto.getVnp_TransactionNo());
+            Optional<PaymentBookingPort.BookingSnapshot> optBooking = paymentBookingPort.findBookingById(payment.getBookingId());
+            String bkgRef = optBooking.map(PaymentBookingPort.BookingSnapshot::bookingReference).orElse("BKG_" + payment.getBookingId());
+            Long userId = optBooking.map(PaymentBookingPort.BookingSnapshot::userId).orElse(null);
+            Long tripId = optBooking.map(PaymentBookingPort.BookingSnapshot::tripId).orElse(null);
+            String customerEmail = optBooking.map(PaymentBookingPort.BookingSnapshot::customerEmail).orElse(null);
+            String customerPhone = optBooking.map(PaymentBookingPort.BookingSnapshot::phone).orElse(null);
+            List<String> seatNumbers = optBooking.map(PaymentBookingPort.BookingSnapshot::seatNumbers).orElse(List.of());
+
+            eventPublisher.publishEvent(new PaymentConfirmedEvent(
+                    UUID.randomUUID().toString(),
+                    payment.getPaymentReference(),
+                    bkgRef,
+                    payment.getBookingId(),
+                    userId,
+                    tripId,
+                    customerEmail,
+                    customerPhone,
+                    "Khách hàng",
+                    payment.getAmount(),
+                    seatNumbers,
+                    Instant.now()
+            ));
             return VnPayIpnResponse.success();
         } else {
             payment.markFailed();

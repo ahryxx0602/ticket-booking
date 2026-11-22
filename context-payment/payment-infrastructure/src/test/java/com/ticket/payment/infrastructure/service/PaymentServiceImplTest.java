@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -43,6 +44,8 @@ class PaymentServiceImplTest {
     private PaymentBookingConfirmPort paymentBookingConfirmPort;
     @Mock
     private PaymentIdentityPort paymentIdentityPort;
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     private VnPayProperties vnPayProperties;
     private PaymentServiceImpl paymentService;
@@ -60,7 +63,8 @@ class PaymentServiceImplTest {
                 paymentBookingPort,
                 paymentBookingConfirmPort,
                 paymentIdentityPort,
-                vnPayProperties
+                vnPayProperties,
+                eventPublisher
         );
     }
 
