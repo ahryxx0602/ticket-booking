@@ -22,6 +22,8 @@
         <java.version>21</java.version>
         <jjwt.version>0.12.6</jjwt.version>
         <redisson.version>3.40.2</redisson.version>
+        <firebase.version>9.4.3</firebase.version>
+        <zxing.version>3.5.3</zxing.version>
     </properties>
 
     <modules>
@@ -30,6 +32,7 @@
         <module>context-catalog</module>
         <module>context-booking</module>
         <module>context-payment</module>
+        <module>context-notification</module>
         <module>ticket-start</module>
     </modules>
 
@@ -128,6 +131,47 @@
                 <groupId>com.ticket</groupId>
                 <artifactId>payment-presentation</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+
+            <!-- Context Notification -->
+            <dependency>
+                <groupId>com.ticket</groupId>
+                <artifactId>notification-domain</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ticket</groupId>
+                <artifactId>notification-application</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ticket</groupId>
+                <artifactId>notification-infrastructure</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ticket</groupId>
+                <artifactId>notification-presentation</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- Firebase Admin SDK -->
+            <dependency>
+                <groupId>com.google.firebase</groupId>
+                <artifactId>firebase-admin</artifactId>
+                <version>${firebase.version}</version>
+            </dependency>
+
+            <!-- ZXing QR Code -->
+            <dependency>
+                <groupId>com.google.zxing</groupId>
+                <artifactId>core</artifactId>
+                <version>${zxing.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.zxing</groupId>
+                <artifactId>javase</artifactId>
+                <version>${zxing.version}</version>
             </dependency>
 
             <!-- JJWT -->

@@ -22,6 +22,7 @@ public class Booking extends BaseEntity {
     private Long id;
     private String bookingReference;
     private Long userId;
+    private String phone;
     private Long tripId;
     private BookingStatus status;
     private BigDecimal totalAmount;
@@ -83,5 +84,12 @@ public class Booking extends BaseEntity {
             throw new BusinessException("INVALID_BOOKING_STATUS", "Only CONFIRMED bookings can be refunded by admin");
         }
         transitionTo(BookingStatus.CANCELLED);
+    }
+
+    public List<String> getSeatNumbers() {
+        if (this.items == null) {
+            return List.of();
+        }
+        return this.items.stream().map(BookingItem::getSeatNumber).toList();
     }
 }
