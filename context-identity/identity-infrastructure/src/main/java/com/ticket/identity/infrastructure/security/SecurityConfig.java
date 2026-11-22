@@ -39,6 +39,7 @@ public class SecurityConfig {
                 // 1. Guest & Public APIs
                 .requestMatchers("/api/v1/auth/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/catalog/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/public/**").permitAll()
                 .requestMatchers("/api/v1/payments/webhook/**").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/notifications/telegram/webhook").permitAll()
                 .requestMatchers("/actuator/**").permitAll()
@@ -50,7 +51,11 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/bookings/**").hasRole("CUSTOMER")
                 .requestMatchers("/api/v1/payments/checkout").hasRole("CUSTOMER")
 
-                // 4. Any other requests require authentication
+                // 4. Partner Role APIs
+                .requestMatchers("/api/v1/partners/register").authenticated()
+                .requestMatchers("/api/v1/partners/**").hasAnyRole("OPERATOR", "ADMIN")
+
+                // 5. Any other requests require authentication
                 .anyRequest().authenticated()
             )
             .exceptionHandling(ex -> ex
