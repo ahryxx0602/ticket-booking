@@ -33,6 +33,7 @@
         <module>context-booking</module>
         <module>context-payment</module>
         <module>context-notification</module>
+        <module>context-partner</module>
         <module>ticket-start</module>
     </modules>
 
@@ -152,6 +153,28 @@
             <dependency>
                 <groupId>com.ticket</groupId>
                 <artifactId>notification-presentation</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- Context Partner -->
+            <dependency>
+                <groupId>com.ticket</groupId>
+                <artifactId>partner-domain</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ticket</groupId>
+                <artifactId>partner-application</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ticket</groupId>
+                <artifactId>partner-infrastructure</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ticket</groupId>
+                <artifactId>partner-presentation</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

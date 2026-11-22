@@ -29,6 +29,10 @@ public class Trip extends BaseEntity {
     private Integer totalSeats;
     private BigDecimal basePrice;
     private TripStatus status;
+    private Long operatorId;
+    private Long vehicleId;
+    @Builder.Default
+    private String settlementStatus = "UNSETTLED";
     private List<Seat> seats;
 
     public void validateScheduleAndRoute() {
