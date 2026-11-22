@@ -40,9 +40,11 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/auth/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/catalog/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/public/**").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/public/upload").permitAll()
                 .requestMatchers("/api/v1/payments/webhook/**").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/notifications/telegram/webhook").permitAll()
                 .requestMatchers("/actuator/**").permitAll()
+                .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html").permitAll()
 
                 // 2. Administrator Only APIs
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")

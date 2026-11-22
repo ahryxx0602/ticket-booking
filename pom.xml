@@ -24,6 +24,7 @@
         <redisson.version>3.40.2</redisson.version>
         <firebase.version>9.4.3</firebase.version>
         <zxing.version>3.5.3</zxing.version>
+        <springdoc.version>2.7.0</springdoc.version>
     </properties>
 
     <modules>
@@ -195,6 +196,13 @@
                 <groupId>com.google.zxing</groupId>
                 <artifactId>javase</artifactId>
                 <version>${zxing.version}</version>
+            </dependency>
+
+            <!-- OpenAPI / Swagger UI -->
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+                <version>${springdoc.version}</version>
             </dependency>
 
             <!-- JJWT -->
