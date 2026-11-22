@@ -38,14 +38,20 @@ public class FirebaseConfig {
         }
 
         try (InputStream serviceAccount = new FileInputStream(credFile)) {
-            FirebaseOptions options = FirebaseOptions.builder()
+            FirebaseOptions.Builder builder = FirebaseOptions.builder()
                     .setCredentials(GoogleCredentials.fromStream(serviceAccount))
-                    .setProjectId(properties.getProjectId())
-                    .build();
+                    .setProjectId(properties.getProjectId());
+
+            if (properties.getStorageBucket() != null && !properties.getStorageBucket().trim().isEmpty()) {
+                builder.setStorageBucket(properties.getStorageBucket());
+            }
+
+            FirebaseOptions options = builder.build();
 
             if (FirebaseApp.getApps().isEmpty()) {
                 FirebaseApp.initializeApp(options);
-                log.info("[FIREBASE CONFIG] FirebaseApp initialized successfully with project: {}", properties.getProjectId());
+                log.info("[FIREBASE CONFIG] FirebaseApp initialized successfully with project: {} and bucket: {}",
+                        properties.getProjectId(), properties.getStorageBucket());
             }
         } catch (Exception ex) {
             log.error("[FIREBASE CONFIG ERROR] Failed to initialize FirebaseApp", ex);

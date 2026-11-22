@@ -12,5 +12,6 @@ import org.springframework.context.annotation.Configuration;
 public class FirebaseProperties {
     private boolean enabled = false;
     private String credentialsPath;
-    private String projectId = "ticket-booking-dev";
+    private String projectId = "vue-http-demo-241ab";
+    private String storageBucket = "vue-http-demo-241ab.firebasestorage.app";
 }

@@ -28,6 +28,7 @@ logs/
 # Firebase & Cloud Credentials
 *firebase*.json
 *serviceAccountKey*.json
+*:Zone.Identifier
 *.pem
 *.key
 
