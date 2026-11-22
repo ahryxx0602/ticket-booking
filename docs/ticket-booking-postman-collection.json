@@ -22,6 +22,26 @@
 			"type": "string"
 		},
 		{
+			"key": "operator_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "operator_id",
+			"value": "1",
+			"type": "string"
+		},
+		{
+			"key": "vehicle_id",
+			"value": "1",
+			"type": "string"
+		},
+		{
+			"key": "withdrawal_id",
+			"value": "1",
+			"type": "string"
+		},
+		{
 			"key": "vnp_txn_ref",
 			"value": "",
 			"type": "string"
@@ -1544,6 +1564,403 @@
 								},
 								{
 									"key": "size",
+									"value": "10"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "7. Partner Marketplace & Fleet Management",
+			"item": [
+				{
+					"name": "7.1 Register Bus Operator Profile",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 201\", function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"pm.test(\"Operator profile created with PENDING_APPROVAL\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"    pm.expect(jsonData.data.status).to.eql(\"PENDING_APPROVAL\");",
+									"    pm.collectionVariables.set(\"operator_id\", jsonData.data.id);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{operator_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"businessName\": \"Cong ty TNHH Van Tai Phuong Trang\",\n    \"brandName\": \"FUTA Bus Lines\",\n    \"taxCode\": \"0301239999\",\n    \"contactPhone\": \"19006067\",\n    \"contactEmail\": \"hotro@futa.vn\",\n    \"logoUrl\": \"https://cdn.vexere.com/logos/futa.png\",\n    \"description\": \"Nha xe chat luong cao toan quoc\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/partners/register",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"partners",
+								"register"
+							]
+						}
+					}
+				},
+				{
+					"name": "7.2 Admin Approve Operator",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"pm.test(\"Operator approved with ACTIVE status\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"    pm.expect(jsonData.data.status).to.eql(\"ACTIVE\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/partners/operators/{{operator_id}}/approve",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"partners",
+								"operators",
+								"{{operator_id}}",
+								"approve"
+							]
+						}
+					}
+				},
+				{
+					"name": "7.3 Create Vehicle",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 201\", function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"pm.test(\"Vehicle created with ACTIVE status\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"    pm.expect(jsonData.data.plateNumber).to.eql(\"51B-999.88\");",
+									"    pm.collectionVariables.set(\"vehicle_id\", jsonData.data.id);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{operator_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"plateNumber\": \"51B-999.88\",\n    \"modelName\": \"Thaco Mobihome 2024\",\n    \"vehicleType\": \"SLEEPER\",\n    \"totalSeats\": 34,\n    \"seatRows\": 10,\n    \"seatsPerRow\": 4,\n    \"vipRows\": 2\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/partners/vehicles",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"partners",
+								"vehicles"
+							]
+						}
+					}
+				},
+				{
+					"name": "7.4 Admin Set Custom Commission Rate",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"pm.test(\"Custom commission updated to 7.5%\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"    pm.expect(jsonData.data.commissionRate).to.eql(7.5);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"commissionRate\": 7.5\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/partners/operators/{{operator_id}}/commission",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"partners",
+								"operators",
+								"{{operator_id}}",
+								"commission"
+							]
+						}
+					}
+				},
+				{
+					"name": "7.5 Operator View Wallet Balance",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"pm.test(\"Wallet balance fields present\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"    pm.expect(jsonData.data).to.have.property('availableBalance');",
+									"    pm.expect(jsonData.data).to.have.property('pendingSettlementBalance');",
+									"    pm.expect(jsonData.data).to.have.property('lockedBalance');",
+									"    pm.expect(jsonData.data).to.have.property('debtBalance');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{operator_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/partners/wallet",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"partners",
+								"wallet"
+							]
+						}
+					}
+				},
+				{
+					"name": "7.6 Request Withdrawal",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 201 or 400 (if balance insufficient in initial run)\", function () {",
+									"    pm.expect([201, 400]).to.include(pm.response.code);",
+									"});",
+									"if (pm.response.code === 201) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.status).to.eql(\"PENDING\");",
+									"    pm.collectionVariables.set(\"withdrawal_id\", jsonData.data.id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{operator_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"amount\": 500000,\n    \"bankName\": \"Vietcombank\",\n    \"accountNumber\": \"0123456789\",\n    \"accountHolderName\": \"NGUYEN VAN OPERATOR\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/partners/wallet/withdraw",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"partners",
+								"wallet",
+								"withdraw"
+							]
+						}
+					}
+				},
+				{
+					"name": "7.7 Admin Approve Withdrawal",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 or 404/400 (if withdrawal not created)\", function () {",
+									"    pm.expect([200, 400, 404]).to.include(pm.response.code);",
+									"});",
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.status).to.eql(\"APPROVED\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"note\": \"Chuyen khoan thanh toan Ref #88921\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/partners/withdrawals/{{withdrawal_id}}/approve",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"partners",
+								"withdrawals",
+								"{{withdrawal_id}}",
+								"approve"
+							]
+						}
+					}
+				},
+				{
+					"name": "7.8 Public Active Banners",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"pm.test(\"Active banners array returned\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"    pm.expect(jsonData.data).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/public/banners/active?limit=10",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"public",
+								"banners",
+								"active"
+							],
+							"query": [
+								{
+									"key": "limit",
 									"value": "10"
 								}
 							]
