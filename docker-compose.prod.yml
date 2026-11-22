@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. DATABASE SERVICE: MySQL 8.4 LTS
+  # ----------------------------------------------------------------------------
+  ticket-mysql:
+    image: mysql:8.4
+    container_name: ticket-mysql-prod
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_password}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ticket_booking_db}
+      MYSQL_USER: ${MYSQL_USER:-ticket_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ticket_password}
+    ports:
+      - "${MYSQL_PORT:-3307}:3306"
+    volumes:
+      - mysql_prod_data:/var/lib/mysql
+      - ./environment/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - ticket-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "ticket_user", "-pticket_password"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ----------------------------------------------------------------------------
+  # 2. CACHE & DISTRIBUTED LOCK SERVICE: Redis 7.2
+  # ----------------------------------------------------------------------------
+  ticket-redis:
+    image: redis:7.2-alpine
+    container_name: ticket-redis-prod
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_prod_data:/data
+    networks:
+      - ticket-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ----------------------------------------------------------------------------
+  # 3. BACKEND SERVICE: Spring Boot 3.4.1 (Java 21)
+  # ----------------------------------------------------------------------------
+  ticket-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ticket-backend-prod
+    restart: unless-stopped
+    depends_on:
+      ticket-mysql:
+        condition: service_healthy
+      ticket-redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - MYSQL_HOST=ticket-mysql
+      - MYSQL_PORT=3306
+      - MYSQL_DATABASE=ticket_booking_db
+      - MYSQL_USER=ticket_user
+      - MYSQL_PASSWORD=ticket_password
+      - REDIS_HOST=ticket-redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=${JWT_SECRET:-aW5kLXByb2plY3QtdGlja2V0LWJvb2tpbmctc2VjdXJlLWtleS0yNTYtYml0cy0yMDI2}
+      - VNPAY_HASH_SECRET=${VNPAY_HASH_SECRET:-SANDBOX_HASH_SECRET_VNPAY_2026}
+      - TELEGRAM_ENABLED=${TELEGRAM_ENABLED:-true}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_BOT_USERNAME=${TELEGRAM_BOT_USERNAME}
+      - TELEGRAM_ADMIN_CHAT_ID=${TELEGRAM_ADMIN_CHAT_ID}
+      - MAIL_ENABLED=${MAIL_ENABLED:-true}
+      - MAIL_USERNAME=${MAIL_USERNAME}
+      - MAIL_PASSWORD=${MAIL_PASSWORD}
+      - MAIL_FROM=${MAIL_FROM}
+      - FIREBASE_ENABLED=${FIREBASE_ENABLED:-true}
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
+      - FIREBASE_CREDENTIALS_PATH=/app/firebase-service-account.json
+      - FIREBASE_STORAGE_BUCKET=${FIREBASE_STORAGE_BUCKET}
+    volumes:
+      - ./environment/firebase-service-account.json:/app/firebase-service-account.json:ro
+    networks:
+      - ticket-network
+
+networks:
+  ticket-network:
+    driver: bridge
+
+volumes:
+  mysql_prod_data:
+  redis_prod_data:
