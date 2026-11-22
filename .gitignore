@@ -5,9 +5,11 @@ build/
 !**/src/main/**/build/
 !**/src/test/**/build/
 
-# Internal Implementation Plans & Local Roadmaps
+# Internal Implementation Plans, Reviews & Reports (Local AI Workflow State)
 plans/
 docs/plans/
+reviews/
+reports/
 
 # Maven
 target/

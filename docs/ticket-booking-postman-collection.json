@@ -385,15 +385,124 @@
 			]
 		},
 		{
-			"name": "3. Catalog (Public)",
+			"name": "3. Catalog & Admin Catalog Management",
 			"item": [
 				{
-					"name": "3.1 Search Trips (Cache-Aside)",
+					"name": "3.1 [ADMIN] Create New Station",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"code\": \"CXR\",\n  \"name\": \"Sân bay Quốc tế Cam Ranh\",\n  \"city\": \"Khánh Hòa\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/stations",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"stations"
+							]
+						}
+					}
+				},
+				{
+					"name": "3.2 [ADMIN] Create Trip & Auto-Generate Seat Matrix",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"tripCode\": \"VN789\",\n  \"departureStationId\": 1,\n  \"arrivalStationId\": 2,\n  \"departureTime\": \"2026-12-01T09:00:00\",\n  \"arrivalTime\": \"2026-12-01T11:15:00\",\n  \"transportType\": \"FLIGHT\",\n  \"basePrice\": 1500000.00,\n  \"totalRows\": 10,\n  \"seatsPerRow\": 6,\n  \"vipRows\": 2\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/trips",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"trips"
+							]
+						}
+					}
+				},
+				{
+					"name": "3.3 [ADMIN] Cancel Trip",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/trips/1/cancel",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"trips",
+								"1",
+								"cancel"
+							]
+						}
+					}
+				},
+				{
+					"name": "3.4 [PUBLIC] Get All Stations",
 					"request": {
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "{{base_url}}/api/v1/catalog/trips?departureCity=Hà Nội&arrivalCity=Hồ Chí Minh&departureDate=2026-11-20",
+							"raw": "{{base_url}}/api/v1/catalog/stations",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"catalog",
+								"stations"
+							]
+						}
+					}
+				},
+				{
+					"name": "3.5 [PUBLIC] Search Trips (Cache-Aside)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/catalog/trips?departureCity=Hà Nội&arrivalCity=Hồ Chí Minh&departureDate=2026-12-01",
 							"host": [
 								"{{base_url}}"
 							],
@@ -414,8 +523,29 @@
 								},
 								{
 									"key": "departureDate",
-									"value": "2026-11-20"
+									"value": "2026-12-01"
 								}
+							]
+						}
+					}
+				},
+				{
+					"name": "3.6 [PUBLIC] Get Trip Seat Matrix & Prices",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/catalog/trips/1/seats",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"catalog",
+								"trips",
+								"1",
+								"seats"
 							]
 						}
 					}
