@@ -5,6 +5,7 @@ import com.ticket.booking.domain.model.BookingStatus;
 import com.ticket.shared.dto.PageResponse;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -15,5 +16,6 @@ public interface BookingRepository {
     Set<String> findActiveBookedSeatNumbers(Long tripId, LocalDateTime now);
     PageResponse<Booking> findByUserId(Long userId, int page, int size);
     PageResponse<Booking> findAllWithFilters(BookingStatus status, Long tripId, Long userId, int page, int size);
+    List<Booking> findExpiredHeldBookings(LocalDateTime now, int limit);
     Booking save(Booking booking);
 }

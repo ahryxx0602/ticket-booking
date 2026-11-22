@@ -114,4 +114,77 @@ class BookingDomainTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting("code").isEqualTo("INVALID_BOOKING_STATUS");
     }
+
+    @Test
+    void confirm_whenHeldAndNotExpired_shouldTransitionToConfirmed() {
+        LocalDateTime now = LocalDateTime.now();
+        Booking booking = Booking.builder()
+                .bookingReference("REF-8")
+                .userId(10L)
+                .status(BookingStatus.HELD)
+                .expiresAt(now.plusMinutes(5))
+                .build();
+
+        booking.confirm(now);
+
+        assertThat(booking.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+    }
+
+    @Test
+    void confirm_whenAlreadyConfirmed_shouldBeIdempotent() {
+        LocalDateTime now = LocalDateTime.now();
+        Booking booking = Booking.builder()
+                .bookingReference("REF-9")
+                .userId(10L)
+                .status(BookingStatus.CONFIRMED)
+                .build();
+
+        booking.confirm(now);
+
+        assertThat(booking.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+    }
+
+    @Test
+    void confirm_whenExpired_shouldThrowBookingExpired() {
+        LocalDateTime now = LocalDateTime.now();
+        Booking booking = Booking.builder()
+                .bookingReference("REF-10")
+                .userId(10L)
+                .status(BookingStatus.HELD)
+                .expiresAt(now.minusSeconds(1))
+                .build();
+
+        assertThatThrownBy(() -> booking.confirm(now))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("BOOKING_EXPIRED");
+    }
+
+    @Test
+    void expire_whenHeld_shouldTransitionToExpired() {
+        LocalDateTime now = LocalDateTime.now();
+        Booking booking = Booking.builder()
+                .bookingReference("REF-11")
+                .userId(10L)
+                .status(BookingStatus.HELD)
+                .expiresAt(now.minusMinutes(1))
+                .build();
+
+        booking.expire(now);
+
+        assertThat(booking.getStatus()).isEqualTo(BookingStatus.EXPIRED);
+    }
+
+    @Test
+    void expire_whenAlreadyExpired_shouldBeIdempotent() {
+        LocalDateTime now = LocalDateTime.now();
+        Booking booking = Booking.builder()
+                .bookingReference("REF-12")
+                .userId(10L)
+                .status(BookingStatus.EXPIRED)
+                .build();
+
+        booking.expire(now);
+
+        assertThat(booking.getStatus()).isEqualTo(BookingStatus.EXPIRED);
+    }
 }

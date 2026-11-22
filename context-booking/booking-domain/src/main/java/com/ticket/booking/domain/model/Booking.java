@@ -55,6 +55,29 @@ public class Booking extends BaseEntity {
         transitionTo(BookingStatus.CANCELLED);
     }
 
+    public void confirm(LocalDateTime now) {
+        if (this.status == BookingStatus.CONFIRMED) {
+            return;
+        }
+        if (this.status != BookingStatus.HELD) {
+            throw new BusinessException("INVALID_BOOKING_STATUS", "Only HELD bookings can be confirmed: " + this.status);
+        }
+        if (isExpired(now)) {
+            throw new BusinessException("BOOKING_EXPIRED", "Booking hold period has expired at " + this.expiresAt);
+        }
+        transitionTo(BookingStatus.CONFIRMED);
+    }
+
+    public void expire(LocalDateTime now) {
+        if (this.status == BookingStatus.EXPIRED) {
+            return;
+        }
+        if (this.status != BookingStatus.HELD) {
+            throw new BusinessException("INVALID_BOOKING_STATUS", "Only HELD bookings can be expired: " + this.status);
+        }
+        transitionTo(BookingStatus.EXPIRED);
+    }
+
     public void refundByAdmin() {
         if (this.status != BookingStatus.CONFIRMED) {
             throw new BusinessException("INVALID_BOOKING_STATUS", "Only CONFIRMED bookings can be refunded by admin");

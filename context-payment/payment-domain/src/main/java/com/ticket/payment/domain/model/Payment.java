@@ -29,15 +29,39 @@ public class Payment extends BaseEntity {
     private BigDecimal refundAmount;
     private String refundReason;
     private LocalDateTime refundedAt;
+    @Builder.Default
+    private boolean reconciliationRequired = false;
+    private Long version;
 
     public void markSuccess(String transactionId) {
+        if (this.status != PaymentStatus.PENDING) {
+            throw new BusinessException("INVALID_PAYMENT_STATUS", "Payment is not in PENDING status: " + this.status);
+        }
         this.status = PaymentStatus.SUCCESS;
         this.transactionId = transactionId;
         this.paymentTime = LocalDateTime.now();
     }
 
     public void markFailed() {
+        if (this.status != PaymentStatus.PENDING) {
+            throw new BusinessException("INVALID_PAYMENT_STATUS", "Payment is not in PENDING status: " + this.status);
+        }
         this.status = PaymentStatus.FAILED;
+    }
+
+    public void markReconciliationRequired(String transactionId, String reason) {
+        if (this.status != PaymentStatus.PENDING && this.status != PaymentStatus.FAILED) {
+            throw new BusinessException("INVALID_PAYMENT_STATUS", "Payment cannot be marked for reconciliation from status: " + this.status);
+        }
+        this.status = PaymentStatus.SUCCESS;
+        this.transactionId = transactionId;
+        this.reconciliationRequired = true;
+        this.refundReason = reason;
+        this.paymentTime = LocalDateTime.now();
+    }
+
+    public void markReconciliationRequired(String reason) {
+        markReconciliationRequired(this.transactionId, reason);
     }
 
     public void markRefunded(BigDecimal refundAmount, String reason) {
