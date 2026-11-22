@@ -25,6 +25,12 @@ target/
 *.log
 logs/
 
+# Firebase & Cloud Credentials
+*firebase*.json
+*serviceAccountKey*.json
+*.pem
+*.key
+
 # Operating System
 .DS_Store
 Thumbs.db
