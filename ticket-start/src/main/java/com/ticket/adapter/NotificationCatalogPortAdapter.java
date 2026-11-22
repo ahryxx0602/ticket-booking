@@ -38,7 +38,7 @@ public class NotificationCatalogPortAdapter implements NotificationCatalogPort {
                 arrStationName,
                 trip.getDepartureTime(),
                 trip.getArrivalTime(),
-                null // operatorId reserved for Phase 6 multi-tenant
+                trip.getOperatorId()
         );
     }
 }
