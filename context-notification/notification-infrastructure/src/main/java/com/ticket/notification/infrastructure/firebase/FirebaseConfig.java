@@ -33,8 +33,23 @@ public class FirebaseConfig {
 
         File credFile = new File(properties.getCredentialsPath());
         if (!credFile.exists()) {
-            log.warn("[FIREBASE CONFIG] FCM credential file not found at: {}. Fallback to mock mode.", credFile.getAbsolutePath());
-            return;
+            // Thử kiểm tra tương đối từ thư mục cha nếu app chạy từ submodule (vd: ticket-start)
+            File fallbackFile = new File(".." + File.separator + properties.getCredentialsPath());
+            if (fallbackFile.exists()) {
+                credFile = fallbackFile;
+            } else {
+                // Thử tìm trong thư mục environment của project root
+                File envRootFile = new File("environment", "firebase-service-account.json");
+                File parentEnvRootFile = new File(".." + File.separator + "environment", "firebase-service-account.json");
+                if (envRootFile.exists()) {
+                    credFile = envRootFile;
+                } else if (parentEnvRootFile.exists()) {
+                    credFile = parentEnvRootFile;
+                } else {
+                    log.warn("[FIREBASE CONFIG] FCM credential file not found at: {}. Fallback to mock mode.", credFile.getAbsolutePath());
+                    return;
+                }
+            }
         }
 
         try (InputStream serviceAccount = new FileInputStream(credFile)) {

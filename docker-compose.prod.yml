@@ -71,7 +71,7 @@ services:
       - MYSQL_PASSWORD=ticket_password
       - REDIS_HOST=ticket-redis
       - REDIS_PORT=6379
-      - JWT_SECRET=${JWT_SECRET:-aW5kLXByb2plY3QtdGlja2V0LWJvb2tpbmctc2VjdXJlLWtleS0yNTYtYml0cy0yMDI2}
+      - JWT_SECRET=${JWT_SECRET:-dev_jwt_secret_key_minimum_32_characters_long}
       - VNPAY_HASH_SECRET=${VNPAY_HASH_SECRET:-SANDBOX_HASH_SECRET_VNPAY_2026}
       - TELEGRAM_ENABLED=${TELEGRAM_ENABLED:-true}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
