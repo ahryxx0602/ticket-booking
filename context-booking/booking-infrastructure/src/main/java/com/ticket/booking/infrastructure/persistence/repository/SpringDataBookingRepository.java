@@ -66,4 +66,8 @@ public interface SpringDataBookingRepository extends JpaRepository<BookingJpaEnt
 
     @Query("SELECT b.id FROM BookingJpaEntity b WHERE b.status = com.ticket.booking.domain.model.BookingStatus.HELD AND b.expiresAt < :now ORDER BY b.id ASC")
     List<Long> findExpiredHeldBookingIds(@Param("now") LocalDateTime now, Pageable pageable);
+
+    @Query("SELECT COALESCE(SUM(b.totalAmount), 0) FROM BookingJpaEntity b " +
+           "WHERE b.tripId = :tripId AND b.status = com.ticket.booking.domain.model.BookingStatus.CONFIRMED")
+    java.math.BigDecimal sumConfirmedAmountByTripId(@Param("tripId") Long tripId);
 }

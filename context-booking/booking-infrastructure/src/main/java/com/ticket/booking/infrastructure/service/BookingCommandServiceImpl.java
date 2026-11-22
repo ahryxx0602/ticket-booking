@@ -193,6 +193,19 @@ public class BookingCommandServiceImpl implements HoldSeatUseCase, CancelBooking
             releaseLocksAfterCommit(booking.getTripId(), seats, booking.getBookingReference());
         }
 
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(new com.ticket.shared.event.BookingRefundedEvent(
+                    UUID.randomUUID().toString(),
+                    booking.getId(),
+                    booking.getBookingReference(),
+                    booking.getTripId(),
+                    refundAmount,
+                    command.getRefundPercentage(),
+                    trimmedReason,
+                    java.time.Instant.now()
+            ));
+        }
+
         return RefundResponse.builder()
                 .bookingReference(booking.getBookingReference())
                 .status(booking.getStatus())
