@@ -295,6 +295,32 @@ curl -X POST http://localhost:8080/api/v1/partners/wallet/withdraw \
 
 ---
 
+## 📖 Tài Liệu API Trực Quan (Swagger UI) & Kiểm Thử Tải Cao (k6)
+
+### 1. Giao Diện OpenAPI 3.0 / Swagger UI
+Khi ứng dụng khởi chạy, truy cập bảng điều khiển tương tác trực quan ngay trên trình duyệt:
+👉 **`http://localhost:8080/swagger-ui.html`**
+- Hiển thị đầy đủ 45+ endpoints, cấu trúc DTO đầu vào/đầu ra và mã lỗi hệ thống.
+- **Nút Authorize tiện lợi:** Bấm nút **Authorize** màu xanh để dán mã JWT Token kiểm thử trực tiếp các API phân quyền (`ROLE_CUSTOMER`, `ROLE_OPERATOR`, `ROLE_ADMIN`) mà không cần cài đặt Postman.
+- File đặc tả OpenAPI JSON: `http://localhost:8080/v3/api-docs`.
+
+### 2. Kiểm Thử Tải Cao Flash-Sale Thực Nghiệm với k6
+Dự án tích hợp sẵn kịch bản kiểm thử hiệu năng chịu tải phân tán mô phỏng kịch bản flash-sale khốc liệt:
+```bash
+# Thực thi kịch bản kiểm thử tải cao với k6
+k6 run environment/stress-test-k6.js
+```
+- **Kịch bản mô phỏng:** Đẩy tải lên đến **1,000 Người dùng ảo (VUs)** đồng thời đăng nhập và tranh nhau giữ đúng 2 ghế VIP `12A`, `12B`.
+- **Bất biến được kiểm chứng:** Chứng minh **Zero Overbooking** (`successful_hold_seats <= 1`), xác nhận trả về 400 Bad Request hợp lệ cho các request đến sau, và tỷ lệ lỗi hệ thống `< 1%`.
+
+### 3. Đóng Gói Triển Khai Thực Tế Với Docker
+Khởi chạy toàn bộ hệ sinh thái (Backend Spring Boot + MySQL 8.4 + Redis 7.2) chỉ với 1 câu lệnh:
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+---
+
 ## 📚 Bộ Sưu Tập Postman & Mục Lục Tài Liệu Kỹ Thuật
 
 ### Bộ Kiểm Thử Hợp Đồng API Tự Động (Postman)

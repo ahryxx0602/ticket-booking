@@ -295,6 +295,32 @@ curl -X POST http://localhost:8080/api/v1/partners/wallet/withdraw \
 
 ---
 
+## 📖 Interactive API Documentation (Swagger UI) & Stress Testing
+
+### 1. OpenAPI 3.0 / Swagger UI
+Once the application starts, access the interactive API exploration dashboard directly from your browser:
+👉 **`http://localhost:8080/swagger-ui.html`**
+- Includes complete schema models, request/response DTOs, and error envelopes.
+- **Authorize Button:** Click the green **Authorize** button and input `Bearer <JWT_TOKEN>` to test secured endpoints (`ROLE_CUSTOMER`, `ROLE_OPERATOR`, `ROLE_ADMIN`) directly from the UI.
+- OpenAPI specification JSON: `http://localhost:8080/v3/api-docs`.
+
+### 2. High-Concurrency Flash-Sale Stress Testing (k6)
+The repository includes an industrial-grade **k6** performance testing script simulating extreme flash-sale concurrency:
+```bash
+# Install k6 (if not already installed) & run stress test
+k6 run environment/stress-test-k6.js
+```
+- **Scenario:** Ramps up to **1,000 Virtual Users (VUs)** concurrently racing to hold the same 2 VIP seats (`12A`, `12B`).
+- **Invariants Checked:** Proves **Zero Overbooking** (`successful_hold_seats <= 1`), validates graceful 400 Bad Request conflict handling, and enforces `< 1%` system error rate.
+
+### 3. Production Docker Deployment
+Run the complete stack (Spring Boot Backend + MySQL 8.4 + Redis 7.2) with a single command:
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+---
+
 ## 📚 Postman Collection & Documentation Index
 
 ### Automated API Test Suite
