@@ -13,6 +13,7 @@ import com.ticket.shared.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -23,6 +24,7 @@ public class AuthServiceImpl implements LoginUseCase, RegisterUseCase {
     private final JwtTokenProvider tokenProvider;
 
     @Override
+    @Transactional(readOnly = true)
     public AuthResponse execute(AuthRequest request) {
         User user = userRepository.findByUsername(request.getUsername())
                 .orElseThrow(() -> new BusinessException("INVALID_CREDENTIALS", "Username or password incorrect"));
@@ -47,6 +49,7 @@ public class AuthServiceImpl implements LoginUseCase, RegisterUseCase {
     }
 
     @Override
+    @Transactional
     public AuthResponse execute(RegisterRequest request) {
         if (userRepository.existsByUsername(request.getUsername())) {
             throw new BusinessException("USERNAME_EXISTS", "Username is already in use");
