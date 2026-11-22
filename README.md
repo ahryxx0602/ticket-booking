@@ -6,14 +6,15 @@
 [![Redis](https://img.shields.io/badge/Redis-7.2-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io/)
 [![Redisson](https://img.shields.io/badge/Redisson-Distributed_Lock-009688?style=for-the-badge)](https://redisson.org/)
 [![Architecture](https://img.shields.io/badge/Architecture-Clean%20%26%20Hexagonal%20%7C%20DDD-blue?style=for-the-badge)]()
+[![Tests](https://img.shields.io/badge/Tests-209%20Passed%20(33%20Modules)-success?style=for-the-badge&logo=junit5&logoColor=white)]()
 
-An enterprise-grade, high-concurrency ticket reservation platform designed with **Clean / Hexagonal Architecture** and **Domain-Driven Design (DDD)** on **Java 21** and **Spring Boot 3.4**. Built to tackle real-world distributed challenges: **sub-millisecond catalog retrieval, race condition prevention during seat selection (Zero Overbooking), and idempotent payment integration**.
+An enterprise-grade, high-concurrency multi-tenant ticket booking platform built with **Clean / Hexagonal Architecture** and **Domain-Driven Design (DDD)** on **Java 21** and **Spring Boot 3.4.1**. Inspired by real-world marketplace leaders like **Vexere** and **Shopee**, the platform resolves complex distributed challenges: **sub-millisecond catalog retrieval, zero-overbooking seat concurrency, idempotent payment gateways, multi-channel notifications, and multi-tenant fleet operations with automated escrow settlement**.
 
 ---
 
 ## 🏛️ Clean Architecture & DDD Layering Paradigm
 
-The project strictly follows the **Dependency Rule** of Clean Architecture: dependencies point inward. The **Domain Layer** contains pure business logic and remains 100% agnostic to frameworks, databases, and external libraries.
+The project strictly adheres to the **Dependency Rule** of Clean Architecture: inner layers define business invariants and remain 100% agnostic to frameworks, ORMs, and external infrastructure.
 
 ```
        ┌────────────────────────────────────────────────────────┐
@@ -25,11 +26,11 @@ The project strictly follows the **Dependency Rule** of Clean Architecture: depe
        └──────────────────────────┬─────────────────────────────┘
                                   ▼
        ┌────────────────────────────────────────────────────────┐
-       │     Domain Layer (Models, Enums, Events, Ports, FSM)   │  ◄── CORE
+       │     Domain Layer (Models, Enums, Events, Ports, FSM)   │  ◄── CORE DOMAIN (0% Framework)
        └──────────────────────────▲─────────────────────────────┘
-                                  │ (Implements Ports)
+                                  │ (Implements Outbound Ports)
        ┌──────────────────────────┴─────────────────────────────┐
-       │      Infrastructure Layer (JPA Entities, Redis, Redisson)│
+       │      Infrastructure Layer (JPA Entities, Redis, Adapters)│
        └────────────────────────────────────────────────────────┘
 ```
 
@@ -37,93 +38,141 @@ The project strictly follows the **Dependency Rule** of Clean Architecture: depe
 
 | Architectural Layer | Core Components | Enterprise Design Pattern & Mapping |
 | :--- | :--- | :--- |
-| **Domain Layer** (`*-domain`) | • **Models:** Pure Domain POJOs (`Booking`, `Trip`, `User`)<br>• **Enums:** Status & Types (`BookingStatus`, `UserStatus`)<br>• **Events:** Immutable Domain Events (`SeatHeldEvent`)<br>• **FSM:** Finite State Machine (`BookingStateMachine`)<br>• **Services:** Cross-entity domain logic (`PricingDomainService`)<br>• **Ports:** Repository & Lock Interfaces (`BookingRepository`) | **Core Domain (Pure Java):** Zero framework dependencies. Decoupled from Hibernate/JPA. |
-| **Application Layer** (`*-application`) | • **UseCases:** Single-action handlers (`HoldSeatUseCase`)<br>• **Request DTOs:** Input validation via Jakarta Validation (`@Valid`)<br>• **Response DTOs:** Output projection (Resource mapping)<br>• **Listeners:** Event Handlers (`@TransactionalEventListener`) | **Inbound Ports & Orchestration:** Implements CQRS/Command patterns and dispatches domain events. |
-| **Infrastructure Layer** (`*-infrastructure`) | • **JPA Entities:** Database schema mappings (`BookingJpaEntity`)<br>• **Adapters:** JPA implementation of Domain Ports<br>• **Distributed Locks:** Redisson Redis client implementation<br>• **Gateways:** External payment clients (VNPay HMAC-SHA512) | **Outbound Adapters:** Handles persistence, I/O, network communications, and third-party APIs. |
-| **Presentation Layer** (`*-presentation`) | • **REST Controllers:** HTTP routing and serialization<br>• **Advice:** Centralized `GlobalExceptionHandler` | **Inbound Adapters:** Validates HTTP payloads and maps domain results to standardized `ApiResponse<T>`. |
+| **Domain Layer** (`*-domain`) | • **Models:** Pure Domain POJOs (`Booking`, `Trip`, `OperatorWallet`, `Banner`)<br>• **Enums:** Strongly typed constants (`BookingStatus`, `OperatorStatus`, `VehicleType`)<br>• **Events:** Immutable Domain Events (`SeatHeldEvent`, `PaymentConfirmedEvent`, `BookingRefundedEvent`)<br>• **FSM:** Finite State Machines (`BookingStateMachine`)<br>• **Ports:** Repository & Outbound Interfaces (`BookingRepository`, `PartnerCatalogPort`) | **Core Domain (Pure Java):** Zero framework imports (`org.springframework.*`, `jakarta.persistence.*` forbidden). High cohesion, rich domain invariants. |
+| **Application Layer** (`*-application`) | • **UseCases:** Command/Query execution handlers (`HoldSeatUseCase`, `PartnerCommandService`)<br>• **DTOs:** Request/Response payloads with Jakarta Validation (`@Valid`)<br>• **Event Listeners:** Cross-context transactional coordination (`@TransactionalEventListener`) | **Inbound Ports & CQRS Orchestration:** Validates inputs, coordinates domain aggregates, dispatches integration events. |
+| **Infrastructure Layer** (`*-infrastructure`) | • **JPA Entities & Repos:** Database schema mappings & Spring Data adapters<br>• **Distributed Locks:** Redis Redisson & Lua CAS token adapters<br>• **Schedulers:** Escrow settlement scheduler & booking auto-expiry worker<br>• **External Gateways:** VNPay HMAC-SHA512, Telegram Bot API, SMTP Mailer, ZXing QR | **Outbound Adapters:** Handles database I/O, cache invalidation, network latency isolation, and third-party integrations. |
+| **Presentation Layer** (`*-presentation`) | • **REST Controllers:** HTTP routing, serialization, role-based authorization (`@PreAuthorize`)<br>• **Global Error Advice:** Standardized HTTP response envelope (`ApiResponse<T>`) | **Inbound Adapters:** Web layer mapping HTTP requests to application commands and queries. |
 
 ---
 
 ## 🌟 Key Technical Highlights
 
-- **Zero Overbooking Guarantee (Distributed Locking):** Uses **Redisson Distributed Locks** (`RLock`) with automatic 10-minute lease management to enforce atomic, mutex-controlled seat holding across concurrent users.
-- **Sub-20ms Catalog Latency (Cache-Aside Pattern):** High-throughput trip queries backed by Redis caching with localized TTL eviction, absorbing over 90% of read traffic during peak spikes.
-- **Strict Ticket Lifecycle (Finite State Machine):** Implemented an in-domain FSM managing deterministic state transitions (`PENDING` $\to$ `HELD` $\to$ `CONFIRMED` / `CANCELLED` / `EXPIRED`).
-- **Cryptographic & Idempotent Payment Flow:** Integrated payment processing featuring **HMAC-SHA512** signature verification and idempotent webhook/IPN handling.
-- **Java 21 Virtual Threads (Project Loom):** Leveraged lightweight fibers for non-blocking I/O operations, maximizing throughput with negligible memory overhead.
+1. **Zero Overbooking Guarantee (Distributed Locking & Owner-Token Pattern):**
+   - Combines **Redisson Distributed Locks** and **Owner-Token Lua CAS** (`setIfAbsent(ownerToken, ttl)`) outside DB transactions to prevent lock-stealing and eliminate deadlocks during flash-sale spikes.
+2. **Sub-20ms Catalog Latency (Cache-Aside with Non-blocking SCAN/UNLINK):**
+   - High-throughput trip search backed by Redis caching. Eviction executes asynchronously in `TransactionSynchronization.afterCommit()` via `SCAN` + `UNLINK` to eliminate Redis single-thread blocking.
+3. **Multi-Tenant Operator Marketplace & IDOR Elimination (ADR-16):**
+   - Bus operators (`ROLE_OPERATOR`) register and manage their own fleets, seat layouts, drivers, and trip schedules.
+   - Enforces strict multi-tenancy: every mutation validates tenant ownership via `findByIdAndOperatorId(id, operatorId)` derived from verified JWT principals.
+4. **2-Tier Commission Engine & Automated Escrow Settlement (ADR-13, 14, 15):**
+   - **2-Tier Commission:** Platform-wide default commission (e.g., 10%) with per-operator custom override (e.g., 7% for VIP operators), snapshotted upon booking payment.
+   - **Escrow Wallet (4 Balances):** `pending_balance`, `available_balance`, `locked_balance`, `debt_balance`.
+   - **Atomic Check-and-Set Settlement:** `EscrowSettlementScheduler` executes periodic settlement (+2h post-departure) using database-level CAS (`UPDATE trips SET settlement_status = 'SETTLED' WHERE id = :id AND settlement_status = 'UNSETTLED'`), eliminating race conditions across multiple scheduler replicas.
+   - **Debt Protection:** Late refunds trigger automatic debt tracking and prevent withdrawals until debts are cleared.
+5. **Turnaround Buffer Safety Guardrail (LSN-14):**
+   - Prevents cascading trip delays by enforcing a strict **30-minute vehicle turnaround buffer** between consecutive departures.
+6. **Multi-Channel Notification Architecture (Virtual Threads & Event-Driven):**
+   - **Telegram Bot:** Multi-role bot supporting secure OTP linking (Atomic Redis `GETDEL`), public ticket lookup (`/ve`), and admin alerts.
+   - **Cryptographic E-Ticket QR:** Generates Base64 QR codes signed via **HMAC-SHA256** (`v1|ref|tripId|hash`) for offline ticket validation.
+   - **Non-blocking Dispatch:** Dispatched via Java 21 **Virtual Threads** (`Executors.newVirtualThreadPerTaskExecutor()`) to decouple network latency from core transactions.
+7. **Idempotent Payment & Webhook Processing (ADR-07, ADR-08):**
+   - VNPay v2.1.0 gateway integration with strict HMAC-SHA512 ASCII sorting and timing-safe signature verification (`MessageDigest.isEqual`).
 
 ---
 
-## 📁 Project Structure (Modular Monolith)
+## 📁 Modular Monolith Architecture (33 Modules)
 
 ```text
 ticket-booking/
-├── environment/                         # Containerized Infrastructure (Docker Compose)
+├── environment/                         # Containerized Local Infrastructure
 │   ├── docker-compose.yml               # MySQL 8.4 LTS (Port 3307) + Redis 7.2 (Port 6379)
-│   └── init.sql                         # Schema DDL, constraints & seed data
+│   └── init.sql                         # Database DDL, composite indexes & initial seed data
 │
-├── shared-kernel/                       # Shared domain primitives (BaseEntity, ApiResponse, DistributedLock)
+├── shared-kernel/                       # Shared domain primitives & integration events
+│   ├── BaseEntity, ApiResponse, DistributedLockPort
+│   └── Integration Events (PaymentConfirmedEvent, BookingRefundedEvent, etc.)
 │
 ├── context-identity/                    # BOUNDED CONTEXT 1: Identity & Access Management (IAM)
-│   ├── identity-domain/                 # User Aggregate, UserStatus, Repository Port
-│   ├── identity-application/            # LoginUseCase, RegisterUseCase, Request/Response DTOs
-│   ├── identity-infrastructure/         # Spring Security, Stateless JWT Provider, JPA Adapter
-│   └── identity-presentation/           # REST Controllers (/api/v1/auth)
+│   ├── identity-domain/                 # User Aggregate, UserRole, UserStatus, Repository Port
+│   ├── identity-application/            # LoginUseCase, RegisterUseCase, Profile Management
+│   ├── identity-infrastructure/         # Spring Security 6, Stateless JJWT, BCrypt, JPA Adapter
+│   └── identity-presentation/           # REST Controllers (/api/v1/auth, /api/v1/users)
 │
-├── context-catalog/                     # BOUNDED CONTEXT 2: Trips & Seat Layout
-│   ├── catalog-domain/                  # Trip Aggregate, Station, Seat, Repository Port
-│   ├── catalog-application/             # SearchTripsUseCase, TripDto
-│   ├── catalog-infrastructure/          # Redis Cache-Aside Service, JPA Adapter
+├── context-catalog/                     # BOUNDED CONTEXT 2: Trips, Routes & Fleet Catalog
+│   ├── catalog-domain/                  # Trip Aggregate, Station, Seat, Pricing Policy
+│   ├── catalog-application/             # SearchTripsUseCase, AdminTripService
+│   ├── catalog-infrastructure/          # Redis Cache-Aside Adapter, Spring Data JPA
 │   └── catalog-presentation/            # REST Controllers (/api/v1/catalog)
 │
-├── context-booking/                     # BOUNDED CONTEXT 3: Reservation & Concurrency Control
-│   ├── booking-domain/                  # Booking Aggregate Root, Enums, Booking FSM
-│   ├── booking-application/             # HoldSeatUseCase, CancelBookingUseCase, Listeners
-│   ├── booking-infrastructure/          # Redisson Distributed Lock Adapter, JPA Adapter
+├── context-booking/                     # BOUNDED CONTEXT 3: Reservation & Distributed Concurrency
+│   ├── booking-domain/                  # Booking Aggregate Root, Booking FSM, SeatHoldingInvariants
+│   ├── booking-application/             # HoldSeatUseCase, ConfirmBookingUseCase, CancelBookingUseCase
+│   ├── booking-infrastructure/          # Redisson Distributed Lock Adapter, Spring Data JPA
 │   └── booking-presentation/            # REST Controllers (/api/v1/bookings)
 │
-├── context-payment/                     # BOUNDED CONTEXT 4: Financial Transactions
+├── context-payment/                     # BOUNDED CONTEXT 4: Financial Transactions & Gateways
 │   ├── payment-domain/                  # Payment Aggregate, PaymentStatus, PaymentMethod
-│   ├── payment-application/             # CreatePaymentUseCase, CallbackUseCase
-│   ├── payment-infrastructure/          # HMAC-SHA512 Util, VNPay Sandbox Gateway Adapter
+│   ├── payment-application/             # CreatePaymentUseCase, ProcessIpnUseCase, AdminRefundService
+│   ├── payment-infrastructure/          # VNPay HMAC-SHA512 Adapter, Webhook Idempotency Guard
 │   └── payment-presentation/            # Payment & Webhook Controllers (/api/v1/payments)
+│
+├── context-notification/                # BOUNDED CONTEXT 5: Multi-Channel Event Notification
+│   ├── notification-domain/             # Notification Aggregate, NotificationChannel, TelegramAccount
+│   ├── notification-application/        # SendNotificationUseCase, TelegramBotUseCase, OtpService
+│   ├── notification-infrastructure/     # Virtual Threads Executor, SMTP, Telegram API, ZXing QR
+│   └── notification-presentation/       # Notification & Telegram Webhook Controllers (/api/v1/notifications)
+│
+├── context-partner/                     # BOUNDED CONTEXT 6: Multi-Tenant Marketplace & Escrow
+│   ├── partner-domain/                  # BusOperator, Vehicle, Driver, OperatorWallet, Banner
+│   ├── partner-application/             # PartnerCommandService, PartnerAdminService, Escrow Logic
+│   ├── partner-infrastructure/          # EscrowSettlementScheduler, Atomic CAS Repositories, JPA
+│   └── partner-presentation/            # Partner, Admin & Public REST Controllers (/api/v1/partners, /api/v1/public)
 │
 └── ticket-start/                        # RUNNABLE SPRING BOOT ENTRYPOINT
     ├── pom.xml                          # Assembly & Spring Boot repackage plugin
     └── src/main/
         ├── java/com/ticket/
-        │   ├── TicketApplication.java   # Spring Boot Main Application
-        │   └── config/                  # RedissonConfig, GlobalExceptionHandler
+        │   ├── TicketApplication.java   # Main entry point
+        │   ├── adapter/                 # Cross-context hexagonal port adapters
+        │   └── config/                  # GlobalExceptionHandler, SecurityConfig, RedissonConfig
         └── resources/                   # application.yml, application-dev.yml
 ```
 
 ---
 
-## ⚡ Concurrency & State Machine Workflow
+## ⚡ Concurrency & State Machine Workflows
 
-### 1. Atomic Seat Holding (Redisson Lock Flow)
+### 1. Two-Tier Distributed Seat Holding Flow
 ```
 User Request ──► BookingController ──► HoldSeatUseCase
                                              │
                ┌─────────────────────────────┴─────────────────────────────┐
                ▼                                                           ▼
-    Acquire Redis Lock Key                                      Lock Already Taken?
-    "lock:seat:{tripId}:{seatNum}"                                         │
-    (TTL: 10 mins, Wait: 2s)                                               │
+     Acquire Redisson Mutex Key                                 Lock Already Taken?
+     "lock:seat:{tripId}:{seatNum}"                                         │
+     (TTL: 10 mins, Wait: 2s)                                               │
                │                                                           ▼
                ├────────► Success ──► Create Booking (HELD) ──► 200 OK  400 Bad Request
-               │                                                        (SEAT_ALREADY_RESERVED)
+               │                      Dispatches SeatHeldEvent          (SEAT_ALREADY_RESERVED)
                └────────► Timeout / Failure ──► Auto-Release Key
 ```
 
-### 2. Deterministic Booking FSM
+### 2. Complete Booking Lifecycle (Deterministic FSM)
 ```
-  [PENDING] ────► acquireLocks() ────► [ HELD ] ────► Webhook (Success) ────► [ CONFIRMED ]
-      │                                    │
-      └─────────► Cancel / Fail            ├────────► Manual Cancel ────────► [ CANCELLED ]
-                       │                   │
-                       ▼                   └────────► 10m TTL Timeout ──────► [ EXPIRED ]
-                  [TERMINATED]
+  [PENDING] ────► acquireLocks() ────► [ HELD ] ────► IPN Webhook (Success) ────► [ CONFIRMED ]
+      │                                    │                                           │
+      └─────────► Cancel / Fail            ├────────► Manual Cancel ──► [ CANCELLED ]  ├─► Admin Refund
+                       │                   │                                           │         │
+                       ▼                   └────────► 10m TTL Timeout ─► [ EXPIRED ]   ▼         ▼
+                  [TERMINATED]                                                        [ REFUNDED ]
+```
+
+### 3. Escrow Settlement & Wallet Flow
+```
+Passenger Purchases Ticket
+       │
+       ▼
+PaymentConfirmedEvent ──► Credit Pending Balance (Gross - Commission Rate snapshot)
+       │
+       ▼
+Trip Departs ──► +2 Hours Passed
+       │
+       ▼
+EscrowSettlementScheduler (Atomic DB CAS Update)
+       │
+       ├─► CAS Succeeded (First replica) ──► Settle Pending to Available Balance
+       │                                      (Auto-deduct debtBalance if present)
+       └─► CAS Failed (Subsequent replicas) ──► Skip (Double-settlement avoided)
 ```
 
 ---
@@ -132,24 +181,25 @@ User Request ──► BookingController ──► HoldSeatUseCase
 
 | Domain | Technologies |
 | :--- | :--- |
-| **Language & Platform** | Java 21 (LTS), Virtual Threads (Project Loom) |
-| **Frameworks** | Spring Boot 3.4.1, Spring Data JPA, Spring Security 6 |
-| **Distributed Systems** | Redis 7.2, Redisson 3.40 (Distributed Locks & In-Memory Cache) |
-| **Database** | MySQL 8.4 LTS, HikariCP Connection Pooling |
-| **Security & Auth** | JSON Web Tokens (JJWT 0.12), BCrypt Password Hashing, HMAC-SHA512 |
-| **DevOps & Testing** | Docker, Docker Compose, JUnit 5, Mockito |
+| **Language & Runtime** | **Java 21 LTS**, Virtual Threads (Project Loom) |
+| **Frameworks** | **Spring Boot 3.4.1**, Spring Data JPA, Spring Security 6 |
+| **Distributed Systems & Cache** | **Redis 7.2**, **Redisson 3.40** (Distributed Locks & In-Memory Caching) |
+| **Relational Database** | **MySQL 8.4 LTS**, HikariCP Connection Pooling |
+| **Security & Cryptography** | JJWT 0.12, BCrypt, HMAC-SHA512 (VNPay), HMAC-SHA256 (Signed QR) |
+| **Integrations** | VNPay Gateway, Telegram Bot API, ZXing QR Generator, Jakarta Mail |
+| **Testing & Quality** | JUnit 5, Mockito, AssertJ, Spring MockMvc, Postman / Newman E2E |
 
 ---
 
 ## 🚀 Quick Start Guide
 
 ### Prerequisites
-- **JDK 21** or later installed
+- **JDK 21** installed and configured in `JAVA_HOME`
 - **Apache Maven 3.8+**
 - **Docker & Docker Compose**
 
 ### 1. Launch Infrastructure (Docker)
-Start isolated instances of MySQL 8.4 and Redis 7.2:
+Start containerized instances of MySQL 8.4 and Redis 7.2:
 ```bash
 cd environment
 docker compose up -d
@@ -158,14 +208,14 @@ docker compose up -d
 > - **MySQL 8.4:** `localhost:3307` | Database: `ticket_booking_db` | User: `ticket_user` | Pass: `ticket_password`
 > - **Redis 7.2:** `localhost:6379` | Auth: *Disabled (Default)*
 
-### 2. Build & Install Multi-Module Dependencies
-Return to project root and compile all 23 submodules:
+### 2. Build & Verify All 33 Modules
+Compile the multi-module reactor and run the complete test suite (209 automated tests):
 ```bash
-mvn clean install -DskipTests
+mvn clean test
 ```
 
 ### 3. Run Application
-Run the executable package from `ticket-start`:
+Start the application from the entrypoint module `ticket-start`:
 ```bash
 mvn spring-boot:run -pl ticket-start
 ```
@@ -173,47 +223,83 @@ The application will boot and bind to **`http://localhost:8080`**.
 
 ---
 
+## 👥 Seed Accounts for Testing
+
+The system seeds ready-to-test accounts upon initialization:
+
+| Role | Username | Password | Access Capabilities |
+| :--- | :--- | :--- | :--- |
+| **Platform Admin** | `admin` | `admin_dev_password` | Full governance, commission overrides, withdrawal approvals, banner reviews |
+| **Bus Operator** | `operator1` | `operator_dev_password` | Fleet management, seat layout, vehicle turnaround scheduling, wallet withdrawals |
+| **Customer** | `customer1` | `customer_dev_password` | Trip search, seat reservation, payment, personal booking management |
+
+---
+
 ## 📡 API Verification (cURL Snippets)
 
-### 1. Health & Discovery
+### 1. User Authentication (JWT Login)
 ```bash
-curl -X GET http://localhost:8080/api/v1/auth
-```
-
-### 2. User Registration (JWT Issuance)
-```bash
-curl -X POST http://localhost:8080/api/v1/auth/register \
+curl -X POST http://localhost:8080/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{
-    "username": "candidate_test",
-    "email": "candidate@techlead.com",
-    "password": "sample_dev_password",
-    "fullName": "Senior Backend Candidate"
+    "username": "customer1",
+    "password": "customer_dev_password"
   }'
 ```
 
-### 3. Catalog Trip Search (Redis Cached)
+### 2. Search Trips (Redis Cached)
 ```bash
 curl -X GET "http://localhost:8080/api/v1/catalog/trips"
 ```
 
-### 4. Concurrent Seat Hold (10-minute Mutex Lock)
+### 3. Concurrent Seat Hold (10-minute Distributed Mutex)
 ```bash
 curl -X POST http://localhost:8080/api/v1/bookings/hold \
+  -H "Authorization: Bearer <CUSTOMER_JWT_TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{
-    "userId": 1,
     "tripId": 1,
     "seatNumbers": ["12A", "12B"]
   }'
 ```
 
+### 4. Operator Fleet Registration (Multi-Tenant)
+```bash
+curl -X POST http://localhost:8080/api/v1/partners/vehicles \
+  -H "Authorization: Bearer <OPERATOR_JWT_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "plateNumber": "29B-999.88",
+    "model": "Hyundai Universe Limousine",
+    "vehicleType": "LIMOUSINE",
+    "totalSeats": 34
+  }'
+```
+
+### 5. Operator Withdrawal Request (Escrow Wallet)
+```bash
+curl -X POST http://localhost:8080/api/v1/partners/wallet/withdraw \
+  -H "Authorization: Bearer <OPERATOR_JWT_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "amount": 5000000,
+    "bankName": "Vietcombank",
+    "accountNumber": "0011001234567",
+    "accountHolder": "CONG TY TNHH VAN TAI PHUONG TRANG"
+  }'
+```
+
 ---
 
-## 📚 Technical Documentation Index
+## 📚 Postman Collection & Documentation Index
 
-Detailed architectural blueprints and domain specifications are categorized into hierarchical topics in the [`docs/`](docs/) directory:
+### Automated API Test Suite
+Import the comprehensive Postman Collection:
+👉 **[`docs/ticket-booking-postman-collection.json`](docs/ticket-booking-postman-collection.json)**
+- **7 Test Folders** covering all Bounded Contexts.
+- Includes dynamic environment variable extractions and embedded `pm.test` assertions for end-to-end verification.
 
+### Technical Blueprint Documentation
 | Topic & Directory | Core Coverage & Specification Files |
 | :--- | :--- |
 | **[01-business-requirements/](docs/01-business-requirements/)** | **PRD & Scope:** Core problem statement, bounded contexts ([Overview](docs/01-business-requirements/01.overview-and-scope.md), [IAM](docs/01-business-requirements/02.identity-and-access.md), [Catalog](docs/01-business-requirements/03.catalog-and-caching.md), [Booking](docs/01-business-requirements/04.booking-and-concurrency.md), [Payment](docs/01-business-requirements/05.payment-and-integration.md)). |
@@ -224,7 +310,7 @@ Detailed architectural blueprints and domain specifications are categorized into
 
 ---
 
-## 👤 Author & Portfolio
+## 👤 Author & Engineering Focus
 - **Role:** Backend Developer
-- **Focus:** Distributed Systems, High Concurrency, Modular Architectures, Clean Code
-- **License:** Open for technical evaluation and recruitment review.
+- **Technical Expertise:** Distributed Systems, High-Concurrency Concurrency Controls, Hexagonal / Clean Architecture, Domain-Driven Design, Java 21 / Spring Boot.
+- **License:** Open for technical evaluation, code review, and engineering recruitment.
