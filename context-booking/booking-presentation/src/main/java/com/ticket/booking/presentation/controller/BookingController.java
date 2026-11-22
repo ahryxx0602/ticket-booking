@@ -3,30 +3,74 @@ package com.ticket.booking.presentation.controller;
 import com.ticket.booking.application.dto.BookingResponse;
 import com.ticket.booking.application.dto.HoldSeatCommand;
 import com.ticket.booking.application.usecase.CancelBookingUseCase;
+import com.ticket.booking.application.usecase.GetBookingDetailUseCase;
+import com.ticket.booking.application.usecase.GetMyBookingsUseCase;
 import com.ticket.booking.application.usecase.HoldSeatUseCase;
 import com.ticket.shared.dto.ApiResponse;
+import com.ticket.shared.dto.PageResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.security.Principal;
 
 @RestController
 @RequestMapping("/api/v1/bookings")
 @RequiredArgsConstructor
+@PreAuthorize("hasRole('CUSTOMER')")
 public class BookingController {
 
     private final HoldSeatUseCase holdSeatUseCase;
     private final CancelBookingUseCase cancelBookingUseCase;
+    private final GetMyBookingsUseCase getMyBookingsUseCase;
+    private final GetBookingDetailUseCase getBookingDetailUseCase;
 
     @PostMapping("/hold")
-    public ResponseEntity<ApiResponse<BookingResponse>> holdSeats(@Valid @RequestBody HoldSeatCommand command) {
-        BookingResponse response = holdSeatUseCase.execute(command);
+    public ResponseEntity<ApiResponse<BookingResponse>> holdSeats(
+            @Valid @RequestBody HoldSeatCommand command,
+            Principal principal) {
+        BookingResponse response = holdSeatUseCase.execute(command, requireUsername(principal));
         return ResponseEntity.ok(ApiResponse.ok("Seats held successfully for 10 minutes", response));
     }
 
     @PostMapping("/{bookingReference}/cancel")
-    public ResponseEntity<ApiResponse<Void>> cancelBooking(@PathVariable String bookingReference) {
-        cancelBookingUseCase.execute(bookingReference);
+    public ResponseEntity<ApiResponse<Void>> cancelBooking(
+            @PathVariable String bookingReference,
+            Principal principal) {
+        cancelBookingUseCase.execute(bookingReference, requireUsername(principal));
         return ResponseEntity.ok(ApiResponse.ok("Booking cancelled successfully", null));
+    }
+
+    @GetMapping("/my-bookings")
+    public ResponseEntity<ApiResponse<PageResponse<BookingResponse>>> getMyBookings(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            Principal principal) {
+        PageResponse<BookingResponse> response = getMyBookingsUseCase.execute(requireUsername(principal), page, size);
+        return ResponseEntity.ok(ApiResponse.ok("Bookings retrieved successfully", response));
+    }
+
+    @GetMapping("/{bookingReference}")
+    public ResponseEntity<ApiResponse<BookingResponse>> getBookingDetail(
+            @PathVariable String bookingReference,
+            Principal principal) {
+        BookingResponse response = getBookingDetailUseCase.execute(bookingReference, requireUsername(principal));
+        return ResponseEntity.ok(ApiResponse.ok("Booking details retrieved successfully", response));
+    }
+
+    private String requireUsername(Principal principal) {
+        if (principal == null || principal.getName() == null || principal.getName().isBlank()) {
+            throw new AccessDeniedException("Authentication is required");
+        }
+        return principal.getName();
     }
 }

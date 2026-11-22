@@ -44,6 +44,15 @@ public class PaymentJpaEntity {
     @Column(name = "payment_time")
     private LocalDateTime paymentTime;
 
+    @Column(name = "refund_amount", precision = 12, scale = 2)
+    private BigDecimal refundAmount;
+
+    @Column(name = "refund_reason", length = 255)
+    private String refundReason;
+
+    @Column(name = "refunded_at")
+    private LocalDateTime refundedAt;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 

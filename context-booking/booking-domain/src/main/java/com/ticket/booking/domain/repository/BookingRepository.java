@@ -1,10 +1,19 @@
 package com.ticket.booking.domain.repository;
 
 import com.ticket.booking.domain.model.Booking;
+import com.ticket.booking.domain.model.BookingStatus;
+import com.ticket.shared.dto.PageResponse;
+
+import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.Set;
 
 public interface BookingRepository {
     Optional<Booking> findById(Long id);
     Optional<Booking> findByReference(String bookingReference);
+    Optional<Booking> findByReferenceForUpdate(String bookingReference);
+    Set<String> findActiveBookedSeatNumbers(Long tripId, LocalDateTime now);
+    PageResponse<Booking> findByUserId(Long userId, int page, int size);
+    PageResponse<Booking> findAllWithFilters(BookingStatus status, Long tripId, Long userId, int page, int size);
     Booking save(Booking booking);
 }

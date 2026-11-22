@@ -1,12 +1,66 @@
 package com.ticket.booking.infrastructure.persistence.repository;
 
+import com.ticket.booking.domain.model.BookingStatus;
 import com.ticket.booking.infrastructure.persistence.entity.BookingJpaEntity;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Repository
 public interface SpringDataBookingRepository extends JpaRepository<BookingJpaEntity, Long> {
-    Optional<BookingJpaEntity> findByBookingReference(String bookingReference);
+
+    @Query("SELECT DISTINCT b FROM BookingJpaEntity b LEFT JOIN FETCH b.items WHERE b.id = :id")
+    Optional<BookingJpaEntity> findByIdWithItems(@Param("id") Long id);
+
+    @Query("SELECT DISTINCT b FROM BookingJpaEntity b LEFT JOIN FETCH b.items WHERE b.bookingReference = :bookingReference")
+    Optional<BookingJpaEntity> findByBookingReferenceWithItems(@Param("bookingReference") String bookingReference);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT DISTINCT b FROM BookingJpaEntity b LEFT JOIN FETCH b.items WHERE b.bookingReference = :bookingReference")
+    Optional<BookingJpaEntity> findByBookingReferenceForUpdate(@Param("bookingReference") String bookingReference);
+
+    @Query("""
+            SELECT DISTINCT i.seatNumber
+            FROM BookingItemJpaEntity i
+            JOIN i.booking b
+            WHERE b.tripId = :tripId
+              AND (b.status = com.ticket.booking.domain.model.BookingStatus.CONFIRMED
+                   OR (b.status = com.ticket.booking.domain.model.BookingStatus.HELD AND b.expiresAt > :now))
+            """)
+    Set<String> findActiveBookedSeatNumbers(@Param("tripId") Long tripId, @Param("now") LocalDateTime now);
+
+    @Query(value = "SELECT b.id FROM BookingJpaEntity b WHERE b.userId = :userId ORDER BY b.createdAt DESC, b.id DESC",
+           countQuery = "SELECT COUNT(b.id) FROM BookingJpaEntity b WHERE b.userId = :userId")
+    Page<Long> findIdsByUserId(@Param("userId") Long userId, Pageable pageable);
+
+    @Query(value = """
+            SELECT b.id FROM BookingJpaEntity b
+            WHERE (:status IS NULL OR b.status = :status)
+              AND (:tripId IS NULL OR b.tripId = :tripId)
+              AND (:userId IS NULL OR b.userId = :userId)
+            ORDER BY b.createdAt DESC, b.id DESC
+            """,
+           countQuery = """
+            SELECT COUNT(b.id) FROM BookingJpaEntity b
+            WHERE (:status IS NULL OR b.status = :status)
+              AND (:tripId IS NULL OR b.tripId = :tripId)
+              AND (:userId IS NULL OR b.userId = :userId)
+            """)
+    Page<Long> findIdsWithFilters(@Param("status") BookingStatus status,
+                                  @Param("tripId") Long tripId,
+                                  @Param("userId") Long userId,
+                                  Pageable pageable);
+
+    @Query("SELECT DISTINCT b FROM BookingJpaEntity b LEFT JOIN FETCH b.items WHERE b.id IN :ids")
+    List<BookingJpaEntity> findAllByIdInWithItems(@Param("ids") List<Long> ids);
 }

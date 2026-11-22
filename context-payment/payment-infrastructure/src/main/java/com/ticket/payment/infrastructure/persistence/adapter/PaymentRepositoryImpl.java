@@ -1,6 +1,7 @@
 package com.ticket.payment.infrastructure.persistence.adapter;
 
 import com.ticket.payment.domain.model.Payment;
+import com.ticket.payment.domain.model.PaymentStatus;
 import com.ticket.payment.domain.repository.PaymentRepository;
 import com.ticket.payment.infrastructure.persistence.entity.PaymentJpaEntity;
 import com.ticket.payment.infrastructure.persistence.repository.SpringDataPaymentRepository;
@@ -26,6 +27,11 @@ public class PaymentRepositoryImpl implements PaymentRepository {
     }
 
     @Override
+    public Optional<Payment> findFirstByBookingIdAndStatusOrderByIdDesc(Long bookingId, PaymentStatus status) {
+        return springDataPaymentRepository.findFirstByBookingIdAndStatusOrderByIdDesc(bookingId, status).map(this::toDomain);
+    }
+
+    @Override
     public Payment save(Payment payment) {
         PaymentJpaEntity entity = toEntity(payment);
         PaymentJpaEntity saved = springDataPaymentRepository.save(entity);
@@ -43,6 +49,9 @@ public class PaymentRepositoryImpl implements PaymentRepository {
                 .transactionId(entity.getTransactionId())
                 .status(entity.getStatus())
                 .paymentTime(entity.getPaymentTime())
+                .refundAmount(entity.getRefundAmount())
+                .refundReason(entity.getRefundReason())
+                .refundedAt(entity.getRefundedAt())
                 .build();
         p.setCreatedAt(entity.getCreatedAt());
         p.setUpdatedAt(entity.getUpdatedAt());
@@ -60,6 +69,9 @@ public class PaymentRepositoryImpl implements PaymentRepository {
         entity.setTransactionId(payment.getTransactionId());
         entity.setStatus(payment.getStatus());
         entity.setPaymentTime(payment.getPaymentTime());
+        entity.setRefundAmount(payment.getRefundAmount());
+        entity.setRefundReason(payment.getRefundReason());
+        entity.setRefundedAt(payment.getRefundedAt());
         return entity;
     }
 }

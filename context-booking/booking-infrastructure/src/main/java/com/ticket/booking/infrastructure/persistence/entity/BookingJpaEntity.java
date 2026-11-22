@@ -38,6 +38,10 @@ public class BookingJpaEntity {
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
 
+    @Version
+    @Column(nullable = false)
+    private Long version = 0L;
+
     @OneToMany(mappedBy = "booking", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<BookingItemJpaEntity> items = new ArrayList<>();
 

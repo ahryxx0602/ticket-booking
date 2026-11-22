@@ -46,7 +46,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
 
                 // 3. Customer Role APIs
-                .requestMatchers("/api/v1/bookings/**").hasAnyRole("CUSTOMER", "ADMIN")
+                .requestMatchers("/api/v1/bookings/**").hasRole("CUSTOMER")
                 .requestMatchers("/api/v1/payments/checkout").hasAnyRole("CUSTOMER", "ADMIN")
 
                 // 4. Any other requests require authentication

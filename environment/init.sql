@@ -61,10 +61,12 @@ CREATE TABLE IF NOT EXISTS bookings (
     status VARCHAR(20) NOT NULL DEFAULT 'PENDING', -- PENDING, HELD, CONFIRMED, CANCELLED, EXPIRED
     total_amount DECIMAL(12,2) NOT NULL,
     expires_at DATETIME NOT NULL,
+    version BIGINT NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_booking_user (user_id),
-    INDEX idx_booking_ref (booking_reference)
+    INDEX idx_booking_ref (booking_reference),
+    INDEX idx_booking_trip_status_exp (trip_id, status, expires_at)
 );
 
 CREATE TABLE IF NOT EXISTS booking_items (
@@ -85,8 +87,11 @@ CREATE TABLE IF NOT EXISTS payments (
     currency VARCHAR(10) NOT NULL DEFAULT 'VND',
     payment_method VARCHAR(20) NOT NULL, -- VNPAY, MOMO
     transaction_id VARCHAR(100),
-    status VARCHAR(20) NOT NULL DEFAULT 'PENDING', -- PENDING, SUCCESS, FAILED
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING', -- PENDING, SUCCESS, FAILED, REFUNDED
     payment_time DATETIME,
+    refund_amount DECIMAL(12,2),
+    refund_reason VARCHAR(255),
+    refunded_at DATETIME,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_pay_booking (booking_id)

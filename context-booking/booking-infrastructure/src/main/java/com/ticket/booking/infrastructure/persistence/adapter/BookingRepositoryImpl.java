@@ -2,14 +2,27 @@ package com.ticket.booking.infrastructure.persistence.adapter;
 
 import com.ticket.booking.domain.model.Booking;
 import com.ticket.booking.domain.model.BookingItem;
+import com.ticket.booking.domain.model.BookingStatus;
 import com.ticket.booking.domain.repository.BookingRepository;
 import com.ticket.booking.infrastructure.persistence.entity.BookingItemJpaEntity;
 import com.ticket.booking.infrastructure.persistence.entity.BookingJpaEntity;
 import com.ticket.booking.infrastructure.persistence.repository.SpringDataBookingRepository;
+import com.ticket.shared.dto.PageResponse;
+import com.ticket.shared.exception.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Component
@@ -20,19 +33,76 @@ public class BookingRepositoryImpl implements BookingRepository {
 
     @Override
     public Optional<Booking> findById(Long id) {
-        return springDataBookingRepository.findById(id).map(this::toDomain);
+        return springDataBookingRepository.findByIdWithItems(id).map(this::toDomain);
     }
 
     @Override
     public Optional<Booking> findByReference(String bookingReference) {
-        return springDataBookingRepository.findByBookingReference(bookingReference).map(this::toDomain);
+        return springDataBookingRepository.findByBookingReferenceWithItems(bookingReference).map(this::toDomain);
+    }
+
+    @Override
+    public Optional<Booking> findByReferenceForUpdate(String bookingReference) {
+        return springDataBookingRepository.findByBookingReferenceForUpdate(bookingReference).map(this::toDomain);
+    }
+
+    @Override
+    public Set<String> findActiveBookedSeatNumbers(Long tripId, LocalDateTime now) {
+        return springDataBookingRepository.findActiveBookedSeatNumbers(tripId, now);
+    }
+
+    @Override
+    public PageResponse<Booking> findByUserId(Long userId, int page, int size) {
+        Page<Long> idPage = springDataBookingRepository.findIdsByUserId(userId, PageRequest.of(page, size));
+        return toPageResponse(idPage);
+    }
+
+    @Override
+    public PageResponse<Booking> findAllWithFilters(BookingStatus status, Long tripId, Long userId, int page, int size) {
+        Page<Long> idPage = springDataBookingRepository.findIdsWithFilters(status, tripId, userId, PageRequest.of(page, size));
+        return toPageResponse(idPage);
     }
 
     @Override
     public Booking save(Booking booking) {
-        BookingJpaEntity entity = toEntity(booking);
+        BookingJpaEntity entity;
+        if (booking.getId() != null) {
+            entity = springDataBookingRepository.findByIdWithItems(booking.getId())
+                    .orElseThrow(() -> new EntityNotFoundException("Booking", booking.getId()));
+            if (booking.getVersion() != null && !booking.getVersion().equals(entity.getVersion())) {
+                throw new ObjectOptimisticLockingFailureException(BookingJpaEntity.class, booking.getId());
+            }
+            entity.setStatus(booking.getStatus());
+            entity.setTotalAmount(booking.getTotalAmount());
+            entity.setExpiresAt(booking.getExpiresAt());
+        } else {
+            entity = toNewEntity(booking);
+        }
         BookingJpaEntity saved = springDataBookingRepository.save(entity);
         return toDomain(saved);
+    }
+
+    private PageResponse<Booking> toPageResponse(Page<Long> idPage) {
+        List<Long> ids = idPage.getContent();
+        List<Booking> items = Collections.emptyList();
+        if (!ids.isEmpty()) {
+            Map<Long, BookingJpaEntity> byId = springDataBookingRepository.findAllByIdInWithItems(ids).stream()
+                    .collect(Collectors.toMap(BookingJpaEntity::getId, Function.identity()));
+            items = ids.stream()
+                    .map(byId::get)
+                    .filter(Objects::nonNull)
+                    .map(this::toDomain)
+                    .toList();
+        }
+        return PageResponse.<Booking>builder()
+                .items(items)
+                .page(idPage.getNumber())
+                .size(idPage.getSize())
+                .totalElements(idPage.getTotalElements())
+                .totalPages(idPage.getTotalPages())
+                .hasNext(idPage.hasNext())
+                .hasPrevious(idPage.hasPrevious())
+                .build();
     }
 
     private Booking toDomain(BookingJpaEntity entity) {
@@ -44,6 +114,7 @@ public class BookingRepositoryImpl implements BookingRepository {
                 .status(entity.getStatus())
                 .totalAmount(entity.getTotalAmount())
                 .expiresAt(entity.getExpiresAt())
+                .version(entity.getVersion())
                 .items(entity.getItems().stream().map(i -> BookingItem.builder()
                         .id(i.getId())
                         .seatId(i.getSeatId())
@@ -57,22 +128,25 @@ public class BookingRepositoryImpl implements BookingRepository {
         return b;
     }
 
-    private BookingJpaEntity toEntity(Booking booking) {
+    private BookingJpaEntity toNewEntity(Booking booking) {
         BookingJpaEntity entity = new BookingJpaEntity();
-        entity.setId(booking.getId());
         entity.setBookingReference(booking.getBookingReference());
         entity.setUserId(booking.getUserId());
         entity.setTripId(booking.getTripId());
         entity.setStatus(booking.getStatus());
         entity.setTotalAmount(booking.getTotalAmount());
         entity.setExpiresAt(booking.getExpiresAt());
+        entity.setVersion(booking.getVersion() != null ? booking.getVersion() : 0L);
 
         if (booking.getItems() != null) {
             entity.setItems(booking.getItems().stream().map(i -> {
+                if (i.getSeatId() == null || i.getSeatId() <= 0) {
+                    throw new IllegalStateException("BookingItem seatId must be a valid positive seat ID");
+                }
                 BookingItemJpaEntity itemEntity = new BookingItemJpaEntity();
                 itemEntity.setId(i.getId());
                 itemEntity.setBooking(entity);
-                itemEntity.setSeatId(i.getSeatId() != null ? i.getSeatId() : 0L);
+                itemEntity.setSeatId(i.getSeatId());
                 itemEntity.setSeatNumber(i.getSeatNumber());
                 itemEntity.setPrice(i.getPrice());
                 return itemEntity;

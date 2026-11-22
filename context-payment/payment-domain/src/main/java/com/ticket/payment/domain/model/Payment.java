@@ -1,6 +1,7 @@
 package com.ticket.payment.domain.model;
 
 import com.ticket.shared.domain.BaseEntity;
+import com.ticket.shared.exception.BusinessException;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -25,6 +26,9 @@ public class Payment extends BaseEntity {
     private String transactionId;
     private PaymentStatus status;
     private LocalDateTime paymentTime;
+    private BigDecimal refundAmount;
+    private String refundReason;
+    private LocalDateTime refundedAt;
 
     public void markSuccess(String transactionId) {
         this.status = PaymentStatus.SUCCESS;
@@ -34,5 +38,22 @@ public class Payment extends BaseEntity {
 
     public void markFailed() {
         this.status = PaymentStatus.FAILED;
+    }
+
+    public void markRefunded(BigDecimal refundAmount, String reason) {
+        if (this.status != PaymentStatus.SUCCESS) {
+            throw new BusinessException("INVALID_PAYMENT_STATUS", "Only SUCCESS payments can be refunded");
+        }
+        if (refundAmount == null || refundAmount.compareTo(BigDecimal.ZERO) <= 0
+                || (this.amount != null && refundAmount.compareTo(this.amount) > 0)) {
+            throw new BusinessException("INVALID_REFUND_AMOUNT", "Refund amount must be positive and not exceed original payment amount");
+        }
+        if (reason == null || reason.isBlank()) {
+            throw new BusinessException("INVALID_REFUND_REASON", "Refund reason must not be blank");
+        }
+        this.status = PaymentStatus.REFUNDED;
+        this.refundAmount = refundAmount;
+        this.refundReason = reason.trim();
+        this.refundedAt = LocalDateTime.now();
     }
 }

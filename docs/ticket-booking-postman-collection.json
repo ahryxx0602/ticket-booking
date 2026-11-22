@@ -553,10 +553,30 @@
 			]
 		},
 		{
-			"name": "4. Booking (ROLE_CUSTOMER)",
+			"name": "4. Booking & Admin Refund (PHASE-03)",
 			"item": [
 				{
-					"name": "4.1 Hold Seat (Redisson Distributed Lock 10m)",
+					"name": "4.1 Hold Seat (Owner-Token Redis Lock 10m & Catalog Pricing)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200 OK', function () { pm.response.to.have.status(200); });",
+									"var json = pm.response.json();",
+									"pm.test('Booking is HELD with positive totalAmount', function () {",
+									"    pm.expect(json.success).to.eql(true);",
+									"    pm.expect(json.data.status).to.eql('HELD');",
+									"    pm.expect(json.data.totalAmount).to.be.above(0);",
+									"});",
+									"if (json.data && json.data.bookingReference) {",
+									"    pm.collectionVariables.set('booking_ref', json.data.bookingReference);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
 					"request": {
 						"method": "POST",
 						"header": [
@@ -571,7 +591,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"userId\": 2,\n  \"tripId\": 1,\n  \"seatNumbers\": [\"12A\", \"12B\"]\n}"
+							"raw": "{\n  \"tripId\": 1,\n  \"seatNumbers\": [\"01A\", \"02B\"]\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/api/v1/bookings/hold",
@@ -588,7 +608,112 @@
 					}
 				},
 				{
-					"name": "4.2 Customer Cancel Booking",
+					"name": "4.2 Get My Bookings (Paginated)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200 OK', function () { pm.response.to.have.status(200); });",
+									"var json = pm.response.json();",
+									"pm.test('Returns paginated booking items', function () {",
+									"    pm.expect(json.success).to.eql(true);",
+									"    pm.expect(json.data.items).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customer_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/bookings/my-bookings?page=0&size=10",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"bookings",
+								"my-bookings"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "0"
+								},
+								{
+									"key": "size",
+									"value": "10"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "4.3 Get Booking Detail by Reference",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200 OK', function () { pm.response.to.have.status(200); });",
+									"var json = pm.response.json();",
+									"pm.test('Returns booking details with items', function () {",
+									"    pm.expect(json.success).to.eql(true);",
+									"    pm.expect(json.data.items).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customer_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/bookings/{{booking_ref}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"bookings",
+								"{{booking_ref}}"
+							]
+						}
+					}
+				},
+				{
+					"name": "4.4 Customer Cancel Booking (HELD -> CANCELLED)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200 OK', function () { pm.response.to.have.status(200); });",
+									"var json = pm.response.json();",
+									"pm.test('Booking cancelled successfully', function () {",
+									"    pm.expect(json.success).to.eql(true);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
 					"request": {
 						"method": "POST",
 						"header": [
@@ -598,7 +723,7 @@
 							}
 						],
 						"url": {
-							"raw": "{{base_url}}/api/v1/bookings/550e8400-e29b-41d4-a716-446655440000/cancel",
+							"raw": "{{base_url}}/api/v1/bookings/{{booking_ref}}/cancel",
 							"host": [
 								"{{base_url}}"
 							],
@@ -606,8 +731,105 @@
 								"api",
 								"v1",
 								"bookings",
-								"550e8400-e29b-41d4-a716-446655440000",
+								"{{booking_ref}}",
 								"cancel"
+							]
+						}
+					}
+				},
+				{
+					"name": "4.5 Admin Get All Bookings (Filtered & Paginated)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200 OK', function () { pm.response.to.have.status(200); });",
+									"var json = pm.response.json();",
+									"pm.test('Admin bookings retrieved', function () {",
+									"    pm.expect(json.success).to.eql(true);",
+									"    pm.expect(json.data.items).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/bookings?page=0&size=10",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"bookings"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "0"
+								},
+								{
+									"key": "size",
+									"value": "10"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "4.6 Admin Force Cancel & Refund Booking (CONFIRMED -> CANCELLED)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Validates refund contract response', function () {",
+									"    pm.expect(pm.response.code).to.be.oneOf([200, 400]);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"Chuyến bay bị hủy do thời tiết xấu\",\n  \"refundPercentage\": 100\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/bookings/{{booking_ref}}/refund",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"bookings",
+								"{{booking_ref}}",
+								"refund"
 							]
 						}
 					}
