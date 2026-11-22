@@ -1,10 +1,14 @@
 package com.ticket.catalog.infrastructure.persistence.adapter;
 
+import com.ticket.catalog.domain.model.Seat;
 import com.ticket.catalog.domain.model.Station;
 import com.ticket.catalog.domain.model.Trip;
 import com.ticket.catalog.domain.model.TripStatus;
 import com.ticket.catalog.domain.repository.TripRepository;
+import com.ticket.catalog.infrastructure.persistence.entity.SeatJpaEntity;
 import com.ticket.catalog.infrastructure.persistence.entity.TripJpaEntity;
+import com.ticket.catalog.infrastructure.persistence.repository.SpringDataSeatRepository;
+import com.ticket.catalog.infrastructure.persistence.repository.SpringDataStationRepository;
 import com.ticket.catalog.infrastructure.persistence.repository.SpringDataTripRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -13,34 +17,93 @@ import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 @Component
 @RequiredArgsConstructor
 public class TripRepositoryImpl implements TripRepository {
 
     private final SpringDataTripRepository springDataTripRepository;
+    private final SpringDataStationRepository springDataStationRepository;
+    private final SpringDataSeatRepository springDataSeatRepository;
 
     @Override
     public Optional<Trip> findById(Long id) {
-        return springDataTripRepository.findById(id).map(this::toDomain);
+        return springDataTripRepository.findByIdWithStations(id).map(this::toDomain);
     }
 
     @Override
     public Optional<Trip> findByTripCode(String tripCode) {
-        return springDataTripRepository.findByTripCode(tripCode).map(this::toDomain);
+        return springDataTripRepository.findByTripCodeWithStations(tripCode).map(this::toDomain);
+    }
+
+    @Override
+    public boolean existsByTripCode(String tripCode) {
+        return springDataTripRepository.existsByTripCode(tripCode);
     }
 
     @Override
     public List<Trip> searchTrips(String departureCity, String arrivalCity, LocalDateTime fromTime, LocalDateTime toTime) {
         return springDataTripRepository.searchTrips(departureCity, arrivalCity, fromTime, toTime)
-                .stream().map(this::toDomain).collect(Collectors.toList());
+                .stream()
+                .map(this::toDomain)
+                .toList();
+    }
+
+    @Override
+    public List<Seat> findSeatsByTripId(Long tripId) {
+        return springDataSeatRepository.findByTripIdOrderBySeatNumberAsc(tripId)
+                .stream()
+                .map(this::toSeatDomain)
+                .toList();
     }
 
     @Override
     public Trip save(Trip trip) {
-        // Mock persistence return for skeleton
-        return trip;
+        TripJpaEntity entity = new TripJpaEntity();
+        entity.setId(trip.getId());
+        entity.setTripCode(trip.getTripCode());
+        entity.setDepartureStation(springDataStationRepository.getReferenceById(trip.getDepartureStation().getId()));
+        entity.setArrivalStation(springDataStationRepository.getReferenceById(trip.getArrivalStation().getId()));
+        entity.setDepartureTime(trip.getDepartureTime());
+        entity.setArrivalTime(trip.getArrivalTime());
+        entity.setTransportType(trip.getTransportType());
+        entity.setTotalSeats(trip.getTotalSeats());
+        entity.setBasePrice(trip.getBasePrice());
+        entity.setStatus(trip.getStatus() != null ? trip.getStatus() : TripStatus.SCHEDULED);
+
+        TripJpaEntity savedEntity = springDataTripRepository.save(entity);
+
+        if (trip.getSeats() != null && !trip.getSeats().isEmpty()
+                && !springDataSeatRepository.existsByTripId(savedEntity.getId())) {
+            List<SeatJpaEntity> seatEntities = trip.getSeats().stream()
+                    .map(seat -> {
+                        SeatJpaEntity se = new SeatJpaEntity();
+                        se.setTripId(savedEntity.getId());
+                        se.setSeatNumber(seat.getSeatNumber());
+                        se.setSeatType(seat.getSeatType());
+                        se.setPriceMultiplier(seat.getPriceMultiplier());
+                        return se;
+                    })
+                    .toList();
+            springDataSeatRepository.saveAll(seatEntities);
+        }
+
+        Trip savedDomain = Trip.builder()
+                .id(savedEntity.getId())
+                .tripCode(savedEntity.getTripCode())
+                .departureStation(trip.getDepartureStation())
+                .arrivalStation(trip.getArrivalStation())
+                .departureTime(savedEntity.getDepartureTime())
+                .arrivalTime(savedEntity.getArrivalTime())
+                .transportType(savedEntity.getTransportType())
+                .totalSeats(savedEntity.getTotalSeats())
+                .basePrice(savedEntity.getBasePrice())
+                .status(savedEntity.getStatus())
+                .seats(trip.getSeats() != null ? trip.getSeats() : Collections.emptyList())
+                .build();
+        savedDomain.setCreatedAt(savedEntity.getCreatedAt());
+        savedDomain.setUpdatedAt(savedEntity.getUpdatedAt());
+        return savedDomain;
     }
 
     private Trip toDomain(TripJpaEntity entity) {
@@ -64,11 +127,21 @@ public class TripRepositoryImpl implements TripRepository {
                 .transportType(entity.getTransportType())
                 .totalSeats(entity.getTotalSeats())
                 .basePrice(entity.getBasePrice())
-                .status(TripStatus.fromString(entity.getStatus()))
+                .status(entity.getStatus() != null ? entity.getStatus() : TripStatus.SCHEDULED)
                 .seats(Collections.emptyList())
                 .build();
         trip.setCreatedAt(entity.getCreatedAt());
         trip.setUpdatedAt(entity.getUpdatedAt());
         return trip;
+    }
+
+    private Seat toSeatDomain(SeatJpaEntity entity) {
+        return Seat.builder()
+                .id(entity.getId())
+                .tripId(entity.getTripId())
+                .seatNumber(entity.getSeatNumber())
+                .seatType(entity.getSeatType())
+                .priceMultiplier(entity.getPriceMultiplier())
+                .build();
     }
 }

@@ -15,11 +15,16 @@ import java.time.LocalDateTime;
 public class TripDto {
     private Long id;
     private String tripCode;
+    private String departureStationCode;
     private String departureStationName;
+    private String departureCity;
+    private String arrivalStationCode;
     private String arrivalStationName;
+    private String arrivalCity;
     private LocalDateTime departureTime;
     private LocalDateTime arrivalTime;
     private String transportType;
     private BigDecimal basePrice;
     private Integer totalSeats;
+    private String status;
 }

@@ -5,7 +5,9 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 @Getter
 @Setter
@@ -21,12 +23,12 @@ public class Seat {
 
     public BigDecimal calculatePrice(BigDecimal basePrice) {
         if (basePrice == null) {
-            return BigDecimal.ZERO;
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
         }
-        BigDecimal multiplier = this.priceMultiplier != null 
-                ? this.priceMultiplier 
+        BigDecimal multiplier = this.priceMultiplier != null
+                ? this.priceMultiplier
                 : (this.seatType != null ? this.seatType.getDefaultMultiplier() : BigDecimal.ONE);
-        return basePrice.multiply(multiplier);
+        return basePrice.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
     }
 
     public boolean isVip() {

@@ -12,13 +12,27 @@ import java.util.Optional;
 
 @Repository
 public interface SpringDataTripRepository extends JpaRepository<TripJpaEntity, Long> {
-    Optional<TripJpaEntity> findByTripCode(String tripCode);
+
+    boolean existsByTripCode(String tripCode);
+
+    @Query("SELECT t FROM TripJpaEntity t " +
+           "JOIN FETCH t.departureStation " +
+           "JOIN FETCH t.arrivalStation " +
+           "WHERE t.id = :id")
+    Optional<TripJpaEntity> findByIdWithStations(@Param("id") Long id);
+
+    @Query("SELECT t FROM TripJpaEntity t " +
+           "JOIN FETCH t.departureStation " +
+           "JOIN FETCH t.arrivalStation " +
+           "WHERE t.tripCode = :tripCode")
+    Optional<TripJpaEntity> findByTripCodeWithStations(@Param("tripCode") String tripCode);
 
     @Query("SELECT t FROM TripJpaEntity t " +
            "JOIN FETCH t.departureStation ds " +
            "JOIN FETCH t.arrivalStation as " +
            "WHERE (:depCity IS NULL OR ds.city = :depCity) " +
            "AND (:arrCity IS NULL OR as.city = :arrCity) " +
+           "AND t.status = com.ticket.catalog.domain.model.TripStatus.SCHEDULED " +
            "AND t.departureTime >= :fromTime AND t.departureTime <= :toTime")
     List<TripJpaEntity> searchTrips(
             @Param("depCity") String depCity,

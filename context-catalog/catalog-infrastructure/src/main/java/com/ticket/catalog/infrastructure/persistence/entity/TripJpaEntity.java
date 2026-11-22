@@ -1,6 +1,7 @@
 package com.ticket.catalog.infrastructure.persistence.entity;
 
 import com.ticket.catalog.domain.model.TransportType;
+import com.ticket.catalog.domain.model.TripStatus;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -44,8 +45,9 @@ public class TripJpaEntity {
     @Column(name = "base_price", nullable = false, precision = 12, scale = 2)
     private BigDecimal basePrice;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private String status;
+    private TripStatus status;
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

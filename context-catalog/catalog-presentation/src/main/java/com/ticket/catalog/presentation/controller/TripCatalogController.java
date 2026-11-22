@@ -1,7 +1,11 @@
 package com.ticket.catalog.presentation.controller;
 
 import com.ticket.catalog.application.dto.SearchTripQuery;
+import com.ticket.catalog.application.dto.SeatDto;
+import com.ticket.catalog.application.dto.StationDto;
 import com.ticket.catalog.application.dto.TripDto;
+import com.ticket.catalog.application.usecase.GetStationsUseCase;
+import com.ticket.catalog.application.usecase.GetTripSeatsUseCase;
 import com.ticket.catalog.application.usecase.SearchTripsUseCase;
 import com.ticket.shared.dto.ApiResponse;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +22,8 @@ import java.util.List;
 public class TripCatalogController {
 
     private final SearchTripsUseCase searchTripsUseCase;
+    private final GetStationsUseCase getStationsUseCase;
+    private final GetTripSeatsUseCase getTripSeatsUseCase;
 
     @GetMapping("/trips")
     public ResponseEntity<ApiResponse<List<TripDto>>> searchTrips(
@@ -32,5 +38,17 @@ public class TripCatalogController {
 
         List<TripDto> result = searchTripsUseCase.execute(query);
         return ResponseEntity.ok(ApiResponse.ok("Trips retrieved successfully", result));
+    }
+
+    @GetMapping("/stations")
+    public ResponseEntity<ApiResponse<List<StationDto>>> getStations() {
+        List<StationDto> result = getStationsUseCase.execute();
+        return ResponseEntity.ok(ApiResponse.ok("Stations retrieved successfully", result));
+    }
+
+    @GetMapping("/trips/{id}/seats")
+    public ResponseEntity<ApiResponse<List<SeatDto>>> getTripSeats(@PathVariable Long id) {
+        List<SeatDto> result = getTripSeatsUseCase.execute(id);
+        return ResponseEntity.ok(ApiResponse.ok("Trip seat matrix retrieved successfully", result));
     }
 }
