@@ -10,6 +10,22 @@ spring:
   threads:
     virtual:
       enabled: true
+  # SMTP: MailSenderAutoConfiguration chỉ tạo bean JavaMailSender khi có spring.mail.host
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    default-encoding: UTF-8
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
 
 app:
   jwt:
@@ -31,6 +47,6 @@ app:
       webhook-secret: ${TELEGRAM_WEBHOOK_SECRET:dev_webhook_secret_key_placeholder}
     mail:
       from: ${MAIL_FROM:noreply@ticketbooking.local}
-      enabled: ${MAIL_ENABLED:true}
+      enabled: ${MAIL_ENABLED:false}
     qr:
       secret-key: ${QR_SECRET_KEY:default-local-hmac-qr-signing-key-32-chars!}

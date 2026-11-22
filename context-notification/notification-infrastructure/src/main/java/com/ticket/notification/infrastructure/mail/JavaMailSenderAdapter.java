@@ -23,7 +23,7 @@ public class JavaMailSenderAdapter implements EmailSenderPort {
     private final TemplateEngine templateEngine;
     private final QrCodeUtil qrCodeUtil;
 
-    @Value("${spring.mail.username:noreply@ticketbooking.com}")
+    @Value("${app.notification.mail.from:noreply@ticketbooking.local}")
     private String fromEmail;
 
     @Value("${app.notification.mail.enabled:false}")
