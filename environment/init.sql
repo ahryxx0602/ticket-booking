@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS bookings (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_booking_user (user_id),
     INDEX idx_booking_ref (booking_reference),
+    INDEX idx_booking_status_exp (status, expires_at),
     INDEX idx_booking_trip_status_exp (trip_id, status, expires_at)
 );
 
@@ -92,9 +93,13 @@ CREATE TABLE IF NOT EXISTS payments (
     refund_amount DECIMAL(12,2),
     refund_reason VARCHAR(255),
     refunded_at DATETIME,
+    reconciliation_required BOOLEAN NOT NULL DEFAULT FALSE,
+    version BIGINT NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_pay_booking (booking_id)
+    INDEX idx_pay_booking (booking_id),
+    INDEX idx_pay_status_created (status, created_at),
+    INDEX idx_pay_ref (payment_reference)
 );
 
 -- Seed Data (Initial Stations & Sample Data)

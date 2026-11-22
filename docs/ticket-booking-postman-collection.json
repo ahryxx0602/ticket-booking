@@ -20,6 +20,16 @@
 			"key": "customer_token",
 			"value": "",
 			"type": "string"
+		},
+		{
+			"key": "vnp_txn_ref",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "vnp_hash_secret",
+			"value": "sandbox_vnpay_hash_secret_placeholder",
+			"type": "string"
 		}
 	],
 	"item": [
@@ -837,10 +847,32 @@
 			]
 		},
 		{
-			"name": "5. Payment (ROLE_CUSTOMER / Public IPN)",
+			"name": "5. Payment (ROLE_CUSTOMER / Public IPN / ROLE_ADMIN)",
 			"item": [
 				{
 					"name": "5.1 Create Payment Checkout URL",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"pm.test(\"Payment URL created with valid VNPAY schema\", function () {",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"    pm.expect(jsonData.data).to.have.property('redirectPaymentUrl');",
+									"    pm.expect(jsonData.data.redirectPaymentUrl).to.include('vnp_SecureHash=');",
+									"    pm.expect(jsonData.data).to.have.property('paymentReference');",
+									"    pm.collectionVariables.set('vnp_txn_ref', jsonData.data.paymentReference);",
+									"    console.log('Payment Reference set to: ' + jsonData.data.paymentReference);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
 					"request": {
 						"method": "POST",
 						"header": [
@@ -855,7 +887,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"bookingId\": 105,\n  \"amount\": 3000000.00,\n  \"paymentMethod\": \"VNPAY\"\n}"
+							"raw": "{\n  \"bookingReference\": \"{{booking_ref}}\",\n  \"paymentMethod\": \"VNPAY\"\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/api/v1/payments/checkout",
@@ -872,12 +904,283 @@
 					}
 				},
 				{
-					"name": "5.2 VNPay Webhook IPN Callback (Public)",
+					"name": "5.2 Create Payment Checkout URL - IDOR Denied (403)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 403 Forbidden\", function () {",
+									"    pm.response.to.have.status(403);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"pm.test(\"Access Denied returns code ACCESS_DENIED or BOOKING_ACCESS_DENIED\", function () {",
+									"    pm.expect(jsonData.success).to.be.false;",
+									"    pm.expect(jsonData.code).to.be.oneOf([\"BOOKING_ACCESS_DENIED\", \"ACCESS_DENIED\"]);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"bookingReference\": \"{{booking_ref}}\",\n  \"paymentMethod\": \"VNPAY\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/payments/checkout",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"payments",
+								"checkout"
+							]
+						}
+					}
+				},
+				{
+					"name": "5.3 VNPay Webhook IPN Callback - Success 00",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"var txnRef = pm.collectionVariables.get('vnp_txn_ref') || 'PAY_SAMPLE_001';",
+									"var secretKey = pm.collectionVariables.get('vnp_hash_secret') || 'sandbox_vnpay_hash_secret_placeholder';",
+									"var amount = '300000000';",
+									"var responseCode = '00';",
+									"var transactionNo = '14567890';",
+									"var rawParams = {",
+									"    'vnp_Amount': amount,",
+									"    'vnp_BankCode': 'NCB',",
+									"    'vnp_CardType': 'ATM',",
+									"    'vnp_OrderInfo': 'Thanh toan ve tau',",
+									"    'vnp_PayDate': '20261122150000',",
+									"    'vnp_ResponseCode': responseCode,",
+									"    'vnp_TmnCode': 'TMNCODE1',",
+									"    'vnp_TransactionNo': transactionNo,",
+									"    'vnp_TransactionStatus': responseCode,",
+									"    'vnp_TxnRef': txnRef",
+									"};",
+									"var sortedKeys = Object.keys(rawParams).sort();",
+									"var hashData = sortedKeys.map(function(k) {",
+									"    return k + '=' + encodeURIComponent(rawParams[k]).replace(/%20/g, '+');",
+									"}).join('&');",
+									"var hash = CryptoJS.HmacSHA512(hashData, secretKey).toString();",
+									"pm.variables.set('dyn_vnp_txn_ref', txnRef);",
+									"pm.variables.set('dyn_vnp_amount', amount);",
+									"pm.variables.set('dyn_vnp_response_code', responseCode);",
+									"pm.variables.set('dyn_vnp_trans_no', transactionNo);",
+									"pm.variables.set('dyn_vnp_secure_hash', hash);"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"pm.test(\"VNPay IPN processed successfully with RspCode 00\", function () {",
+									"    pm.expect(jsonData.RspCode).to.eql(\"00\");",
+									"    pm.expect(jsonData.Message).to.eql(\"Confirm Success\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "{{base_url}}/api/v1/payments/webhook/vnpay?vnp_TxnRef=PAY_1700000000_1&vnp_TransactionNo=14567890&vnp_ResponseCode=00&vnp_SecureHash=valid_hmac_sha512",
+							"raw": "{{base_url}}/api/v1/payments/webhook/vnpay?vnp_TmnCode=TMNCODE1&vnp_Amount={{dyn_vnp_amount}}&vnp_BankCode=NCB&vnp_CardType=ATM&vnp_OrderInfo=Thanh+toan+ve+tau&vnp_PayDate=20261122150000&vnp_ResponseCode={{dyn_vnp_response_code}}&vnp_TransactionNo={{dyn_vnp_trans_no}}&vnp_TransactionStatus={{dyn_vnp_response_code}}&vnp_TxnRef={{dyn_vnp_txn_ref}}&vnp_SecureHash={{dyn_vnp_secure_hash}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"payments",
+								"webhook",
+								"vnpay"
+							],
+							"query": [
+								{
+									"key": "vnp_TmnCode",
+									"value": "TMNCODE1"
+								},
+								{
+									"key": "vnp_Amount",
+									"value": "{{dyn_vnp_amount}}"
+								},
+								{
+									"key": "vnp_BankCode",
+									"value": "NCB"
+								},
+								{
+									"key": "vnp_CardType",
+									"value": "ATM"
+								},
+								{
+									"key": "vnp_OrderInfo",
+									"value": "Thanh+toan+ve+tau"
+								},
+								{
+									"key": "vnp_PayDate",
+									"value": "20261122150000"
+								},
+								{
+									"key": "vnp_ResponseCode",
+									"value": "{{dyn_vnp_response_code}}"
+								},
+								{
+									"key": "vnp_TransactionNo",
+									"value": "{{dyn_vnp_trans_no}}"
+								},
+								{
+									"key": "vnp_TransactionStatus",
+									"value": "{{dyn_vnp_response_code}}"
+								},
+								{
+									"key": "vnp_TxnRef",
+									"value": "{{dyn_vnp_txn_ref}}"
+								},
+								{
+									"key": "vnp_SecureHash",
+									"value": "{{dyn_vnp_secure_hash}}"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "5.4 VNPay Webhook IPN Callback - Idempotent Repeated 00",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"pm.test(\"VNPay IPN idempotent repeated returns 00\", function () {",
+									"    pm.expect(jsonData.RspCode).to.eql(\"00\");",
+									"    pm.expect(jsonData.Message).to.eql(\"Order already confirmed\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/payments/webhook/vnpay?vnp_TmnCode=TMNCODE1&vnp_Amount={{dyn_vnp_amount}}&vnp_BankCode=NCB&vnp_CardType=ATM&vnp_OrderInfo=Thanh+toan+ve+tau&vnp_PayDate=20261122150000&vnp_ResponseCode={{dyn_vnp_response_code}}&vnp_TransactionNo={{dyn_vnp_trans_no}}&vnp_TransactionStatus={{dyn_vnp_response_code}}&vnp_TxnRef={{dyn_vnp_txn_ref}}&vnp_SecureHash={{dyn_vnp_secure_hash}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"payments",
+								"webhook",
+								"vnpay"
+							],
+							"query": [
+								{
+									"key": "vnp_TmnCode",
+									"value": "TMNCODE1"
+								},
+								{
+									"key": "vnp_Amount",
+									"value": "{{dyn_vnp_amount}}"
+								},
+								{
+									"key": "vnp_BankCode",
+									"value": "NCB"
+								},
+								{
+									"key": "vnp_CardType",
+									"value": "ATM"
+								},
+								{
+									"key": "vnp_OrderInfo",
+									"value": "Thanh+toan+ve+tau"
+								},
+								{
+									"key": "vnp_PayDate",
+									"value": "20261122150000"
+								},
+								{
+									"key": "vnp_ResponseCode",
+									"value": "{{dyn_vnp_response_code}}"
+								},
+								{
+									"key": "vnp_TransactionNo",
+									"value": "{{dyn_vnp_trans_no}}"
+								},
+								{
+									"key": "vnp_TransactionStatus",
+									"value": "{{dyn_vnp_response_code}}"
+								},
+								{
+									"key": "vnp_TxnRef",
+									"value": "{{dyn_vnp_txn_ref}}"
+								},
+								{
+									"key": "vnp_SecureHash",
+									"value": "{{dyn_vnp_secure_hash}}"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "5.5 VNPay Webhook IPN Callback - Invalid Checksum 97",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"pm.test(\"Invalid checksum returns RspCode 97\", function () {",
+									"    pm.expect(jsonData.RspCode).to.eql(\"97\");",
+									"    pm.expect(jsonData.Message).to.eql(\"Invalid Checksum\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/payments/webhook/vnpay?vnp_TxnRef={{vnp_txn_ref}}&vnp_SecureHash=invalid_tampered_hash_9999",
 							"host": [
 								"{{base_url}}"
 							],
@@ -891,19 +1194,125 @@
 							"query": [
 								{
 									"key": "vnp_TxnRef",
-									"value": "PAY_1700000000_1"
-								},
-								{
-									"key": "vnp_TransactionNo",
-									"value": "14567890"
-								},
-								{
-									"key": "vnp_ResponseCode",
-									"value": "00"
+									"value": "{{vnp_txn_ref}}"
 								},
 								{
 									"key": "vnp_SecureHash",
-									"value": "valid_hmac_sha512"
+									"value": "invalid_tampered_hash_9999"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "5.6 Admin - Get Payment Revenue Report",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"pm.test(\"Payment report returned successfully\", function () {",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"    pm.expect(jsonData.data).to.have.property('totalTransactions');",
+									"    pm.expect(jsonData.data).to.have.property('successCount');",
+									"    pm.expect(jsonData.data).to.have.property('grossRevenue');",
+									"    pm.expect(jsonData.data).to.have.property('netRevenue');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/payments/reports?startDate=2026-01-01&endDate=2026-12-31",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"payments",
+								"reports"
+							],
+							"query": [
+								{
+									"key": "startDate",
+									"value": "2026-01-01"
+								},
+								{
+									"key": "endDate",
+									"value": "2026-12-31"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "5.7 Admin - Search Payments",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"pm.test(\"Payment search returned page structure\", function () {",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"    pm.expect(jsonData.data).to.have.property('items');",
+									"    pm.expect(jsonData.data.items).to.be.an('array');",
+									"    pm.expect(jsonData.data).to.have.property('totalElements');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/payments?status=SUCCESS&page=0&size=10",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"payments"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "SUCCESS"
+								},
+								{
+									"key": "page",
+									"value": "0"
+								},
+								{
+									"key": "size",
+									"value": "10"
 								}
 							]
 						}
