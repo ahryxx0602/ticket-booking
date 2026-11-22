@@ -52,6 +52,15 @@
             <artifactId>payment-infrastructure</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>com.ticket</groupId>
+            <artifactId>notification-presentation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.ticket</groupId>
+            <artifactId>notification-infrastructure</artifactId>
+        </dependency>
+
         <!-- Spring Boot Starters -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

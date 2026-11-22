@@ -16,6 +16,6 @@ public class IdentityUserPortAdapter implements IdentityUserPort {
     @Override
     public Optional<AuthenticatedUserInfo> findByUsername(String username) {
         return userRepository.findByUsername(username)
-                .map(user -> new AuthenticatedUserInfo(user.getId(), user.isLocked()));
+                .map(user -> new AuthenticatedUserInfo(user.getId(), user.getPhone(), user.isLocked()));
     }
 }

@@ -40,6 +40,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/auth/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/catalog/**").permitAll()
                 .requestMatchers("/api/v1/payments/webhook/**").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/notifications/telegram/webhook").permitAll()
                 .requestMatchers("/actuator/**").permitAll()
 
                 // 2. Administrator Only APIs
