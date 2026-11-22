@@ -15,4 +15,5 @@ public class TelegramBotProperties {
     private String botUsername = "TicketBookingBot";
     private String webhookSecret = "telegram_webhook_secret_key";
     private Long adminChatId;
+    private String mode = "polling"; // "polling" hoặc "webhook"
 }

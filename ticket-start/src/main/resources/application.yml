@@ -46,9 +46,12 @@ app:
       enabled: ${FIREBASE_ENABLED:false}
       credentials-path: ${FIREBASE_CREDENTIALS_PATH:classpath:firebase-dummy.json}
     telegram:
+      enabled: ${TELEGRAM_ENABLED:false}
       bot-token: ${TELEGRAM_BOT_TOKEN:mock_bot_token_placeholder}
       bot-username: ${TELEGRAM_BOT_USERNAME:TicketBookingDevBot}
       webhook-secret: ${TELEGRAM_WEBHOOK_SECRET:dev_webhook_secret_key_placeholder}
+      admin-chat-id: ${TELEGRAM_ADMIN_CHAT_ID:}
+      mode: ${TELEGRAM_BOT_MODE:polling} # "polling" hoặc "webhook"
     mail:
       from: ${MAIL_FROM:noreply@ticketbooking.local}
       enabled: ${MAIL_ENABLED:false}
