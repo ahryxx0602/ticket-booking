@@ -6,6 +6,7 @@ import org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoCo
 import org.springframework.boot.autoconfigure.domain.EntityScan;
 import org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication(
         scanBasePackages = "com.ticket",
@@ -16,6 +17,7 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 )
 @EntityScan(basePackages = "com.ticket")
 @EnableJpaRepositories(basePackages = "com.ticket")
+@EnableScheduling
 public class TicketApplication {
 
     public static void main(String[] args) {

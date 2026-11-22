@@ -17,5 +17,7 @@ app:
     expiration-ms: ${JWT_EXPIRATION_MS:86400000} # 24 hours
   payment:
     vnpay:
+      tmn-code: ${VNPAY_TMN_CODE:CGXZLS0Z}
       hash-secret: ${VNPAY_HASH_SECRET:sandbox_vnpay_hash_secret_placeholder}
       pay-url: ${VNPAY_PAY_URL:https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
+      return-url: ${VNPAY_RETURN_URL:http://localhost:8080/api/v1/payments/vnpay-return}

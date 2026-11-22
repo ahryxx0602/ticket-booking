@@ -47,10 +47,17 @@ public class SecurityConfig {
 
                 // 3. Customer Role APIs
                 .requestMatchers("/api/v1/bookings/**").hasRole("CUSTOMER")
-                .requestMatchers("/api/v1/payments/checkout").hasAnyRole("CUSTOMER", "ADMIN")
+                .requestMatchers("/api/v1/payments/checkout").hasRole("CUSTOMER")
 
                 // 4. Any other requests require authentication
                 .anyRequest().authenticated()
+            )
+            .exceptionHandling(ex -> ex
+                .accessDeniedHandler((request, response, accessDeniedException) -> {
+                    response.setStatus(jakarta.servlet.http.HttpServletResponse.SC_FORBIDDEN);
+                    response.setContentType(org.springframework.http.MediaType.APPLICATION_JSON_VALUE);
+                    response.getWriter().write("{\"success\":false,\"code\":\"ACCESS_DENIED\",\"message\":\"Access denied\"}");
+                })
             );
         return http.build();
     }

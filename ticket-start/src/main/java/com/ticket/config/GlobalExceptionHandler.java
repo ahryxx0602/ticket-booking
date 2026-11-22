@@ -3,6 +3,7 @@ package com.ticket.config;
 import com.ticket.shared.dto.ApiResponse;
 import com.ticket.shared.exception.BusinessException;
 import com.ticket.shared.exception.EntityNotFoundException;
+import com.ticket.shared.exception.ForbiddenException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -31,6 +32,13 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleBusiness(BusinessException ex) {
         log.warn("Business rule violation: [{}] {}", ex.getCode(), ex.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.error(ex.getCode(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<ApiResponse<Void>> handleForbidden(ForbiddenException ex) {
+        log.warn("Forbidden access: [{}] {}", ex.getCode(), ex.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(ApiResponse.error(ex.getCode(), ex.getMessage()));
     }
 
