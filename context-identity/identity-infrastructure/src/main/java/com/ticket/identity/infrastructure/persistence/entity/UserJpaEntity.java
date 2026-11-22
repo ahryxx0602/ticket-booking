@@ -27,6 +27,9 @@ public class UserJpaEntity {
     @Column(name = "full_name", nullable = false, length = 100)
     private String fullName;
 
+    @Column(length = 20)
+    private String phone;
+
     @Column(nullable = false, length = 20)
     private String role;
 

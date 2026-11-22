@@ -29,6 +29,9 @@ public class BookingJpaEntity {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
+    @Column(length = 20)
+    private String phone;
+
     @Column(name = "trip_id", nullable = false)
     private Long tripId;
 

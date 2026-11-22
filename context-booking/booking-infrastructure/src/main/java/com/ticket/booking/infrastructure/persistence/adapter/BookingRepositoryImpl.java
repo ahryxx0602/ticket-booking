@@ -126,6 +126,7 @@ public class BookingRepositoryImpl implements BookingRepository {
                 .id(entity.getId())
                 .bookingReference(entity.getBookingReference())
                 .userId(entity.getUserId())
+                .phone(entity.getPhone())
                 .tripId(entity.getTripId())
                 .status(entity.getStatus())
                 .totalAmount(entity.getTotalAmount())
@@ -148,6 +149,7 @@ public class BookingRepositoryImpl implements BookingRepository {
         BookingJpaEntity entity = new BookingJpaEntity();
         entity.setBookingReference(booking.getBookingReference());
         entity.setUserId(booking.getUserId());
+        entity.setPhone(booking.getPhone());
         entity.setTripId(booking.getTripId());
         entity.setStatus(booking.getStatus());
         entity.setTotalAmount(booking.getTotalAmount());

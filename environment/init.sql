@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(100) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
     full_name VARCHAR(100) NOT NULL,
+    phone VARCHAR(20),
     role VARCHAR(20) NOT NULL DEFAULT 'ROLE_CUSTOMER',
     status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -57,6 +58,7 @@ CREATE TABLE IF NOT EXISTS bookings (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     booking_reference VARCHAR(36) NOT NULL UNIQUE,
     user_id BIGINT NOT NULL,
+    phone VARCHAR(20),
     trip_id BIGINT NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'PENDING', -- PENDING, HELD, CONFIRMED, CANCELLED, EXPIRED
     total_amount DECIMAL(12,2) NOT NULL,
@@ -100,6 +102,48 @@ CREATE TABLE IF NOT EXISTS payments (
     INDEX idx_pay_booking (booking_id),
     INDEX idx_pay_status_created (status, created_at),
     INDEX idx_pay_ref (payment_reference)
+);
+
+-- 5. Notification Module Tables
+CREATE TABLE IF NOT EXISTS user_device_tokens (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    fcm_token VARCHAR(512) NOT NULL UNIQUE,
+    device_type VARCHAR(20) NOT NULL DEFAULT 'WEB',
+    last_active_at DATETIME NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_user_tokens (user_id),
+    INDEX idx_fcm_token (fcm_token)
+);
+
+CREATE TABLE IF NOT EXISTS telegram_account_links (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    telegram_chat_id BIGINT NOT NULL UNIQUE,
+    role VARCHAR(30) NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    linked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_tele_user (user_id),
+    INDEX idx_tele_chat (telegram_chat_id)
+);
+
+CREATE TABLE IF NOT EXISTS notifications (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NULL,
+    recipient VARCHAR(512) NOT NULL,
+    channel VARCHAR(20) NOT NULL,
+    type VARCHAR(30) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    subject VARCHAR(255) NULL,
+    content TEXT NOT NULL,
+    metadata_json TEXT NULL,
+    idempotency_key VARCHAR(128) NULL UNIQUE,
+    error_message VARCHAR(500) NULL,
+    sent_at DATETIME NULL,
+    retry_count INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_noti_user_created (user_id, created_at),
+    INDEX idx_noti_status (status)
 );
 
 -- Seed Data (Initial Stations & Sample Data)

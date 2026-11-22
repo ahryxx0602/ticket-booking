@@ -73,6 +73,7 @@ public class UserRepositoryImpl implements UserRepository {
                 .email(entity.getEmail())
                 .passwordHash(entity.getPasswordHash())
                 .fullName(entity.getFullName())
+                .phone(entity.getPhone())
                 .role(com.ticket.identity.domain.model.UserRole.fromString(entity.getRole()))
                 .status(entity.getStatus())
                 .build();
@@ -88,6 +89,7 @@ public class UserRepositoryImpl implements UserRepository {
         entity.setEmail(user.getEmail());
         entity.setPasswordHash(user.getPasswordHash());
         entity.setFullName(user.getFullName());
+        entity.setPhone(user.getPhone());
         entity.setRole(user.getRole() != null ? user.getRole().name() : "ROLE_CUSTOMER");
         entity.setStatus(user.getStatus());
         return entity;
