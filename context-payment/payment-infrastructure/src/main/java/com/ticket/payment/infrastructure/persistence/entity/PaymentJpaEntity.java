@@ -10,7 +10,11 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "payments")
+@Table(name = "payments", indexes = {
+        @Index(name = "idx_pay_status_created", columnList = "status, created_at"),
+        @Index(name = "idx_pay_booking", columnList = "booking_id"),
+        @Index(name = "idx_pay_ref", columnList = "payment_reference")
+})
 @Getter
 @Setter
 public class PaymentJpaEntity {
@@ -52,6 +56,13 @@ public class PaymentJpaEntity {
 
     @Column(name = "refunded_at")
     private LocalDateTime refundedAt;
+
+    @Column(name = "reconciliation_required", nullable = false)
+    private boolean reconciliationRequired = false;
+
+    @Version
+    @Column(nullable = false)
+    private Long version = 0L;
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

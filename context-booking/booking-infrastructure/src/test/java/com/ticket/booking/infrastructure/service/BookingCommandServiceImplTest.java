@@ -290,4 +290,123 @@ class BookingCommandServiceImplTest {
         assertThat(response.getReason()).isEqualTo("Customer request");
         verify(seatLockRepository).releaseOwnedLocks(1L, List.of("01A"), "REF-21");
     }
+
+    @Test
+    void confirmBooking_whenHeldAndValid_shouldConfirmAndReturnTrue() {
+        LocalDateTime now = LocalDateTime.now();
+        Booking booking = Booking.builder()
+                .id(10L)
+                .bookingReference("BKG-10")
+                .status(BookingStatus.HELD)
+                .expiresAt(now.plusMinutes(5))
+                .build();
+
+        when(bookingRepository.findById(10L)).thenReturn(Optional.of(booking));
+        when(bookingRepository.save(any(Booking.class))).thenReturn(booking);
+
+        boolean result = commandService.execute(10L, now);
+
+        assertThat(result).isTrue();
+        assertThat(booking.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+        verify(bookingRepository).save(booking);
+    }
+
+    @Test
+    void confirmBooking_whenAlreadyConfirmed_shouldReturnTrueWithoutReconfirm() {
+        LocalDateTime now = LocalDateTime.now();
+        Booking booking = Booking.builder()
+                .id(10L)
+                .bookingReference("BKG-10")
+                .status(BookingStatus.CONFIRMED)
+                .expiresAt(now.plusMinutes(5))
+                .build();
+
+        when(bookingRepository.findById(10L)).thenReturn(Optional.of(booking));
+
+        boolean result = commandService.execute(10L, now);
+
+        assertThat(result).isTrue();
+        verify(bookingRepository, never()).save(any(Booking.class));
+    }
+
+    @Test
+    void confirmBooking_whenExpired_shouldReturnFalse() {
+        LocalDateTime now = LocalDateTime.now();
+        Booking booking = Booking.builder()
+                .id(10L)
+                .bookingReference("BKG-10")
+                .status(BookingStatus.HELD)
+                .expiresAt(now.minusSeconds(10))
+                .build();
+
+        when(bookingRepository.findById(10L)).thenReturn(Optional.of(booking));
+
+        boolean result = commandService.execute(10L, now);
+
+        assertThat(result).isFalse();
+        verify(bookingRepository, never()).save(any(Booking.class));
+    }
+
+    @Test
+    void expireHeldBookings_whenExpiredFound_shouldExpireAndReleaseSeatLocks() {
+        LocalDateTime now = LocalDateTime.now();
+        Booking b1 = Booking.builder()
+                .id(1L)
+                .bookingReference("B1")
+                .tripId(100L)
+                .status(BookingStatus.HELD)
+                .expiresAt(now.minusSeconds(30))
+                .items(List.of(BookingItem.builder().seatNumber("01A").price(BigDecimal.TEN).build()))
+                .build();
+        Booking b2 = Booking.builder()
+                .id(2L)
+                .bookingReference("B2")
+                .tripId(100L)
+                .status(BookingStatus.HELD)
+                .expiresAt(now.minusSeconds(15))
+                .items(List.of(BookingItem.builder().seatNumber("02B").price(BigDecimal.TEN).build()))
+                .build();
+
+        when(bookingRepository.findExpiredHeldBookings(eq(now), eq(100))).thenReturn(List.of(b1, b2));
+        when(bookingRepository.findById(1L)).thenReturn(Optional.of(b1));
+        when(bookingRepository.findById(2L)).thenReturn(Optional.of(b2));
+        when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        int expiredCount = commandService.execute(now);
+
+        assertThat(expiredCount).isEqualTo(2);
+        assertThat(b1.getStatus()).isEqualTo(BookingStatus.EXPIRED);
+        assertThat(b2.getStatus()).isEqualTo(BookingStatus.EXPIRED);
+    }
+
+    @Test
+    void expireHeldBookings_whenOneThrowsOptimisticLock_shouldIsolateAndContinueRemaining() {
+        LocalDateTime now = LocalDateTime.now();
+        Booking b1 = Booking.builder()
+                .id(1L)
+                .bookingReference("B1")
+                .tripId(100L)
+                .status(BookingStatus.HELD)
+                .expiresAt(now.minusSeconds(30))
+                .items(List.of(BookingItem.builder().seatNumber("01A").price(BigDecimal.TEN).build()))
+                .build();
+        Booking b2 = Booking.builder()
+                .id(2L)
+                .bookingReference("B2")
+                .tripId(100L)
+                .status(BookingStatus.HELD)
+                .expiresAt(now.minusSeconds(15))
+                .items(List.of(BookingItem.builder().seatNumber("02B").price(BigDecimal.TEN).build()))
+                .build();
+
+        when(bookingRepository.findExpiredHeldBookings(eq(now), eq(100))).thenReturn(List.of(b1, b2));
+        when(bookingRepository.findById(1L)).thenThrow(new org.springframework.orm.ObjectOptimisticLockingFailureException(Booking.class, 1L));
+        when(bookingRepository.findById(2L)).thenReturn(Optional.of(b2));
+        when(bookingRepository.save(b2)).thenReturn(b2);
+
+        int expiredCount = commandService.execute(now);
+
+        assertThat(expiredCount).isEqualTo(1);
+        assertThat(b2.getStatus()).isEqualTo(BookingStatus.EXPIRED);
+    }
 }

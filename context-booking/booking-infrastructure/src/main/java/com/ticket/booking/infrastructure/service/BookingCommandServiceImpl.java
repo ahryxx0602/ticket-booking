@@ -6,6 +6,8 @@ import com.ticket.booking.application.dto.HoldSeatCommand;
 import com.ticket.booking.application.dto.RefundResponse;
 import com.ticket.booking.application.usecase.AdminRefundBookingUseCase;
 import com.ticket.booking.application.usecase.CancelBookingUseCase;
+import com.ticket.booking.application.usecase.ConfirmBookingUseCase;
+import com.ticket.booking.application.usecase.ExpireHeldBookingsUseCase;
 import com.ticket.booking.application.usecase.HoldSeatUseCase;
 import com.ticket.booking.domain.model.Booking;
 import com.ticket.booking.domain.model.BookingItem;
@@ -37,7 +39,7 @@ import java.util.UUID;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class BookingCommandServiceImpl implements HoldSeatUseCase, CancelBookingUseCase, AdminRefundBookingUseCase {
+public class BookingCommandServiceImpl implements HoldSeatUseCase, CancelBookingUseCase, AdminRefundBookingUseCase, ConfirmBookingUseCase, ExpireHeldBookingsUseCase {
 
     private final BookingRepository bookingRepository;
     private final SeatLockRepository seatLockRepository;
@@ -218,6 +220,82 @@ public class BookingCommandServiceImpl implements HoldSeatUseCase, CancelBooking
             seatLockRepository.releaseOwnedLocks(tripId, seats, ownerToken);
         } catch (Exception ex) {
             log.warn("Non-fatal error releasing Redis seat locks for tripId={}, token={}: {}", tripId, ownerToken, ex.getMessage());
+        }
+    }
+
+    @Override
+    public boolean execute(Long bookingId, LocalDateTime now) {
+        TransactionTemplate template = this.transactionTemplate;
+        if (template != null && template.getTransactionManager() != null) {
+            TransactionTemplate requiresNew = new TransactionTemplate(template.getTransactionManager());
+            requiresNew.setPropagationBehavior(org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+            template = requiresNew;
+        }
+        try {
+            return Boolean.TRUE.equals(template.execute(status -> {
+                Booking booking = bookingRepository.findById(bookingId)
+                        .orElseThrow(() -> new EntityNotFoundException("Booking", bookingId));
+                if (booking.getStatus() == BookingStatus.CONFIRMED) {
+                    return true;
+                }
+                if (booking.getStatus() != BookingStatus.HELD) {
+                    log.warn("Cannot confirm booking {} because status is {}", bookingId, booking.getStatus());
+                    return false;
+                }
+                if (booking.isExpired(now)) {
+                    log.warn("Cannot confirm booking {} because hold time expired at {}", bookingId, booking.getExpiresAt());
+                    return false;
+                }
+                booking.confirm(now);
+                bookingRepository.save(booking);
+                log.info("Booking {} confirmed successfully", booking.getBookingReference());
+                return true;
+            }));
+        } catch (org.springframework.orm.ObjectOptimisticLockingFailureException ex) {
+            log.warn("Optimistic locking conflict confirming booking {}: {}", bookingId, ex.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public int execute(LocalDateTime now) {
+        List<Booking> expiredBookings = bookingRepository.findExpiredHeldBookings(now, 100);
+        if (expiredBookings.isEmpty()) {
+            return 0;
+        }
+        int count = 0;
+        for (Booking booking : expiredBookings) {
+            boolean success = expireSingleBooking(booking.getId(), now);
+            if (success) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    public boolean expireSingleBooking(Long bookingId, LocalDateTime now) {
+        try {
+            return Boolean.TRUE.equals(transactionTemplate.execute(status -> {
+                Booking booking = bookingRepository.findById(bookingId).orElse(null);
+                if (booking == null || booking.getStatus() != BookingStatus.HELD || !booking.isExpired(now)) {
+                    return false;
+                }
+                booking.expire(now);
+                bookingRepository.save(booking);
+
+                List<String> seats = booking.getItems().stream()
+                        .map(BookingItem::getSeatNumber)
+                        .toList();
+                Long tripId = booking.getTripId();
+                String token = booking.getBookingReference();
+
+                releaseLocksAfterCommit(tripId, seats, token);
+                log.info("Booking {} transitioned to EXPIRED by scheduler", token);
+                return true;
+            }));
+        } catch (Exception e) {
+            log.warn("Failed to expire booking {}: {}", bookingId, e.getMessage());
+            return false;
         }
     }
 }

@@ -63,4 +63,7 @@ public interface SpringDataBookingRepository extends JpaRepository<BookingJpaEnt
 
     @Query("SELECT DISTINCT b FROM BookingJpaEntity b LEFT JOIN FETCH b.items WHERE b.id IN :ids")
     List<BookingJpaEntity> findAllByIdInWithItems(@Param("ids") List<Long> ids);
+
+    @Query("SELECT b.id FROM BookingJpaEntity b WHERE b.status = com.ticket.booking.domain.model.BookingStatus.HELD AND b.expiresAt < :now ORDER BY b.id ASC")
+    List<Long> findExpiredHeldBookingIds(@Param("now") LocalDateTime now, Pageable pageable);
 }

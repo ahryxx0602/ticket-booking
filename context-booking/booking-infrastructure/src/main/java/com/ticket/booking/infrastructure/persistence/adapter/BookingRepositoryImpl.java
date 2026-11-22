@@ -64,6 +64,22 @@ public class BookingRepositoryImpl implements BookingRepository {
     }
 
     @Override
+    public List<Booking> findExpiredHeldBookings(LocalDateTime now, int limit) {
+        int safeLimit = Math.max(1, Math.min(limit, 100));
+        List<Long> ids = springDataBookingRepository.findExpiredHeldBookingIds(now, PageRequest.of(0, safeLimit));
+        if (ids.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Map<Long, BookingJpaEntity> byId = springDataBookingRepository.findAllByIdInWithItems(ids).stream()
+                .collect(Collectors.toMap(BookingJpaEntity::getId, Function.identity()));
+        return ids.stream()
+                .map(byId::get)
+                .filter(Objects::nonNull)
+                .map(this::toDomain)
+                .toList();
+    }
+
+    @Override
     public Booking save(Booking booking) {
         BookingJpaEntity entity;
         if (booking.getId() != null) {

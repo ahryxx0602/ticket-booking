@@ -11,7 +11,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "bookings")
+@Table(name = "bookings", indexes = {
+        @Index(name = "idx_booking_status_exp", columnList = "status, expires_at"),
+        @Index(name = "idx_booking_ref", columnList = "booking_reference"),
+        @Index(name = "idx_booking_user", columnList = "user_id")
+})
 @Getter
 @Setter
 public class BookingJpaEntity {
