@@ -7,6 +7,7 @@ spring:
     import:
       - optional:file:./environment/.env[.properties]
       - optional:file:../environment/.env[.properties]
+      - optional:file:../../environment/.env[.properties]
   application:
     name: ticket-booking-service
   profiles:

@@ -16,6 +16,14 @@ target/
 !.mvn/wrapper/maven-wrapper.jar
 *.class
 
+# Frontend (Node / Vite / Playwright)
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/test-results/
+frontend/playwright-report/
+
 # Environment Variables & Secrets
 .env
 .env.*
