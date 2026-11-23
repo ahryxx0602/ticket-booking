@@ -90,6 +90,22 @@ services:
     networks:
       - ticket-network
 
+  # ----------------------------------------------------------------------------
+  # 4. FRONTEND SERVICE: Vue 3 + Tailwind + PrimeVue 4 + Nginx Alpine
+  # ----------------------------------------------------------------------------
+  ticket-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ticket-frontend-prod
+    restart: unless-stopped
+    depends_on:
+      - ticket-backend
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    networks:
+      - ticket-network
+
 networks:
   ticket-network:
     driver: bridge

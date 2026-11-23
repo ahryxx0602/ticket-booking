@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. DATABASE: MySQL 8.4 LTS
+  # ----------------------------------------------------------------------------
+  ticket-mysql:
+    image: mysql:8.4
+    container_name: ticket-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_password}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ticket_booking_db}
+      MYSQL_USER: ${MYSQL_USER:-ticket_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ticket_password}
+    ports:
+      - "${MYSQL_PORT:-3307}:3306"
+    volumes:
+      - mysql_dev_data:/var/lib/mysql
+      - ./environment/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    networks:
+      - ticket-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "ticket_user", "-pticket_password"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ----------------------------------------------------------------------------
+  # 2. CACHE & DISTRIBUTED LOCK: Redis 7.2
+  # ----------------------------------------------------------------------------
+  ticket-redis:
+    image: redis:7.2-alpine
+    container_name: ticket-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - ticket-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ----------------------------------------------------------------------------
+  # 3. BACKEND: Spring Boot 3.4.1 (Java 21)
+  # ----------------------------------------------------------------------------
+  ticket-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ticket-backend
+    restart: unless-stopped
+    depends_on:
+      ticket-mysql:
+        condition: service_healthy
+      ticket-redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - MYSQL_HOST=ticket-mysql
+      - MYSQL_PORT=3306
+      - MYSQL_DATABASE=ticket_booking_db
+      - MYSQL_USER=ticket_user
+      - MYSQL_PASSWORD=ticket_password
+      - REDIS_HOST=ticket-redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=${JWT_SECRET:-dev_jwt_secret_key_minimum_32_characters_long}
+      - VNPAY_HASH_SECRET=${VNPAY_HASH_SECRET:-SANDBOX_HASH_SECRET_VNPAY_2026}
+      - TELEGRAM_ENABLED=${TELEGRAM_ENABLED:-false}
+      - MAIL_ENABLED=${MAIL_ENABLED:-false}
+      - FIREBASE_ENABLED=${FIREBASE_ENABLED:-false}
+    networks:
+      - ticket-network
+
+  # ----------------------------------------------------------------------------
+  # 4. FRONTEND: Vue 3 + Tailwind + PrimeVue 4 + Nginx Alpine
+  # ----------------------------------------------------------------------------
+  ticket-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ticket-frontend
+    restart: unless-stopped
+    depends_on:
+      - ticket-backend
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    networks:
+      - ticket-network
+
+networks:
+  ticket-network:
+    driver: bridge
+
+volumes:
+  mysql_dev_data:
+  redis_dev_data:
