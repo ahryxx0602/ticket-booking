@@ -12,27 +12,27 @@
     "test:visual": "playwright test --grep @visual"
   },
   "dependencies": {
-    "@primeuix/themes": "^1.0.0",
+    "@primeuix/themes": "^3.1.1",
     "axios": "^1.7.9",
     "chart.js": "^4.4.7",
-    "lucide-vue-next": "^0.469.0",
-    "pinia": "^2.3.0",
-    "primeicons": "^7.0.0",
-    "primevue": "^4.2.5",
+    "lucide-vue-next": "^1.0.0",
+    "pinia": "^4.1.0",
+    "primeicons": "^8.0.2",
+    "primevue": "^5.0.5",
     "qrcode": "^1.5.4",
-    "tailwindcss-primeui": "^0.5.1",
+    "tailwindcss-primeui": "^0.6.1",
     "vue": "^3.5.13",
-    "vue-router": "^4.5.0"
+    "vue-router": "^5.5.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.65.1",
-    "@vitejs/plugin-vue": "^5.2.1",
+    "@vitejs/plugin-vue": "^6.0.11",
     "@vue/test-utils": "^2.6.0",
     "autoprefixer": "^10.4.20",
     "happy-dom": "^21.0.4",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
-    "vite": "^6.0.5",
-    "vitest": "^4.1.12"
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
   }
 }
