@@ -36,28 +36,36 @@ public class SecurityConfig {
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
             .authorizeHttpRequests(auth -> auth
-                // 1. Guest & Public APIs
+                // 1. Guest & Public APIs (Strictly scoped)
                 .requestMatchers("/api/v1/auth/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/catalog/**").permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/v1/public/**").permitAll()
-                .requestMatchers(HttpMethod.POST, "/api/v1/public/upload").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/public/banners/active", "/api/v1/public/settings").permitAll()
                 .requestMatchers("/api/v1/payments/webhook/**").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/notifications/telegram/webhook").permitAll()
-                .requestMatchers("/actuator/**").permitAll()
+
+                // Health probes: Allow minimal probe endpoint for container healthchecks
+                .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info", "/internal/actuator/health/**").permitAll()
+                // All other Actuator operational metrics require ADMIN
+                .requestMatchers("/actuator/**", "/internal/actuator/**").hasRole("ADMIN")
+
+                // Swagger / OpenAPI documentation (public in dev/staging; disabled via springdoc.api-docs.enabled in prod)
                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html").permitAll()
 
-                // 2. Administrator Only APIs
+                // 2. Authenticated Upload API (Prevent anonymous file abuse)
+                .requestMatchers(HttpMethod.POST, "/api/v1/public/upload").authenticated()
+
+                // 3. Administrator Only APIs
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
 
-                // 3. Customer Role APIs
+                // 4. Customer Role APIs
                 .requestMatchers("/api/v1/bookings/**").hasRole("CUSTOMER")
                 .requestMatchers("/api/v1/payments/checkout").hasRole("CUSTOMER")
 
-                // 4. Partner Role APIs
+                // 5. Partner Role APIs
                 .requestMatchers("/api/v1/partners/register").authenticated()
                 .requestMatchers("/api/v1/partners/**").hasAnyRole("OPERATOR", "ADMIN")
 
-                // 5. Any other requests require authentication
+                // 6. Any other requests require authentication
                 .anyRequest().authenticated()
             )
             .exceptionHandling(ex -> ex

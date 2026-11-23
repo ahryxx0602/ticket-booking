@@ -20,8 +20,14 @@ httpClient.interceptors.response.use(
   (response) => response.data,
   (error) => {
     if (error.response?.status === 401) {
+      // Clear local storage tokens immediately
       localStorage.removeItem('velobus_access_token')
       localStorage.removeItem('velobus_user')
+
+      // Dispatch global session expiration event for Pinia store and router synchronization
+      if (typeof window !== 'undefined' && window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('velobus:unauthorized'))
+      }
     }
     const payload = error.response?.data || {
       code: 'NETWORK_ERROR',
