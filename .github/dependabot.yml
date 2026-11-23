@@ -5,25 +5,29 @@ updates:
     directory: "/backend"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 2
+    open-pull-requests-limit: 1
     groups:
       backend-dependencies:
         patterns:
           - "*"
+    ignore:
+      # Block all breaking major upgrades (e.g., Spring Boot 3 -> 4, Redisson 3 -> 4)
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   # Maintain dependencies for NPM Frontend
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 2
+    open-pull-requests-limit: 1
     groups:
       frontend-dependencies:
         patterns:
           - "*"
     ignore:
-      # Tailwind CSS v4 introduces major breaking configuration changes
-      - dependency-name: "tailwindcss"
+      # Block all breaking major upgrades (e.g., PrimeVue 4 -> 5, Tailwind 3 -> 4, Vite 6 -> 8)
+      - dependency-name: "*"
         update-types: ["version-update:semver-major"]
 
   # Maintain dependencies for GitHub Actions
@@ -31,8 +35,11 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 2
+    open-pull-requests-limit: 1
     groups:
       github-actions:
         patterns:
           - "*"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
