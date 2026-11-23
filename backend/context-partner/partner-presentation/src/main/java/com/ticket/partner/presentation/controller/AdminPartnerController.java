@@ -29,7 +29,7 @@ public class AdminPartnerController {
     private final PartnerIdentityPort identityPort;
 
     private Long getAdminId(Principal principal) {
-        if (principal == null) {
+        if (principal == null || principal.getName() == null || principal.getName().isBlank()) {
             throw new ForbiddenException("UNAUTHORIZED", "Admin must be authenticated");
         }
         if (identityPort != null) {
@@ -38,14 +38,16 @@ public class AdminPartnerController {
                         try {
                             return Long.parseLong(principal.getName());
                         } catch (NumberFormatException e) {
-                            return 1L; // fallback default admin ID
+                            log.error("Failed to resolve admin ID for principal '{}': user not found in identity context", principal.getName());
+                            throw new ForbiddenException("INVALID_ADMIN_PRINCIPAL", "Cannot resolve admin identity for audit logging: " + principal.getName());
                         }
                     });
         }
         try {
             return Long.parseLong(principal.getName());
         } catch (NumberFormatException e) {
-            return 1L;
+            log.error("Failed to parse numeric admin ID for principal '{}'", principal.getName());
+            throw new ForbiddenException("INVALID_ADMIN_PRINCIPAL", "Cannot resolve admin identity for audit logging: " + principal.getName());
         }
     }
 

@@ -1,0 +1,119 @@
+name: Continuous Integration & Security Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  # ----------------------------------------------------------------------------
+  # 1. BACKEND BUILD & VERIFICATION (Java 21 + Spring Boot 3.4.1)
+  # ----------------------------------------------------------------------------
+  backend-ci:
+    name: Backend Build & Test Suite
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root_password
+          MYSQL_DATABASE: ticket_booking_db
+          MYSQL_USER: ticket_user
+          MYSQL_PASSWORD: ticket_password
+        ports:
+          - 3307:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=5
+      redis:
+        image: redis:7.2-alpine
+        ports:
+          - 6379:6379
+        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=5
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Eclipse Temurin)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Initialize Database Schema
+        run: |
+          mysql -h 127.0.0.1 -P 3307 -u ticket_user -pticket_password ticket_booking_db < environment/init.sql
+
+      - name: Execute Maven Build & Tests
+        working-directory: backend
+        run: mvn clean verify -B
+        env:
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: 3307
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: 6379
+          JWT_SECRET: dev_jwt_secret_key_minimum_32_characters_long
+          VNPAY_HASH_SECRET: SANDBOX_HASH_SECRET_VNPAY_2026
+          TELEGRAM_ENABLED: false
+          MAIL_ENABLED: false
+          FIREBASE_ENABLED: false
+
+  # ----------------------------------------------------------------------------
+  # 2. FRONTEND BUILD & TEST SUITE (Vue 3 + Vitest + Playwright)
+  # ----------------------------------------------------------------------------
+  frontend-ci:
+    name: Frontend Build, Unit & E2E Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run Vitest Unit & Composable Tests
+        working-directory: frontend
+        run: npm run test:unit
+
+      - name: Install Playwright Browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright E2E & Visual Regression Tests
+        working-directory: frontend
+        run: npm run test:e2e
+
+      - name: Build Production SPA Bundle
+        working-directory: frontend
+        run: npm run build
+
+  # ----------------------------------------------------------------------------
+  # 3. SECRET SCANNING & CODE ANALYSIS (TruffleHog)
+  # ----------------------------------------------------------------------------
+  security-scan:
+    name: Secret & Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: TruffleHog Secret Scan
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --only-verified
