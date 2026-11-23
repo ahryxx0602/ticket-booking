@@ -5,15 +5,34 @@ updates:
     directory: "/backend"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 2
+    groups:
+      backend-dependencies:
+        patterns:
+          - "*"
 
   # Maintain dependencies for NPM Frontend
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 2
+    groups:
+      frontend-dependencies:
+        patterns:
+          - "*"
+    ignore:
+      # Tailwind CSS v4 introduces major breaking configuration changes
+      - dependency-name: "tailwindcss"
+        update-types: ["version-update:semver-major"]
 
   # Maintain dependencies for GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 2
+    groups:
+      github-actions:
+        patterns:
+          - "*"
