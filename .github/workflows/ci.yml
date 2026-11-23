@@ -86,6 +86,10 @@ jobs:
         working-directory: frontend
         run: npm run test:unit
 
+      - name: Build Production SPA Bundle
+        working-directory: frontend
+        run: npm run build
+
       - name: Install Playwright Browsers
         working-directory: frontend
         run: npx playwright install --with-deps chromium
@@ -93,10 +97,6 @@ jobs:
       - name: Run Playwright E2E & Visual Regression Tests
         working-directory: frontend
         run: npm run test:e2e
-
-      - name: Build Production SPA Bundle
-        working-directory: frontend
-        run: npm run build
 
   # ----------------------------------------------------------------------------
   # 3. SECRET SCANNING & CODE ANALYSIS (TruffleHog)
