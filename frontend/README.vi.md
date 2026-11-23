@@ -12,11 +12,11 @@
 [![Playwright](https://img.shields.io/badge/Playwright-E2E%20Tests%20(21%20Passed)-2EAD33?style=for-the-badge&logo=playwright&logoColor=white)](https://playwright.dev/)
 [![Vitest](https://img.shields.io/badge/Vitest-Unit%20Tests%20(29%20Passed)-729B1B?style=for-the-badge&logo=vitest&logoColor=white)](https://vitest.dev/)
 
-Giao diện web hiện đại, hiệu năng cao của nền tảng bán vé xe khách liên tỉnh và quản trị đội xe đa đối tác **VeloBus**. Được xây dựng trên nền tảng **Vue 3 (Composition API)**, **PrimeVue 4**, và **Tailwind CSS**, hệ thống chuyển hóa các quy chuẩn nghiệp vụ phức tạp thành ngôn ngữ thiết kế **Kinetic Executive** chuẩn mực phối hợp cùng **Google Stitch**.
+Giao diện web hiện đại, hiệu năng cao của nền tảng bán vé xe khách liên tỉnh và quản trị đội xe đa đối tác **VeloBus**. Được xây dựng trên nền tảng **Vue 3 (Composition API)**, **PrimeVue 4**, và **Tailwind CSS**, hệ thống chuyển hóa các quy chuẩn nghiệp vụ phức tạp thành ngôn ngữ thiết kế **Kinetic Executive** chuẩn mực.
 
 ---
 
-## 🎨 Hệ Thống Thiết Kế UI/UX & Tích Hợp Google Stitch Cloud
+## 🎨 Hệ Thống Thiết Kế UI/UX
 
 Giao diện áp dụng ngôn ngữ thiết kế **Kinetic Executive** tối ưu hóa cho các thao tác nghiệp vụ vận hành mật độ cao:
 - **Brand Navy (`#142B4A`):** Màu thương hiệu chủ đạo, sidebar điều hướng của Admin và Nhà xe, các khối thông tin cấu trúc lớn.
@@ -25,16 +25,13 @@ Giao diện áp dụng ngôn ngữ thiết kế **Kinetic Executive** tối ưu 
 - **Canvas (`#F8FAFC`):** Nền làm việc êm dịu, không gây chói mắt.
 - **Typography:** Phông chữ Inter áp dụng quy chuẩn bắt buộc `font-variant-numeric: tabular-nums` cho toàn bộ số tiền, đồng hồ đếm ngược và bảng dữ liệu.
 
-### Dự Án Google Stitch Cloud Chính Thức
-Toàn bộ các màn hình cốt lõi đã được khởi tạo và đồng bộ trên **Google Stitch Cloud**:
-- **Liên kết dự án:** [https://stitch.withgoogle.com/projects/7031998889146609699](https://stitch.withgoogle.com/projects/7031998889146609699)
-- **Design System Asset:** `assets/a83bf80db97045319502dd4fa3a461f3` (*Kinetic Executive*)
-- **Danh sách màn hình độ phân giải cao:**
-  1. `d5b0031050ff4ae4a8382fbfca348063`: *VeloBus - Chọn chỗ & Đặt vé* (Sơ đồ ghế 2 tầng, đếm ngược 10:00, tóm tắt VNPay)
-  2. `74bd918ef9e741dd9624de8f1b7165e8`: *Fintech Escrow Dashboard & Payout Management* (4 thẻ ví ký quỹ, xác minh KYC VCB)
-  3. `4e909110885f4aa4b302b413417bcfa7`: *Platform Governance & VNPay Reconciliation Dashboard* (Cảnh báo lệch IPN, hoa hồng 2 cấp)
-  4. `a1c763d98f854dc4a5859dbcac5698b1`: *Fleet & Trip Schedule Management* (Khoảng đệm an toàn 30 phút, Drawer tạo chuyến)
-  5. `0c0c51cfabda47c08fb8b230245acd33`: *Customer Digital Boarding Pass & E-Ticket* (Thẻ lên xe điện tử mã hóa QR HMAC-SHA256)
+### Danh Sách Giao Diện Cốt Lõi
+Hệ thống cung cấp 5 màn hình nghiệp vụ trọng yếu trải rộng trên 3 phân hệ:
+1. **Sơ đồ ghế 2 tầng & Luồng đặt vé (Khách hàng):** Ma trận 40 ghế, đếm ngược giữ chỗ 10 phút, tóm tắt thanh toán VNPay dính cuối màn hình.
+2. **Fintech Escrow Dashboard & Quản lý ví (Nhà xe):** 4 thẻ ví (`AVAILABLE`, `HOLDING`, `SETTLING`, `WITHDRAWN`), xác minh KYC ngân hàng, lịch sử giao dịch.
+3. **Platform Governance & Đối Soát VNPay (Ban Quản Trị):** Cảnh báo lệch IPN thời gian thực, chiết khấu hoa hồng 2 cấp, kiểm soát khóa/mở đối tác.
+4. **Quản lý Đội xe & Lập lịch trình (Nhà xe):** Bất biến Turnaround Buffer (30 phút an toàn), ngăn kéo tạo và duyệt xung đột lịch trình.
+5. **Thẻ lên xe điện tử & Vé kỹ thuật số (Khách hàng):** Mã QR Code mã hóa HMAC-SHA256, tự động cập nhật trạng thái chuyến đi.
 
 ---
 

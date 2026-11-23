@@ -11,13 +11,12 @@
 [![Tailwind CSS](https://img.shields.io/badge/TailwindCSS-3.4.17-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![MySQL](https://img.shields.io/badge/MySQL-8.4%20LTS-4479A1?style=for-the-badge&logo=mysql&logoColor=white)](https://www.mysql.com/)
 [![Redis](https://img.shields.io/badge/Redis-7.2-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io/)
-[![Google Stitch](https://img.shields.io/badge/Google_Stitch-Cloud_Design-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://stitch.withgoogle.com/projects/7031998889146609699)
 [![CI Pipeline](https://img.shields.io/badge/CI%2FCD-GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
 [![Tests](https://img.shields.io/badge/Tests-259%20Passed-success?style=for-the-badge&logo=junit5&logoColor=white)]()
 
 An enterprise-grade, high-concurrency multi-tenant ticket booking and fleet mobility marketplace built with **Hexagonal / Clean Architecture**, **Domain-Driven Design (DDD)**, and **Modern Modular Monolith** patterns. 
 
-Inspired by real-world mobility leaders such as **Vexere** and **Shopee**, the platform resolves mission-critical distributed systems challenges: **sub-20ms catalog caching, zero-overbooking seat concurrency via Redisson & DB constraints, idempotent VNPay payments, automated bus operator escrow settlement, and rich multi-portal frontend experiences designed with Google Stitch**.
+Inspired by real-world mobility leaders such as **Vexere** and **Shopee**, the platform resolves mission-critical distributed systems challenges: **sub-20ms catalog caching, zero-overbooking seat concurrency via Redisson & DB constraints, idempotent VNPay payments, automated bus operator escrow settlement, and rich multi-portal frontend experiences**.
 
 ---
 
@@ -25,7 +24,7 @@ Inspired by real-world mobility leaders such as **Vexere** and **Shopee**, the p
 
 For granular technical specifications, please consult the sub-system documentation:
 - ⚙️ **[Backend Core Documentation](backend/README.md) ([Tiếng Việt](backend/README.vi.md)):** Domain-Driven Design, 8 Bounded Contexts, 33 Maven Modules, Redisson Locks, Virtual Threads, and FSM.
-- 🖥️ **[Frontend Interface Documentation](frontend/README.md) ([Tiếng Việt](frontend/README.vi.md)):** Vue 3, PrimeVue 4, Tailwind CSS, Google Stitch Design System, 3 Portals, and Playwright E2E suites.
+- 🖥️ **[Frontend Interface Documentation](frontend/README.md) ([Tiếng Việt](frontend/README.vi.md)):** Vue 3, PrimeVue 4, Tailwind CSS, Kinetic Executive Design System, 3 Portals, and Playwright E2E suites.
 
 ---
 
@@ -60,19 +59,18 @@ ticket-booking/
 
 ---
 
-## 🎨 UI/UX Design System & Google Stitch Cloud
+## 🎨 UI/UX Design System
 
-VeloBus features the **Kinetic Executive** design system, officially synchronized with **Google Stitch Cloud**:
-- **Project URL:** [https://stitch.withgoogle.com/projects/7031998889146609699](https://stitch.withgoogle.com/projects/7031998889146609699)
+VeloBus features the **Kinetic Executive** design system, tailored for high-density transport and logistics operations:
 - **Design Tokens:** Brand Navy (`#142B4A`), Primary Blue (`#2563EB`), Accent Amber (`#F59E0B`), Glare-free Canvas (`#F8FAFC`).
 - **Typography:** Inter with strict OpenType `tabular-nums` formatting to prevent layout jitter during real-time schedule updates.
 
-| Screen ID | Portal & Screen Title | Key Engineering Highlight |
+| Screen Key | Portal & Screen Title | Key Engineering Highlight |
 | :--- | :--- | :--- |
-| `d5b0031050ff4ae4a8382fbfca348063` | **Customer: 2-Deck Seat Map** | 40-seat matrix, 10-minute hold countdown, sticky VNPay summary. |
-| `74bd918ef9e741dd9624de8f1b7165e8` | **Operator: Fintech Escrow Dashboard** | 4 balances (`AVAILABLE`, `HOLDING`, `SETTLING`, `WITHDRAWN`), Vietcombank KYC. |
-| `4e909110885f4aa4b302b413417bcfa7` | **Admin: Governance & VNPay Reconciliation** | Real-time IPN discrepancy alert, 2-tier commission, Audit Trail. |
-| `a1c763d98f854dc4a5859dbcac5698b1` | **Operator: Fleet & Schedules** | Turnaround Buffer (30m) invariant guard, vehicle drawer. |
+| `seat-map` | **Customer: 2-Deck Seat Map** | 40-seat matrix, 10-minute hold countdown, sticky VNPay summary. |
+| `operator-escrow` | **Operator: Fintech Escrow Dashboard** | 4 balances (`AVAILABLE`, `HOLDING`, `SETTLING`, `WITHDRAWN`), Vietcombank KYC. |
+| `admin-reconciliation` | **Admin: Governance & VNPay Reconciliation** | Real-time IPN discrepancy alert, 2-tier commission, Audit Trail. |
+| `operator-fleet` | **Operator: Fleet & Schedules** | Turnaround Buffer (30m) invariant guard, vehicle drawer. |
 | `0c0c51cfabda47c08fb8b230245acd33` | **Customer: Digital E-Ticket** | Airline-style perforated ticket, HMAC-SHA256 encrypted QR Code. |
 
 ---

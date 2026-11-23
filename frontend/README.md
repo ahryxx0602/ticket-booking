@@ -12,11 +12,11 @@
 [![Playwright](https://img.shields.io/badge/Playwright-E2E%20Tests%20(21%20Passed)-2EAD33?style=for-the-badge&logo=playwright&logoColor=white)](https://playwright.dev/)
 [![Vitest](https://img.shields.io/badge/Vitest-Unit%20Tests%20(29%20Passed)-729B1B?style=for-the-badge&logo=vitest&logoColor=white)](https://vitest.dev/)
 
-A modern, high-performance web frontend for the **VeloBus** multi-tenant bus ticketing and logistics platform. Built on **Vue 3 (Composition API)**, **PrimeVue 4**, and **Tailwind CSS**, the interface translates rigorous enterprise business rules into an ultra-clean **Kinetic Executive** design system designed in collaboration with **Google Stitch**.
+A modern, high-performance web frontend for the **VeloBus** multi-tenant bus ticketing and logistics platform. Built on **Vue 3 (Composition API)**, **PrimeVue 4**, and **Tailwind CSS**, the interface translates rigorous enterprise business rules into an ultra-clean **Kinetic Executive** design system.
 
 ---
 
-## 🎨 UI/UX Design System & Google Stitch Cloud Integration
+## 🎨 UI/UX Design System
 
 The interface implements the **Kinetic Executive** design system, engineered for clarity, readability, and data-dense mobility operations:
 - **Brand Navy (`#142B4A`):** Core brand anchors, Admin/Operator navigation sidebars, and high-impact structural panels.
@@ -25,16 +25,13 @@ The interface implements the **Kinetic Executive** design system, engineered for
 - **Canvas (`#F8FAFC`):** Glare-free, calm surface background.
 - **Typography:** Inter with strict OpenType `font-variant-numeric: tabular-nums` for currency, countdown timers, and schedule matrices.
 
-### Official Google Stitch Cloud Project
-All core screens have been generated and synchronized with **Google Stitch Cloud**:
-- **Project URL:** [https://stitch.withgoogle.com/projects/7031998889146609699](https://stitch.withgoogle.com/projects/7031998889146609699)
-- **Design System Asset:** `assets/a83bf80db97045319502dd4fa3a461f3` (*Kinetic Executive*)
-- **Generated High-Resolution Screens:**
-  1. `d5b0031050ff4ae4a8382fbfca348063`: *VeloBus - Chọn chỗ & Đặt vé* (2-Deck Seat Map, 10m countdown, VNPay summary)
-  2. `74bd918ef9e741dd9624de8f1b7165e8`: *Fintech Escrow Dashboard & Payout Management* (4 balances, Vietcombank KYC, ledger)
-  3. `4e909110885f4aa4b302b413417bcfa7`: *Platform Governance & VNPay Reconciliation Dashboard* (IPN discrepancy alerts, 2-tier commission)
-  4. `a1c763d98f854dc4a5859dbcac5698b1`: *Fleet & Trip Schedule Management* (30m turnaround buffer, conflict detection drawer)
-  5. `0c0c51cfabda47c08fb8b230245acd33`: *Customer Digital Boarding Pass & E-Ticket* (HMAC-SHA256 encrypted QR Code)
+### Core Screen Architecture & Capabilities
+The application delivers five mission-critical user interfaces across three portals:
+1. **Customer 2-Deck Seat Map & Booking Flow:** 40-seat interactive matrix, 10-minute hold countdown, sticky VNPay checkout summary.
+2. **Fintech Escrow Dashboard & Payout Management:** 4-balance ledger (`AVAILABLE`, `HOLDING`, `SETTLING`, `WITHDRAWN`), Vietcombank KYC, withdrawal audit trail.
+3. **Platform Governance & VNPay Reconciliation Dashboard:** Real-time IPN discrepancy alerts, 2-tier commission engine, operator lifecycle controls.
+4. **Fleet & Trip Schedule Management:** 30-minute turnaround buffer invariant guard, interactive vehicle scheduling drawer.
+5. **Customer Digital Boarding Pass & E-Ticket:** HMAC-SHA256 encrypted QR Code verification and live trip status updates.
 
 ---
 

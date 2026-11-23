@@ -11,13 +11,12 @@
 [![Tailwind CSS](https://img.shields.io/badge/TailwindCSS-3.4.17-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![MySQL](https://img.shields.io/badge/MySQL-8.4%20LTS-4479A1?style=for-the-badge&logo=mysql&logoColor=white)](https://www.mysql.com/)
 [![Redis](https://img.shields.io/badge/Redis-7.2-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io/)
-[![Google Stitch](https://img.shields.io/badge/Google_Stitch-Cloud_Design-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://stitch.withgoogle.com/projects/7031998889146609699)
 [![CI Pipeline](https://img.shields.io/badge/CI%2FCD-GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
 [![Tests](https://img.shields.io/badge/Tests-259%20Passed-success?style=for-the-badge&logo=junit5&logoColor=white)]()
 
 Nền tảng thương mại điện tử phân phối vé xe khách liên tỉnh, điều phối đội xe và quyết toán ký quỹ (Fintech Escrow) đa đối tác cấp doanh nghiệp. Hệ thống được kiến trúc theo chuẩn mực **Kiến trúc Lục giác (Hexagonal / Clean Architecture)**, **Thiết kế hướng miền (DDD)**, và mô hình **Modular Monolith** hiện đại.
 
-Lấy cảm hứng từ các nền tảng hàng đầu thực tế như **Vexere** và **Shopee**, VeloBus giải quyết dứt điểm các bài toán hóc búa của hệ thống phân tán: **truy xuất danh mục dưới 20ms nhờ Redis Cache, cam kết tuyệt đối không bán trùng ghế (Zero Overbooking) qua Redisson kết hợp ràng buộc Database, cổng thanh toán VNPay xử lý lặp (Idempotent), tự động hóa quyết toán ví ký quỹ nhà xe và giao diện đa phân hệ chuẩn mực thiết kế cùng Google Stitch**.
+Lấy cảm hứng từ các nền tảng hàng đầu thực tế như **Vexere** và **Shopee**, VeloBus giải quyết dứt điểm các bài toán hóc búa của hệ thống phân tán: **truy xuất danh mục dưới 20ms nhờ Redis Cache, cam kết tuyệt đối không bán trùng ghế (Zero Overbooking) qua Redisson kết hợp ràng buộc Database, cổng thanh toán VNPay xử lý lặp (Idempotent), tự động hóa quyết toán ví ký quỹ nhà xe và giao diện đa phân hệ chuẩn mực theo ngôn ngữ thiết kế Kinetic Executive**.
 
 ---
 
@@ -25,7 +24,7 @@ Lấy cảm hứng từ các nền tảng hàng đầu thực tế như **Vexere
 
 Vui lòng tham khảo tài liệu chuyên biệt của từng phân hệ:
 - ⚙️ **[Tài Liệu Kỹ Thuật Backend](backend/README.vi.md) ([English](backend/README.md)):** Thiết kế DDD, 8 Bounded Contexts, 33 Maven Modules, Khóa phân tán Redisson, Virtual Threads Java 21, và FSM.
-- 🖥️ **[Tài Liệu Kỹ Thuật Frontend](frontend/README.vi.md) ([English](frontend/README.md)):** Vue 3, PrimeVue 4, Tailwind CSS, Ngôn ngữ thiết kế Kinetic Executive trên Google Stitch, 3 Portals, và kiểm thử Playwright E2E.
+- 🖥️ **[Tài Liệu Kỹ Thuật Frontend](frontend/README.vi.md) ([English](frontend/README.md)):** Vue 3, PrimeVue 4, Tailwind CSS, Ngôn ngữ thiết kế Kinetic Executive, 3 Portals, và kiểm thử Playwright E2E.
 
 ---
 
@@ -60,19 +59,18 @@ ticket-booking/
 
 ---
 
-## 🎨 Hệ Thống Thiết Kế UI/UX & Google Stitch Cloud
+## 🎨 Hệ Thống Thiết Kế UI/UX
 
-VeloBus áp dụng ngôn ngữ thiết kế **Kinetic Executive**, được đồng bộ chính thức trên **Google Stitch Cloud**:
-- **Dự án Stitch Cloud:** [https://stitch.withgoogle.com/projects/7031998889146609699](https://stitch.withgoogle.com/projects/7031998889146609699)
+VeloBus áp dụng ngôn ngữ thiết kế **Kinetic Executive**, được tối ưu cho các tác vụ vận hành chuyên sâu:
 - **Hệ màu chuẩn:** Brand Navy (`#142B4A`), Primary Blue (`#2563EB`), Accent Amber (`#F59E0B`), Nền Canvas (`#F8FAFC`).
 - **Typography:** Font chữ Inter định dạng nghiêm ngặt `font-variant-numeric: tabular-nums` ngăn chặn hiện tượng nhảy layout khi đồng hồ đếm ngược và bảng dữ liệu cập nhật theo thời gian thực.
 
-| Mã Màn Hình | Vai Trò & Tên Giao Diện | Điểm Nhấn Kỹ Thuật Nghiệp Vụ |
+| Mã Giao Diện | Vai Trò & Tên Giao Diện | Điểm Nhấn Kỹ Thuật Nghiệp Vụ |
 | :--- | :--- | :--- |
-| `d5b0031050ff4ae4a8382fbfca348063` | **Khách hàng: Sơ đồ ghế 2 tầng** | Ma trận 40 ghế, đếm ngược giữ chỗ 10:00, tóm tắt đơn vé VNPay. |
-| `74bd918ef9e741dd9624de8f1b7165e8` | **Chủ xe: Fintech Escrow Dashboard** | 4 thẻ ví (`AVAILABLE`, `HOLDING`, `SETTLING`, `WITHDRAWN`), KYC Vietcombank. |
-| `4e909110885f4aa4b302b413417bcfa7` | **Admin: Governance & Đối Soát VNPay** | Cảnh báo IPN lệch đối soát thời gian thực, chiết khấu 2 cấp, Audit Trail. |
-| `a1c763d98f854dc4a5859dbcac5698b1` | **Chủ xe: Đội xe & Lập lịch** | Bất biến Turnaround Buffer (30 phút), ngăn kéo tạo chuyến thông minh. |
+| `seat-map` | **Khách hàng: Sơ đồ ghế 2 tầng** | Ma trận 40 ghế, đếm ngược giữ chỗ 10:00, tóm tắt đơn vé VNPay. |
+| `operator-escrow` | **Chủ xe: Fintech Escrow Dashboard** | 4 thẻ ví (`AVAILABLE`, `HOLDING`, `SETTLING`, `WITHDRAWN`), KYC Vietcombank. |
+| `admin-reconciliation` | **Admin: Governance & Đối Soát VNPay** | Cảnh báo IPN lệch đối soát thời gian thực, chiết khấu 2 cấp, Audit Trail. |
+| `operator-fleet` | **Chủ xe: Đội xe & Lập lịch** | Bất biến Turnaround Buffer (30 phút), ngăn kéo tạo chuyến thông minh. |
 | `0c0c51cfabda47c08fb8b230245acd33` | **Khách hàng: Thẻ lên xe điện tử** | Vé điện tử chuẩn hàng không, mã QR bảo mật mã hóa HMAC-SHA256. |
 
 ---
