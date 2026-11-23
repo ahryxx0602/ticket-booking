@@ -33,6 +33,11 @@ const routes = [
         name: 'customer-my-bookings',
         component: () => import('@/modules/catalog-booking/views/MyBookingsView.vue'),
       },
+      {
+        path: 'profile',
+        name: 'customer-profile',
+        component: () => import('@/modules/auth/views/UserProfileView.vue'),
+      },
     ],
   },
   {
@@ -69,6 +74,11 @@ const routes = [
         path: 'banners',
         name: 'operator-banners',
         component: () => import('@/modules/partner/views/OperatorBannersView.vue'),
+      },
+      {
+        path: 'profile',
+        name: 'operator-profile',
+        component: () => import('@/modules/partner/views/OperatorProfileView.vue'),
       },
     ],
   },
@@ -107,6 +117,11 @@ const routes = [
         component: () => import('@/modules/admin/views/AdminSettingsView.vue'),
       },
     ],
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'not-found',
+    component: () => import('@/shared/views/NotFoundView.vue'),
   },
 ]
 

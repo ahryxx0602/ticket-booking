@@ -1,15 +1,18 @@
 import httpClient from '@/shared/api/httpClient'
 
 export const partnerApi = {
+  // Operator Profile
   registerOperator(payload) {
     return httpClient.post('/partners/register', payload)
   },
   getProfile() {
-    return httpClient.get('/partners/profile')
+    return httpClient.get('/partners/me')
   },
   updateProfile(payload) {
-    return httpClient.put('/partners/profile', payload)
+    return httpClient.put('/partners/me', payload)
   },
+
+  // Vehicle Fleet
   getVehicles() {
     return httpClient.get('/partners/vehicles')
   },
@@ -19,18 +22,30 @@ export const partnerApi = {
   updateVehicle(id, payload) {
     return httpClient.put(`/partners/vehicles/${id}`, payload)
   },
-  deleteVehicle(id) {
-    return httpClient.delete(`/partners/vehicles/${id}`)
+  setVehicleMaintenance(id) {
+    return httpClient.put(`/partners/vehicles/${id}/maintenance`)
   },
+  activateVehicle(id) {
+    return httpClient.put(`/partners/vehicles/${id}/activate`)
+  },
+
+  // Drivers
   getDrivers() {
     return httpClient.get('/partners/drivers')
   },
   createDriver(payload) {
     return httpClient.post('/partners/drivers', payload)
   },
+  updateDriver(id, payload) {
+    return httpClient.put(`/partners/drivers/${id}`, payload)
+  },
+
+  // Trips
   createPartnerTrip(payload) {
     return httpClient.post('/partners/trips', payload)
   },
+
+  // Fintech Escrow & Wallet
   getWallet() {
     return httpClient.get('/partners/wallet')
   },
@@ -43,6 +58,8 @@ export const partnerApi = {
   getWithdrawals() {
     return httpClient.get('/partners/wallet/withdrawals')
   },
+
+  // Banners
   getMyBanners() {
     return httpClient.get('/partners/banners')
   },
