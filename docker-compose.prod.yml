@@ -21,10 +21,18 @@ services:
     networks:
       - ticket-network
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "$${MYSQL_USER:-ticket_user}", "-p$${MYSQL_PASSWORD}"]
+      test:
+        - CMD-SHELL
+        - >-
+          MYSQL_PWD="$${MYSQL_PASSWORD}"
+          mysql --protocol=TCP -h 127.0.0.1
+          -u "$${MYSQL_USER:-ticket_user}"
+          -D "$${MYSQL_DATABASE:-ticket_booking_db}"
+          -e "SELECT 1" >/dev/null 2>&1
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
   # ----------------------------------------------------------------------------
   # 2. CACHE & DISTRIBUTED LOCK: Redis 7.2 (Internal Only with Auth Required)
