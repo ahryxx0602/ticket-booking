@@ -28,10 +28,14 @@ frontend/playwright-report/
 .env
 .env.*
 !.env.example
+!frontend/.env.development
+!frontend/.env.production
 
-# Logs
+# Logs & Local Dev Process PIDs
 *.log
 logs/
+.dev-pids/
+.dev-logs/
 
 # Firebase & Cloud Credentials
 *firebase*.json

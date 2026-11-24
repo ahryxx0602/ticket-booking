@@ -98,11 +98,13 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useAuthStore } from '@/modules/auth/store'
 import PageHeader from '@/shared/components/PageHeader.vue'
 import AppButton from '@/shared/components/AppButton.vue'
 import FormField from '@/shared/components/FormField.vue'
 import TelegramLinkModal from '@/shared/components/TelegramLinkModal.vue'
 
+const auth = useAuthStore()
 const showTelegramModal = ref(false)
 
 const user = ref({
@@ -118,14 +120,10 @@ const passwordForm = ref({
 })
 
 onMounted(() => {
-  const cached = localStorage.getItem('velobus_user')
-  if (cached) {
-    try {
-      Object.assign(user.value, JSON.parse(cached))
-    } catch {
-      // Ignore
-    }
+  if (auth.user) {
+    Object.assign(user.value, auth.user)
   }
+  user.value.role = auth.role
 })
 
 const userInitials = computed(() => {
@@ -134,6 +132,9 @@ const userInitials = computed(() => {
 })
 
 function saveBasicInfo() {
+  if (auth.user) {
+    auth.user = { ...auth.user, ...user.value }
+  }
   localStorage.setItem('velobus_user', JSON.stringify(user.value))
   alert('Đã cập nhật thông tin cá nhân thành công!')
 }

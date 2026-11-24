@@ -1,0 +1,62 @@
+services:
+  # ----------------------------------------------------------------------------
+  # 1. DATABASE: MySQL 8.4 LTS (Hybrid Dev Infrastructure - Localhost Only)
+  # ----------------------------------------------------------------------------
+  ticket-mysql:
+    image: mysql:8.4
+    container_name: ticket-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_password}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ticket_booking_db}
+      MYSQL_USER: ${MYSQL_USER:-ticket_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ticket_password}
+    ports:
+      - "127.0.0.1:${MYSQL_PORT:-3307}:3306"
+    volumes:
+      - mysql_dev_data:/var/lib/mysql
+      - ./environment/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    networks:
+      - ticket-network
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          MYSQL_PWD="$${MYSQL_PASSWORD:-ticket_password}"
+          mysqladmin ping -h 127.0.0.1
+          -u "$${MYSQL_USER:-ticket_user}" --silent
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ----------------------------------------------------------------------------
+  # 2. CACHE & DISTRIBUTED LOCK: Redis 7.2 (Hybrid Dev Infrastructure - Localhost Only)
+  # ----------------------------------------------------------------------------
+  ticket-redis:
+    image: redis:7.2-alpine
+    container_name: ticket-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - ticket-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  ticket-network:
+    driver: bridge
+
+volumes:
+  mysql_dev_data:
+  redis_dev_data:

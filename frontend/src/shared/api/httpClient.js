@@ -16,17 +16,26 @@ httpClient.interceptors.request.use((config) => {
   return config
 })
 
+let isDispatchingUnauthorized = false
+
 httpClient.interceptors.response.use(
   (response) => response.data,
   (error) => {
     if (error.response?.status === 401) {
-      // Clear local storage tokens immediately
-      localStorage.removeItem('velobus_access_token')
-      localStorage.removeItem('velobus_user')
+      // Không dispatch unauthorized nếu lỗi từ chính form login/register
+      const isAuthUrl = error.config?.url?.includes('/auth/login') || error.config?.url?.includes('/auth/register')
+      if (!isAuthUrl) {
+        localStorage.removeItem('velobus_access_token')
+        localStorage.removeItem('velobus_user')
 
-      // Dispatch global session expiration event for Pinia store and router synchronization
-      if (typeof window !== 'undefined' && window.dispatchEvent) {
-        window.dispatchEvent(new CustomEvent('velobus:unauthorized'))
+        // Khóa debounce chống storm 401 khi nhiều API gọi song song
+        if (!isDispatchingUnauthorized && typeof window !== 'undefined' && window.dispatchEvent) {
+          isDispatchingUnauthorized = true
+          window.dispatchEvent(new CustomEvent('velobus:unauthorized'))
+          setTimeout(() => {
+            isDispatchingUnauthorized = false
+          }, 1000)
+        }
       }
     }
     const payload = error.response?.data || {

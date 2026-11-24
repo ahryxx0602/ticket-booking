@@ -1,7 +1,9 @@
 import { test, expect } from '@playwright/test'
+import { loginAsRole } from './helpers/auth'
 
 test.describe('E2E: Hành Trình Khách Hàng (Customer Journey)', () => {
   test.beforeEach(async ({ page }) => {
+    await loginAsRole(page, 'ROLE_CUSTOMER', 'customer1')
     // Mock API ghế và giữ chỗ để E2E chạy độc lập và ổn định
     await page.route('**/api/v1/catalog/trips/*/seats', async (route) => {
       await route.fulfill({

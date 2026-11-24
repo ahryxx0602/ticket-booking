@@ -1,6 +1,10 @@
 import { test, expect } from '@playwright/test'
+import { loginAsRole } from './helpers/auth'
 
 test.describe('E2E: Phân Hệ Đối Tác Nhà Xe (Operator Portal)', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsRole(page, 'ROLE_OPERATOR', 'operator1')
+  })
   test('FE-OPER-E2E-01: Dashboard ví ký quỹ hiển thị 4 số dư Fintech và bảng giao dịch', async ({ page }) => {
     await page.goto('/operator')
     

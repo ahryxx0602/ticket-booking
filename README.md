@@ -51,8 +51,11 @@ ticket-booking/
 │   └── src/shared/                        # HTTP Client, Design System Kit, Composables
 │
 ├── environment/                           # Database init scripts, stress test scripts, seeds
+├── scripts/                               # Developer automation, lifecycle & smoke-test scripts
 ├── docs/                                  # Comprehensive architectural & UI/UX specifications
-├── docker-compose.yml                     # Local development full-stack orchestration
+├── Makefile                               # Unified 20-command Developer CLI entry point
+├── docker-compose.dev.yml                 # Hybrid Dev Infrastructure (MySQL & Redis on 127.0.0.1)
+├── docker-compose.yml                     # Full-stack Docker Integration orchestration
 ├── docker-compose.prod.yml                # Production full-stack deployment
 └── .github/workflows/ci.yml               # Automated CI/CD & Secret Scanning Pipeline
 ```
@@ -114,30 +117,94 @@ cd frontend && npm run test:e2e
 
 ---
 
-## 🚀 Instant Quickstart (Full-Stack Docker Compose)
+## ⚡ Hybrid Development Environment (Recommended Daily Workflow)
 
-You can launch the entire ecosystem (Database, Cache, Backend, and Frontend SPA) with a single command:
+For daily engineering on **WSL2 Ubuntu**, VeloBus uses a **Hybrid Development Environment**:
+- **Infrastructure in Docker (`docker-compose.dev.yml`):** Only `ticket-mysql` (`127.0.0.1:3307`) and `ticket-redis` (`127.0.0.1:6379`) run in containers with persistent volumes (`mysql_dev_data`, `redis_dev_data`).
+- **Frontend Local Runtime:** Vite Dev Server (`http://127.0.0.1:5173`) with instant Vue 3 + Tailwind HMR and `/api` reverse proxy to `http://127.0.0.1:8080`.
+- **Backend Local Runtime:** Java 21 + Spring Boot (`http://127.0.0.1:8080`, profile `dev`) with **Spring Boot DevTools** + **Multi-Module Reactor Workspace Classpath** (`*/target/classes` across all 26 modules) + **Automatic Incremental Compiler Watcher** (`mvn compile -pl <changed-module> -am -T 1C`). No Docker image rebuild or `mvn install` is required when editing Java or Vue source files.
+
+### 1. First-Time Setup & Prerequisite Check
+```bash
+# Check JDK 21, Maven, Node 22+, Docker Compose V2, and WSL2 native filesystem
+make doctor
+
+# Initialize .env from .env.example, install frontend dependencies, and compile backend reactor
+make setup
+```
+
+### 2. Daily Development Startup & Auto-Reload
+```bash
+# Start MySQL & Redis (Docker) + Backend (Local DevTools + Auto-Compiler) + Frontend (Vite HMR)
+make dev
+```
+- **Alternatively, run components separately or with an IDE (IntelliJ / VS Code):**
+  - `make infra` — Start only MySQL (`127.0.0.1:3307`) and Redis (`127.0.0.1:6379`).
+  - `make backend` — Start local Backend with multi-module auto-compile watcher (or run `com.ticket.TicketApplication` directly in your IDE; `make dev` automatically detects and reuses an IDE-managed Backend on port `8080`, or set `DEBUG=true make backend` for JDWP on `127.0.0.1:5005`).
+  - `make frontend` — Start local Vite Dev Server (`127.0.0.1:5173`).
+- **Verifying Auto-Reload:**
+  - Edit any `.vue` / `.js` / Tailwind file in `frontend/src/` $\to$ Vite HMR updates instantly without rebuilding Docker.
+  - Edit any `.java` / `.yml` file in `ticket-start` or any dependent module (`context-catalog`, `context-booking`, etc.) $\to$ the background watcher incrementally compiles the changed module (`~1s`) and Spring Boot DevTools restarts the context (`~2.6s`).
+- **Stopping Safely:**
+  - `make stop` — Gracefully terminates local Backend, Watcher, and Frontend processes by verified PID (never kills unrelated Java/Node processes and preserves database volumes).
+  - `make infra-stop` — Stops `ticket-mysql` and `ticket-redis` containers while preserving persistent volumes.
+
+### 3. Unified Makefile Command Reference
+
+| Command | Description |
+| :--- | :--- |
+| `make help` | Display all available developer commands |
+| `make doctor` | Validate prerequisites (JDK 21, Maven, Node, Docker Compose V2, WSL2 path) |
+| `make setup` | Initialize `.env`, install npm dependencies, and compile Maven reactor |
+| `make infra` | Start MySQL and Redis in Docker (`docker-compose.dev.yml`) and wait for healthchecks |
+| `make infra-stop` | Stop MySQL and Redis containers (preserves volumes) |
+| `make infra-status` | Show status of development infrastructure containers |
+| `make dev` | Start full Hybrid Development Environment (Infra + Backend + Vite HMR) |
+| `make backend` | Start local Spring Boot Backend + Multi-Module Auto-Compile Watcher |
+| `make frontend` | Start local Vite Dev Server with HMR |
+| `make stop` | Stop local development application processes safely |
+| `make logs` | Stream logs from MySQL and Redis containers |
+| `make smoke-test` | Run end-to-end health & proxy verification against running services |
+| `make test` | Run all Backend and Frontend automated tests |
+| `make test-backend` | Run Backend Maven unit & integration tests |
+| `make test-frontend` | Run Frontend Vitest unit tests |
+| `make build` | Build Docker images for Backend and Frontend |
+| `make integration` | Launch all 4 containers in Full Docker Integration mode (`docker-compose.yml`) |
+| `make prod` | Launch hardened Production containers (`docker-compose.prod.yml`) |
+| `make clean` | Clean Maven `target/` and Frontend `dist/` build artifacts safely |
+| `make reset-db` | Reset development database volume with interactive `[y/N]` confirmation |
+
+---
+
+## 🚀 Full-Stack Docker Integration & Production Deployment
+
+To test the containerized integration environment (all 4 containers in Docker) or build immutable Production images:
 
 ```bash
-# Clone the repository
-git clone git@github.com:ahryxx0602/ticket-booking.git
-cd ticket-booking
+# Full Docker Integration Environment (MySQL + Redis + Backend JAR + Frontend Nginx)
+make integration
 
-# Spin up all 4 containers in background
-docker compose up -d --build
+# Verify deployment health and API proxy
+make smoke-test
 ```
 
 ### Access Endpoints
-- **Frontend Web Application:** [http://localhost:5173](http://localhost:5173) (or `http://localhost:80` in prod mode)
-- **Backend REST API:** [http://localhost:8080](http://localhost:8080)
-- **Swagger / OpenAPI Documentation:** [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html)
-- **MySQL Database:** `localhost:3307` (`ticket_booking_db`)
-- **Redis Cache:** `localhost:6379`
+- **Frontend Web Application:** [http://127.0.0.1:5173](http://127.0.0.1:5173) (or `http://localhost:80` in prod mode)
+- **Backend REST API:** [http://127.0.0.1:8080](http://127.0.0.1:8080)
+- **Swagger / OpenAPI Documentation:** [http://127.0.0.1:8080/swagger-ui.html](http://127.0.0.1:8080/swagger-ui.html)
+- **Actuator Health Probe:** [http://127.0.0.1:8080/actuator/health](http://127.0.0.1:8080/actuator/health)
+- **MySQL Database:** `127.0.0.1:3307` (`ticket_booking_db`)
+- **Redis Cache:** `127.0.0.1:6379`
 
-### Default Seed Accounts (Development Mode)
-- **Super Admin:** `admin` / `password123`
-- **Bus Operator:** `operator1` / `password123`
-- **Customer:** `customer1` / `password123`
+### Default Seed Accounts (Development Profile Only)
+- **Super Admin:** `admin` / `admin_dev_password`
+- **Bus Operator:** `operator1` / `operator_dev_password`
+- **Customer:** `customer1` / `customer_dev_password`
+
+### Troubleshooting Common Issues
+- **Port `8080` or `5173` already in use:** If `ticket-backend` or `ticket-frontend` Docker containers are still running from full-docker mode, `make infra` or `make dev` automatically removes the orphan application containers. To check manually, run `ss -ltnp | grep -E "8080|5173"`.
+- **MySQL Port `3306` vs `3307`:** Host port `3307` is used by default (`ADR-01`) to avoid colliding with a Windows host MySQL service on WSL2. Override `MYSQL_PORT` in `.env` if needed.
+- **Slow File Watching on WSL2:** Always keep the repository inside the Linux native filesystem (`/home/<user>/...`) rather than `/mnt/c/...` (`make doctor` verifies this automatically).
 
 ---
 

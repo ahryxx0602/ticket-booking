@@ -51,9 +51,12 @@ ticket-booking/
 │   └── src/shared/                        # HTTP Client, Design System Kit, Composables
 │
 ├── environment/                           # Script khởi tạo Database, stress test K6, seed data
+├── scripts/                               # Bộ script tự động hóa Hybrid Dev, quản lý PID & smoke-test
 ├── docs/                                  # Toàn bộ tài liệu đặc tả kiến trúc & hướng dẫn thiết kế
-├── docker-compose.yml                     # Điều phối full-stack phát triển cục bộ
-├── docker-compose.prod.yml                # Đóng gói và triển khai production
+├── Makefile                               # Điểm vào CLI thống nhất với 20 lệnh phát triển
+├── docker-compose.dev.yml                 # Hạ tầng Hybrid Dev (MySQL & Redis bind 127.0.0.1)
+├── docker-compose.yml                     # Điều phối Full Docker Integration (4 containers)
+├── docker-compose.prod.yml                # Đóng gói và triển khai Production
 └── .github/workflows/ci.yml               # Đường ống CI/CD tự động & Quét mã độc hại
 ```
 
@@ -114,30 +117,94 @@ cd frontend && npm run test:e2e
 
 ---
 
-## 🚀 Khởi Động Nhanh (Full-Stack Docker Compose)
+## ⚡ Môi Trường Phát Triển Lai — Hybrid Development Environment (Khuyên Dùng Hằng Ngày)
 
-Khởi chạy trọn bộ hệ sinh thái (Database, Cache, Backend API và Frontend SPA) chỉ với một câu lệnh:
+Để tối ưu tốc độ phản hồi khi phát triển trên **WSL2 Ubuntu** mà không cần rebuild Docker image mỗi lần sửa code, VeloBus triển khai kiến trúc **Hybrid Development Environment**:
+- **Hạ tầng trong Docker (`docker-compose.dev.yml`):** Chỉ chạy `ticket-mysql` (`127.0.0.1:3307`) và `ticket-redis` (`127.0.0.1:6379`) với named volumes bền vững (`mysql_dev_data`, `redis_dev_data`).
+- **Frontend Chạy Local:** Vite Dev Server (`http://127.0.0.1:5173`) hỗ trợ HMR tức thì cho Vue 3 + Tailwind CSS và reverse proxy `/api` sang `http://127.0.0.1:8080`.
+- **Backend Chạy Local:** Java 21 + Spring Boot (`http://127.0.0.1:8080`, profile `dev`) tích hợp **Spring Boot DevTools** + **Multi-Module Reactor Workspace Classpath** (`*/target/classes` của toàn bộ 26 modules) + **Automatic Incremental Compiler Watcher** (`mvn compile -pl <changed-module> -am -T 1C`). Khi sửa code ở bất kỳ module nào, hệ thống tự động biên dịch incremental (`~1s`) và restart Spring context (`~2.6s`).
+
+### 1. Kiểm Tra Công Cụ & Khởi Tạo Lần Đầu
+```bash
+# Kiểm tra JDK 21, Maven, Node 22+, Docker Compose V2 và vị trí filesystem WSL2
+make doctor
+
+# Khởi tạo .env từ .env.example, cài đặt npm dependencies và biên dịch Maven reactor
+make setup
+```
+
+### 2. Khởi Động Hằng Ngày & Kiểm Chứng Auto-Reload
+```bash
+# Khởi động MySQL & Redis (Docker) + Backend (Local DevTools + Auto-Compiler) + Frontend (Vite HMR)
+make dev
+```
+- **Chạy từng phần hoặc kết hợp với IDE (IntelliJ / VS Code):**
+  - `make infra` — Chỉ bật MySQL (`127.0.0.1:3307`) và Redis (`127.0.0.1:6379`).
+  - `make backend` — Chạy Backend local kèm trình theo dõi tự động biên dịch multi-module (hoặc chạy/debug `com.ticket.TicketApplication` trực tiếp trong IDE; `make dev` tự động phát hiện và tái sử dụng tiến trình Backend do IDE quản lý trên cổng `8080`, hoặc bật `DEBUG=true make backend` để mở cổng debug JDWP `127.0.0.1:5005`).
+  - `make frontend` — Chạy Vite Dev Server local (`127.0.0.1:5173`).
+- **Cách kiểm tra Auto-Reload:**
+  - Sửa file `.vue` / `.js` / Tailwind trong `frontend/src/` $\to$ Vite HMR cập nhật giao diện ngay lập tức.
+  - Sửa file `.java` / `.yml` trong `ticket-start` hoặc bất kỳ module phụ thuộc nào (`context-catalog`, `context-booking`, v.v.) $\to$ watcher tự động biên dịch module thay đổi và DevTools tự động khởi động lại ngữ cảnh Spring trong ~2–3 giây.
+- **Dừng Hệ Thống An Toàn:**
+  - `make stop` — Dừng các tiến trình local theo đúng PID đã xác thực (không ảnh hưởng các tiến trình Java/Node khác trên máy và giữ nguyên dữ liệu DB).
+  - `make infra-stop` — Dừng container `ticket-mysql` và `ticket-redis` (bảo toàn volumes).
+
+### 3. Bảng Tham Chiếu Lệnh Makefile (20 Commands)
+
+| Câu Lệnh | Chức Năng |
+| :--- | :--- |
+| `make help` | Hiển thị danh sách toàn bộ câu lệnh hỗ trợ |
+| `make doctor` | Kiểm tra prerequisites (JDK 21, Maven, Node, Docker Compose V2, WSL2 filesystem) |
+| `make setup` | Khởi tạo `.env`, cài đặt dependencies frontend và biên dịch backend |
+| `make infra` | Khởi động MySQL và Redis trong Docker (`docker-compose.dev.yml`) và chờ healthcheck |
+| `make infra-stop` | Dừng MySQL và Redis containers (bảo toàn volumes) |
+| `make infra-status` | Kiểm tra trạng thái các container hạ tầng |
+| `make dev` | Khởi động trọn bộ Hybrid Development Environment (Infra + Backend + Vite HMR) |
+| `make backend` | Khởi động Backend Spring Boot local + Multi-module Auto-Compile Watcher |
+| `make frontend` | Khởi động Frontend Vite Dev Server local (HMR) |
+| `make stop` | Dừng các tiến trình ứng dụng local an toàn theo PID |
+| `make logs` | Xem log trực tiếp của MySQL và Redis containers |
+| `make smoke-test` | Kiểm thử khói tự động (Infra + Actuator Health + Catalog API + Vite/Nginx Proxy) |
+| `make test` | Chạy toàn bộ unit & integration tests của Backend và Frontend |
+| `make test-backend` | Chạy bộ test Maven của Backend |
+| `make test-frontend` | Chạy bộ test Vitest của Frontend |
+| `make build` | Build Docker images cho Backend và Frontend |
+| `make integration` | Khởi động Full Docker Integration Environment gồm 4 containers (`docker-compose.yml`) |
+| `make prod` | Khởi động môi trường Production (`docker-compose.prod.yml`) |
+| `make clean` | Dọn dẹp thư mục build `target/` và `dist/` an toàn (không xóa DB volumes) |
+| `make reset-db` | Xóa và khởi tạo lại DB dev từ `environment/init.sql` (có xác nhận `[y/N]`) |
+
+---
+
+## 🚀 Chạy Tích Hợp Full Docker & Triển Khai Production
+
+Khi cần kiểm thử tích hợp toàn bộ 4 containers trong Docker hoặc kiểm tra bản build Production:
 
 ```bash
-# Clone repository về máy
-git clone git@github.com:ahryxx0602/ticket-booking.git
-cd ticket-booking
+# Khởi chạy cả 4 containers (MySQL + Redis + Backend JAR + Frontend Nginx)
+make integration
 
-# Khởi chạy toàn bộ 4 containers ở chế độ chạy nền
-docker compose up -d --build
+# Kiểm tra sức khỏe toàn hệ thống và API proxy
+make smoke-test
 ```
 
 ### Các Cổng Dịch Vụ
-- **Ứng dụng Web Frontend:** [http://localhost:5173](http://localhost:5173) (hoặc `http://localhost:80` ở chế độ Production)
-- **Máy chủ Backend REST API:** [http://localhost:8080](http://localhost:8080)
-- **Tài liệu Swagger / OpenAPI:** [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html)
-- **Cơ sở dữ liệu MySQL:** `localhost:3307` (`ticket_booking_db`)
-- **Bộ đệm Redis Cache:** `localhost:6379`
+- **Ứng dụng Web Frontend:** [http://127.0.0.1:5173](http://127.0.0.1:5173) (hoặc `http://localhost:80` ở chế độ Production)
+- **Máy chủ Backend REST API:** [http://127.0.0.1:8080](http://127.0.0.1:8080)
+- **Tài liệu Swagger / OpenAPI:** [http://127.0.0.1:8080/swagger-ui.html](http://127.0.0.1:8080/swagger-ui.html)
+- **Actuator Health Probe:** [http://127.0.0.1:8080/actuator/health](http://127.0.0.1:8080/actuator/health)
+- **Cơ sở dữ liệu MySQL:** `127.0.0.1:3307` (`ticket_booking_db`)
+- **Bộ đệm Redis Cache:** `127.0.0.1:6379`
 
-### Tài Khoản Seed Mặc Định (Môi Trường Dev)
-- **Super Admin:** `admin` / `password123`
-- **Nhà xe (Bus Operator):** `operator1` / `password123`
-- **Khách hàng (Customer):** `customer1` / `password123`
+### Tài Khoản Seed Mặc Định (Chỉ Dùng Cho Profile `dev`)
+- **Super Admin:** `admin` / `admin_dev_password`
+- **Nhà xe (Bus Operator):** `operator1` / `operator_dev_password`
+- **Khách hàng (Customer):** `customer1` / `customer_dev_password`
+
+### Xử Lý Sự Cố Thường Gặp (Troubleshooting)
+- **Trùng cổng `8080` hoặc `5173`:** Nếu trước đó bạn đang chạy container `ticket-backend` hoặc `ticket-frontend` bằng `docker compose up`, lệnh `make infra` và `make dev` sẽ tự động dọn container ứng dụng thừa để giải phóng cổng cho tiến trình local.
+- **Cổng MySQL `3307` thay vì `3306`:** Dự án mặc định ánh xạ MySQL ra `127.0.0.1:3307` (`ADR-01`) để tránh xung đột với dịch vụ MySQL cài trên Windows Host khi chạy WSL2.
+- **Tốc độ theo dõi file trên WSL2:** Luôn đặt mã nguồn trong phân vùng Linux (`/home/<user>/...`), tránh đặt trong `/mnt/c/...` (lệnh `make doctor` sẽ tự động kiểm tra điều này).
 
 ---
 

@@ -23,6 +23,7 @@
               Tìm & Đặt vé
             </router-link>
             <router-link
+              v-if="!auth.isAuthenticated || auth.isCustomer"
               to="/my-bookings"
               class="px-3.5 py-2 rounded-lg text-xs font-semibold text-text-secondary hover:bg-canvas transition-colors"
               active-class="bg-blue-50 text-primary-600"
@@ -41,18 +42,26 @@
             <LayoutWidthSwitcher />
           </div>
 
+          <!-- Role-based Portal Links -->
           <router-link
+            v-if="auth.isOperator"
             to="/operator"
-            class="hidden sm:inline-flex text-xs font-semibold px-3 py-2 rounded-lg border border-border-default text-text-secondary hover:bg-canvas transition-colors"
+            class="hidden sm:inline-flex text-xs font-semibold px-3 py-2 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors items-center gap-1.5"
           >
-            Portal Nhà xe
+            <i class="pi pi-car"></i>
+            <span>Portal Nhà xe</span>
           </router-link>
+
           <router-link
+            v-if="auth.isAdmin"
             to="/admin"
-            class="hidden sm:inline-flex text-xs font-semibold px-3 py-2 rounded-lg border border-border-default text-text-secondary hover:bg-canvas transition-colors"
+            class="hidden sm:inline-flex text-xs font-semibold px-3 py-2 rounded-lg border border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100 transition-colors items-center gap-1.5"
           >
-            Portal Admin
+            <i class="pi pi-shield"></i>
+            <span>Portal Admin</span>
           </router-link>
+
+          <!-- Authentication buttons -->
           <router-link
             v-if="!auth.isAuthenticated"
             to="/login"
@@ -60,13 +69,22 @@
           >
             Đăng nhập
           </router-link>
-          <button
-            v-else
-            class="text-xs font-semibold px-3.5 py-2 rounded-lg bg-slate-100 text-text-primary hover:bg-slate-200"
-            @click="auth.logout()"
-          >
-            {{ auth.user?.username || 'Tài khoản' }} (Thoát)
-          </button>
+          <div v-else class="flex items-center gap-2">
+            <router-link
+              to="/profile"
+              class="text-xs font-semibold px-3 py-2 rounded-lg border border-border-default hover:bg-canvas transition-colors text-text-secondary flex items-center gap-1"
+            >
+              <i class="pi pi-user text-xs"></i>
+              <span>{{ auth.user?.username || 'Hồ sơ' }}</span>
+            </router-link>
+            <button
+              class="text-xs font-semibold px-3 py-2 rounded-lg bg-slate-100 text-text-primary hover:bg-slate-200 transition-colors"
+              title="Đăng xuất"
+              @click="handleLogout"
+            >
+              Thoát
+            </button>
+          </div>
         </div>
       </div>
     </header>
@@ -95,7 +113,9 @@
           <h4 class="text-xs font-bold uppercase tracking-wider text-slate-200">Hành Khách</h4>
           <ul class="space-y-1.5 text-slate-400">
             <li><router-link to="/" class="hover:text-white">Tìm kiếm chuyến xe</router-link></li>
-            <li><router-link to="/my-bookings" class="hover:text-white">Kiểm tra vé điện tử</router-link></li>
+            <li v-if="!auth.isAuthenticated || auth.isCustomer">
+              <router-link to="/my-bookings" class="hover:text-white">Kiểm tra vé điện tử</router-link>
+            </li>
             <li><span class="hover:text-white cursor-pointer">Chính sách hủy & đổi trả</span></li>
           </ul>
         </div>
@@ -103,9 +123,18 @@
         <div class="space-y-2">
           <h4 class="text-xs font-bold uppercase tracking-wider text-slate-200">Đối Tác Nhà Xe</h4>
           <ul class="space-y-1.5 text-slate-400">
-            <li><router-link to="/operator" class="hover:text-white">Đăng nhập Nhà xe</router-link></li>
-            <li><router-link to="/operator/fleet" class="hover:text-white">Quản lý đội xe & tài xế</router-link></li>
-            <li><router-link to="/operator" class="hover:text-white">Ví ký quỹ Escrow 4 số dư</router-link></li>
+            <template v-if="auth.isOperator">
+              <li><router-link to="/operator" class="hover:text-white font-medium text-emerald-400">Vào Portal Nhà xe</router-link></li>
+              <li><router-link to="/operator/fleet" class="hover:text-white">Quản lý đội xe & tài xế</router-link></li>
+              <li><router-link to="/operator" class="hover:text-white">Ví ký quỹ Escrow 4 số dư</router-link></li>
+            </template>
+            <template v-else-if="!auth.isAuthenticated">
+              <li><router-link to="/login" class="hover:text-white">Cổng thông tin Đối tác</router-link></li>
+              <li><span class="hover:text-white cursor-pointer">Chính sách hợp tác mở tuyến</span></li>
+            </template>
+            <template v-else>
+              <li><span class="hover:text-white cursor-pointer">Hợp tác mở tuyến xe liên tỉnh</span></li>
+            </template>
           </ul>
         </div>
 
@@ -126,11 +155,22 @@
 </template>
 
 <script setup>
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/modules/auth/store'
 import { useLayoutWidth } from '@/shared/composables/useLayoutWidth'
 import LayoutWidthSwitcher from '@/shared/components/LayoutWidthSwitcher.vue'
 import NotificationCenter from '@/shared/components/NotificationCenter.vue'
 
+const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
 const { containerClass } = useLayoutWidth()
+
+function handleLogout() {
+  auth.logout()
+  const requiresAuth = route.matched.some(r => r.meta?.requiresAuth)
+  if (requiresAuth) {
+    router.push('/login')
+  }
+}
 </script>

@@ -1,6 +1,10 @@
 import { test, expect } from '@playwright/test'
+import { loginAsRole } from './helpers/auth'
 
 test.describe('E2E: Phân Hệ Ban Quản Trị (Admin Backoffice)', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsRole(page, 'ROLE_ADMIN', 'admin')
+  })
   test('FE-ADM-E2E-01: Dashboard quản trị hiển thị KPI toàn sàn và cảnh báo đối soát VNPay', async ({ page }) => {
     await page.goto('/admin')
     

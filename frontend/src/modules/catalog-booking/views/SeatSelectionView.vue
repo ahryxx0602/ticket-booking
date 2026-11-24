@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useToast } from 'primevue/usetoast'
+import { useAuthStore } from '@/modules/auth/store'
 import SeatMap2Deck from '@/shared/components/SeatMap2Deck.vue'
 import { useCountdown } from '@/shared/composables/useCountdown'
 import { catalogBookingApi } from '../api'
@@ -9,6 +10,7 @@ import { catalogBookingApi } from '../api'
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
+const auth = useAuthStore()
 
 const tripId = computed(() => route.params.id || 'TRIP-DEMO-01')
 const loading = ref(false)
@@ -106,6 +108,39 @@ async function handleHoldSeats() {
     return
   }
 
+  // Chặn khách vãng lai (Guest) chưa đăng nhập: chuyển hướng sang login kèm lưu query redirect
+  if (!auth.isAuthenticated) {
+    try {
+      sessionStorage.setItem(`velobus_pending_seats_${tripId.value}`, JSON.stringify(selectedSeats.value))
+    } catch (e) {}
+
+    toast.add({
+      severity: 'info',
+      summary: 'Yêu cầu đăng nhập',
+      detail: 'Vui lòng đăng nhập tài khoản Khách hàng để thực hiện giữ chỗ.',
+      life: 4000
+    })
+    router.push({
+      path: '/login',
+      query: {
+        redirect: route.fullPath,
+        reason: 'auth_required'
+      }
+    })
+    return
+  }
+
+  // Chặn tài khoản Quản trị / Đối tác nhà xe đặt vé khách hàng
+  if (!auth.isCustomer) {
+    toast.add({
+      severity: 'warn',
+      summary: 'Quyền hạn không hợp lệ',
+      detail: 'Tài khoản Quản trị viên / Nhà xe không được thực hiện đặt vé khách hàng.',
+      life: 4000
+    })
+    return
+  }
+
   holding.value = true
   try {
     const res = await catalogBookingApi.holdSeats({
@@ -150,6 +185,18 @@ function proceedToCheckout() {
 
 onMounted(() => {
   fetchTripSeats()
+
+  // Khôi phục danh sách ghế đã chọn trước khi bị điều hướng đăng nhập (nếu có)
+  try {
+    const pending = sessionStorage.getItem(`velobus_pending_seats_${tripId.value}`)
+    if (pending) {
+      const parsed = JSON.parse(pending)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        selectedSeats.value = parsed
+        sessionStorage.removeItem(`velobus_pending_seats_${tripId.value}`)
+      }
+    }
+  } catch (e) {}
 })
 </script>
 

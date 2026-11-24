@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { loginAsRole } from './helpers/auth'
 
 test.describe('E2E: Visual Regression & Layout Responsive Check', () => {
   const viewports = [
@@ -18,6 +19,7 @@ test.describe('E2E: Visual Regression & Layout Responsive Check', () => {
     })
 
     test(`FE-VIS-02: Dashboard Operator responsive trên ${vp.name}`, async ({ page }) => {
+      await loginAsRole(page, 'ROLE_OPERATOR')
       await page.setViewportSize({ width: vp.width, height: vp.height })
       await page.goto('/operator')
 
@@ -27,6 +29,7 @@ test.describe('E2E: Visual Regression & Layout Responsive Check', () => {
     })
 
     test(`FE-VIS-03: Dashboard Admin responsive trên ${vp.name}`, async ({ page }) => {
+      await loginAsRole(page, 'ROLE_ADMIN')
       await page.setViewportSize({ width: vp.width, height: vp.height })
       await page.goto('/admin')
 
@@ -37,6 +40,7 @@ test.describe('E2E: Visual Regression & Layout Responsive Check', () => {
   }
 
   test('FE-VIS-04: Drawer thích ứng độ rộng chuẩn UX trên Mobile', async ({ page }) => {
+    await loginAsRole(page, 'ROLE_OPERATOR')
     await page.setViewportSize({ width: 375, height: 667 })
     await page.goto('/operator/fleet')
 
