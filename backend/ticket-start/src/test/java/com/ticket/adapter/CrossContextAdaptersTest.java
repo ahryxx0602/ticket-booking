@@ -2,11 +2,6 @@ package com.ticket.adapter;
 
 import com.ticket.booking.domain.port.CatalogTripPort;
 import com.ticket.booking.domain.port.IdentityUserPort;
-import com.ticket.booking.presentation.controller.BookingController;
-import com.ticket.booking.application.usecase.CancelBookingUseCase;
-import com.ticket.booking.application.usecase.GetBookingDetailUseCase;
-import com.ticket.booking.application.usecase.GetMyBookingsUseCase;
-import com.ticket.booking.application.usecase.HoldSeatUseCase;
 import com.ticket.catalog.domain.model.Seat;
 import com.ticket.catalog.domain.model.SeatType;
 import com.ticket.catalog.domain.model.Trip;
@@ -27,8 +22,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.access.AccessDeniedException;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -38,12 +31,8 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @ExtendWith(MockitoExtension.class)
 class CrossContextAdaptersTest {
@@ -115,22 +104,27 @@ class CrossContextAdaptersTest {
     }
 
     @Test
-    void globalExceptionHandler_shouldReturn403ForAccessDeniedException() throws Exception {
-        BookingController controller = new BookingController(
-                mock(HoldSeatUseCase.class),
-                mock(CancelBookingUseCase.class),
-                mock(GetMyBookingsUseCase.class),
-                mock(GetBookingDetailUseCase.class)
-        );
-        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(controller)
-                .setControllerAdvice(new GlobalExceptionHandler())
-                .build();
+    void accessDeniedShouldReturn403() {
+        GlobalExceptionHandler handler = new GlobalExceptionHandler();
+        var response = handler.handleAccessDenied(new AccessDeniedException("Forbidden"));
 
-        // Calling endpoint without Principal triggers AccessDeniedException -> 403 FORBIDDEN via GlobalExceptionHandler
-        mockMvc.perform(get("/api/v1/bookings/my-bookings"))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isFalse();
+        assertThat(response.getBody().getCode()).isEqualTo("ACCESS_DENIED");
+    }
+
+    @Test
+    void generalException_shouldHideInternalDetailsAndReturn500() {
+        GlobalExceptionHandler handler = new GlobalExceptionHandler();
+        var response = handler.handleGeneral(new RuntimeException("Sensitive database syntax error: Table 'users' doesn't exist"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isFalse();
+        assertThat(response.getBody().getCode()).isEqualTo("INTERNAL_SERVER_ERROR");
+        assertThat(response.getBody().getMessage()).doesNotContain("database syntax error");
+        assertThat(response.getBody().getMessage()).contains("unexpected internal server error");
     }
 
     @Test
