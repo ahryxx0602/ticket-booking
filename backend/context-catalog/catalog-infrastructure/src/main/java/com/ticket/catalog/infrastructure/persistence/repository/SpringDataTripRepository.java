@@ -18,6 +18,12 @@ public interface SpringDataTripRepository extends JpaRepository<TripJpaEntity, L
     @Query("SELECT t FROM TripJpaEntity t " +
            "JOIN FETCH t.departureStation " +
            "JOIN FETCH t.arrivalStation " +
+           "ORDER BY t.departureTime DESC")
+    List<TripJpaEntity> findAllWithStations();
+
+    @Query("SELECT t FROM TripJpaEntity t " +
+           "JOIN FETCH t.departureStation " +
+           "JOIN FETCH t.arrivalStation " +
            "WHERE t.id = :id")
     Optional<TripJpaEntity> findByIdWithStations(@Param("id") Long id);
 

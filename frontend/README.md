@@ -9,8 +9,8 @@
 [![PrimeVue 4](https://img.shields.io/badge/PrimeVue-4.2.5-41B883?style=for-the-badge&logo=primevue&logoColor=white)](https://primevue.org/)
 [![Tailwind CSS](https://img.shields.io/badge/TailwindCSS-3.4.17-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![Pinia](https://img.shields.io/badge/Pinia-2.3.0-FFE57F?style=for-the-badge&logo=pinia&logoColor=black)](https://pinia.vuejs.org/)
-[![Playwright](https://img.shields.io/badge/Playwright-E2E%20Tests%20(21%20Passed)-2EAD33?style=for-the-badge&logo=playwright&logoColor=white)](https://playwright.dev/)
-[![Vitest](https://img.shields.io/badge/Vitest-Unit%20Tests%20(29%20Passed)-729B1B?style=for-the-badge&logo=vitest&logoColor=white)](https://vitest.dev/)
+[![Playwright](https://img.shields.io/badge/Playwright-E2E%20Tests%20(22%20Passed)-2EAD33?style=for-the-badge&logo=playwright&logoColor=white)](https://playwright.dev/)
+[![Vitest](https://img.shields.io/badge/Vitest-Unit%20Tests%20(60%20Passed)-729B1B?style=for-the-badge&logo=vitest&logoColor=white)](https://vitest.dev/)
 
 A modern, high-performance web frontend for the **VeloBus** multi-tenant bus ticketing and logistics platform. Built on **Vue 3 (Composition API)**, **PrimeVue 4**, and **Tailwind CSS**, the interface translates rigorous enterprise business rules into an ultra-clean **Kinetic Executive** design system.
 

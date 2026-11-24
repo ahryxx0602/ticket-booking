@@ -3,6 +3,7 @@ package com.ticket.payment.infrastructure.service;
 import com.ticket.payment.application.dto.PaymentDetailResponse;
 import com.ticket.payment.application.dto.PaymentReportResponse;
 import com.ticket.payment.application.usecase.AdminGetPaymentsUseCase;
+import com.ticket.payment.application.usecase.AdminReconcilePaymentUseCase;
 import com.ticket.payment.application.usecase.GetPaymentReportUseCase;
 import com.ticket.payment.domain.model.Payment;
 import com.ticket.payment.domain.model.PaymentMethod;
@@ -11,6 +12,7 @@ import com.ticket.payment.domain.model.PaymentStatus;
 import com.ticket.payment.domain.repository.PaymentRepository;
 import com.ticket.shared.dto.PageResponse;
 import com.ticket.shared.exception.BusinessException;
+import com.ticket.shared.exception.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,7 +27,7 @@ import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
-public class PaymentQueryServiceImpl implements GetPaymentReportUseCase, AdminGetPaymentsUseCase {
+public class PaymentQueryServiceImpl implements GetPaymentReportUseCase, AdminGetPaymentsUseCase, AdminReconcilePaymentUseCase {
 
     private final PaymentRepository paymentRepository;
 
@@ -86,6 +88,16 @@ public class PaymentQueryServiceImpl implements GetPaymentReportUseCase, AdminGe
                 .hasNext(paymentPage.isHasNext())
                 .hasPrevious(paymentPage.isHasPrevious())
                 .build();
+    }
+
+    @Override
+    @Transactional
+    public PaymentDetailResponse execute(Long paymentId, String resolutionNote) {
+        Payment payment = paymentRepository.findById(paymentId)
+                .orElseThrow(() -> new EntityNotFoundException("Payment", paymentId));
+        payment.resolveReconciliation(resolutionNote);
+        Payment saved = paymentRepository.save(payment);
+        return toResponse(saved);
     }
 
     private PaymentDetailResponse toResponse(Payment p) {

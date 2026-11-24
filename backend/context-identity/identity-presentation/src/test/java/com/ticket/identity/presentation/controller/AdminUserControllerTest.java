@@ -53,6 +53,15 @@ class AdminUserControllerTest {
     @Mock
     private AdminResetPasswordUseCase resetPasswordUseCase;
 
+    @Mock
+    private AdminCreateUserUseCase createUserUseCase;
+
+    @Mock
+    private AdminUpdateUserUseCase updateUserUseCase;
+
+    @Mock
+    private AdminDeleteUserUseCase deleteUserUseCase;
+
     @InjectMocks
     private AdminUserController adminUserController;
 
@@ -60,6 +69,9 @@ class AdminUserControllerTest {
 
     @BeforeEach
     void setUp() {
+        adminUserController.setCreateUserUseCase(createUserUseCase);
+        adminUserController.setUpdateUserUseCase(updateUserUseCase);
+        adminUserController.setDeleteUserUseCase(deleteUserUseCase);
         mockMvc = MockMvcBuilders.standaloneSetup(adminUserController).build();
 
         sampleResponse = UserDetailResponse.builder()
@@ -158,5 +170,50 @@ class AdminUserControllerTest {
                 .andExpect(jsonPath("$.success").value(true));
 
         verify(resetPasswordUseCase).execute(eq(1L), any(AdminResetPasswordRequest.class));
+    }
+
+    @Test
+    @DisplayName("POST, PUT, DELETE /api/v1/admin/users: Should support full user CRUD")
+    void createUpdateDeleteUser_ShouldReturnSuccess() throws Exception {
+        com.ticket.identity.application.dto.AdminCreateUserRequest createReq =
+                com.ticket.identity.application.dto.AdminCreateUserRequest.builder()
+                        .username("cskh02")
+                        .email("cskh02@velobus.vn")
+                        .fullName("CSKH 02")
+                        .password("Password123")
+                        .role("ROLE_CSKH")
+                        .build();
+
+        when(createUserUseCase.execute(any(), anyString())).thenReturn(sampleResponse);
+
+        mockMvc.perform(post("/api/v1/admin/users")
+                        .principal(() -> "admin")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createReq)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.success").value(true));
+
+        com.ticket.identity.application.dto.AdminUpdateUserRequest updateReq =
+                com.ticket.identity.application.dto.AdminUpdateUserRequest.builder()
+                        .fullName("Updated CSKH 02")
+                        .email("cskh02@velobus.vn")
+                        .role("ROLE_CSKH")
+                        .build();
+
+        when(updateUserUseCase.execute(eq(1L), any(), anyString())).thenReturn(sampleResponse);
+
+        mockMvc.perform(put("/api/v1/admin/users/1")
+                        .principal(() -> "admin")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(updateReq)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        mockMvc.perform(delete("/api/v1/admin/users/1")
+                        .principal(() -> "admin"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        verify(deleteUserUseCase).execute(1L, "admin");
     }
 }

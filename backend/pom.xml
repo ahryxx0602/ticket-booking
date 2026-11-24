@@ -12,11 +12,11 @@
     </parent>
 
     <groupId>com.ticket</groupId>
-    <artifactId>ticket-booking-parent</artifactId>
+    <artifactId>velobus-ticketing-platform-parent</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <packaging>pom</packaging>
-    <name>Ticket Booking Parent</name>
-    <description>Enterprise Modular Monolith Ticket Booking System (DDD Architecture)</description>
+    <name>VeloBus Ticketing Platform Parent</name>
+    <description>VeloBus Multi-Operator Bus Ticketing &amp; Escrow Marketplace Platform (Modular DDD Architecture)</description>
 
     <properties>
         <java.version>21</java.version>

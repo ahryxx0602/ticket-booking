@@ -10,7 +10,7 @@
 [![Redis 7.2](https://img.shields.io/badge/Redis-7.2%20Alpine-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io/)
 [![Redisson](https://img.shields.io/badge/Redisson-Distributed_Lock-009688?style=for-the-badge)](https://redisson.org/)
 [![Maven](https://img.shields.io/badge/Maven-33%20Modules-C71A36?style=for-the-badge&logo=apache-maven&logoColor=white)](https://maven.apache.org/)
-[![Tests](https://img.shields.io/badge/Tests-209%20Passed-success?style=for-the-badge&logo=junit5&logoColor=white)]()
+[![Tests](https://img.shields.io/badge/Tests-243%20Passed-success?style=for-the-badge&logo=junit5&logoColor=white)]()
 
 The core backend of the **VeloBus** platform, architected as a **Micro-Modular Monolith** using **Domain-Driven Design (DDD)** and **Clean / Hexagonal Architecture**. Engineered on **Java 21** and **Spring Boot 3.4.1**, the system delivers ultra-high throughput with Java 21 Virtual Threads, distributed concurrency safety via Redisson, sub-20ms catalog cache hit response times, and multi-tenant bus operator escrow settlement.
 

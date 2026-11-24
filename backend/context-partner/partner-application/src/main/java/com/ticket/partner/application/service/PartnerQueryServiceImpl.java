@@ -12,7 +12,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -106,6 +108,14 @@ public class PartnerQueryServiceImpl implements PartnerQueryService {
     }
 
     @Override
+    public List<BannerResponse> getAllBanners(BannerStatus status) {
+        List<Banner> list = (status != null)
+                ? bannerRepository.findByStatus(status)
+                : bannerRepository.findAll();
+        return list.stream().map(PartnerMapper::toResponse).collect(Collectors.toList());
+    }
+
+    @Override
     public List<BannerResponse> getActiveBanners(LocalDateTime now, int limit) {
         LocalDateTime queryTime = (now != null) ? now : LocalDateTime.now();
         int queryLimit = (limit > 0) ? limit : 10;
@@ -137,6 +147,21 @@ public class PartnerQueryServiceImpl implements PartnerQueryService {
                     }
                 })
                 .orElse(DEFAULT_GLOBAL_COMMISSION);
+    }
+
+    @Override
+    public Map<String, String> getAllSystemSettings() {
+        Map<String, String> settings = new LinkedHashMap<>();
+        settings.put("platformName", systemSettingRepository.findByKey("PLATFORM_NAME")
+                .map(SystemSetting::getSettingValue).orElse("VeloBus - Sàn Vé Xe Khách Cao Cấp"));
+        settings.put("defaultCommissionRate", getGlobalCommissionRate().toPlainString());
+        settings.put("seatHoldTtlMinutes", systemSettingRepository.findByKey("SEAT_HOLD_TTL_MINUTES")
+                .map(SystemSetting::getSettingValue).orElse("10"));
+        settings.put("turnaroundBufferMinutes", systemSettingRepository.findByKey("TURNAROUND_BUFFER_MINUTES")
+                .map(SystemSetting::getSettingValue).orElse("30"));
+        settings.put("escrowSettlementDelayHours", systemSettingRepository.findByKey("ESCROW_SETTLEMENT_DELAY_HOURS")
+                .map(SystemSetting::getSettingValue).orElse("2"));
+        return settings;
     }
 
     private BusOperator getOperatorByUserId(Long userId) {

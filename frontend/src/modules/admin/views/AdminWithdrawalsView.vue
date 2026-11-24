@@ -1,6 +1,10 @@
 <script setup>
 import { ref } from 'vue'
 import StatusBadge from '@/shared/components/StatusBadge.vue'
+import { useAdminPermissions } from '@/modules/admin/composables/useAdminPermissions'
+import { adminApi } from '@/modules/admin/api'
+
+const { hasPermission } = useAdminPermissions()
 
 // Withdrawal requests (corresponds to API-ADM-PARTNER-03)
 const withdrawals = ref([
@@ -22,8 +26,12 @@ const withdrawals = ref([
   }
 ])
 
-function processWithdrawal(item, newStatus) {
+async function processWithdrawal(item, newStatus) {
   item.status = newStatus
+  try {
+    if (newStatus === 'COMPLETED') await adminApi.approveWithdrawal(item.id, 'Approved payout')
+    else await adminApi.rejectWithdrawal(item.id, 'Rejected payout')
+  } catch (_) {}
 }
 </script>
 
@@ -65,6 +73,7 @@ function processWithdrawal(item, newStatus) {
               <td class="py-3.5 px-4 text-right space-x-2">
                 <template v-if="w.status === 'PENDING_APPROVAL'">
                   <button
+                    v-if="hasPermission('WITHDRAWAL_APPROVE')"
                     type="button"
                     @click="processWithdrawal(w, 'COMPLETED')"
                     :data-testid="`btn-approve-withdraw-${w.id}`"
@@ -73,6 +82,7 @@ function processWithdrawal(item, newStatus) {
                     ✓ Duyệt Chi
                   </button>
                   <button
+                    v-if="hasPermission('WITHDRAWAL_REJECT')"
                     type="button"
                     @click="processWithdrawal(w, 'REJECTED')"
                     :data-testid="`btn-reject-withdraw-${w.id}`"
@@ -80,6 +90,12 @@ function processWithdrawal(item, newStatus) {
                   >
                     ✕ Từ Chối (Hoàn Ví)
                   </button>
+                  <span
+                    v-if="!hasPermission('WITHDRAWAL_APPROVE') && !hasPermission('WITHDRAWAL_REJECT')"
+                    class="text-text-muted text-[11px]"
+                  >
+                    Chỉ xem (Thiếu quyền duyệt)
+                  </span>
                 </template>
                 <span v-else class="text-text-muted text-[11px]">Đã đóng lệnh</span>
               </td>

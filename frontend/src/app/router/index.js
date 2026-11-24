@@ -105,37 +105,61 @@ const routes = [
         path: '',
         name: 'admin-dashboard',
         component: () => import('@/modules/admin/views/AdminDashboardView.vue'),
-        meta: { requiresAuth: true, roles: ['ROLE_ADMIN'] },
+        meta: {
+          requiresAuth: true,
+          roles: ['ROLE_ADMIN'],
+          requiredPermissions: ['PAYMENT_REPORT_VIEW', 'PAYMENT_LIST_VIEW'],
+        },
       },
       {
         path: 'operators',
         name: 'admin-operators',
         component: () => import('@/modules/admin/views/AdminOperatorsView.vue'),
-        meta: { requiresAuth: true, roles: ['ROLE_ADMIN'] },
+        meta: {
+          requiresAuth: true,
+          roles: ['ROLE_ADMIN'],
+          requiredPermissions: ['OPERATOR_VIEW'],
+        },
       },
       {
         path: 'withdrawals',
         name: 'admin-withdrawals',
         component: () => import('@/modules/admin/views/AdminWithdrawalsView.vue'),
-        meta: { requiresAuth: true, roles: ['ROLE_ADMIN'] },
+        meta: {
+          requiresAuth: true,
+          roles: ['ROLE_ADMIN'],
+          requiredPermissions: ['WITHDRAWAL_VIEW'],
+        },
       },
       {
         path: 'banners',
         name: 'admin-banners',
         component: () => import('@/modules/admin/views/AdminBannersView.vue'),
-        meta: { requiresAuth: true, roles: ['ROLE_ADMIN'] },
+        meta: {
+          requiresAuth: true,
+          roles: ['ROLE_ADMIN'],
+          requiredPermissions: ['BANNER_VIEW'],
+        },
       },
       {
         path: 'users-bookings',
         name: 'admin-users-bookings',
         component: () => import('@/modules/admin/views/AdminUsersBookingsView.vue'),
-        meta: { requiresAuth: true, roles: ['ROLE_ADMIN'] },
+        meta: {
+          requiresAuth: true,
+          roles: ['ROLE_ADMIN'],
+          requiredPermissions: ['USER_VIEW', 'ROLE_MANAGE_CRUD', 'BOOKING_VIEW'],
+        },
       },
       {
         path: 'settings',
         name: 'admin-settings',
         component: () => import('@/modules/admin/views/AdminSettingsView.vue'),
-        meta: { requiresAuth: true, roles: ['ROLE_ADMIN'] },
+        meta: {
+          requiresAuth: true,
+          roles: ['ROLE_ADMIN'],
+          requiredPermissions: ['STATION_VIEW', 'TRIP_MANAGE_CRUD', 'SYSTEM_SETTINGS_MANAGE'],
+        },
       },
     ],
   },
@@ -159,10 +183,9 @@ const router = createRouter({
 })
 
 /**
- * Vue Router Navigation Guard - Cưỡng chế bảo mật RBAC & điều hướng động
+ * Vue Router Navigation Guard - Cưỡng chế bảo mật RBAC & điều hướng động theo 26 API Permissions
  */
 router.beforeEach((to, from) => {
-  // useAuthStore được gọi an toàn bên trong callback sau khi Pinia đã khởi tạo
   const auth = useAuthStore()
 
   // 1. Whitelist duy nhất route trạng thái 403 Forbidden (chống loop)
@@ -171,7 +194,6 @@ router.beforeEach((to, from) => {
   }
 
   // 2. Chống lộ route nội bộ (Route Enumeration) cho khách vãng lai và vai trò trái phép
-  // Bắt đầu kiểm tra segment /admin(/|$) hoặc /operator(/|$) trước not-found (không phân biệt chữ hoa/thường)
   const isInternalPath = /^\/(admin|operator)(\/|$)/i.test(to.path)
   if (isInternalPath) {
     if (!auth.isAuthenticated) {
@@ -215,6 +237,19 @@ router.beforeEach((to, from) => {
 
   if (allowedRoles && Array.isArray(allowedRoles) && allowedRoles.length > 0) {
     if (auth.isAuthenticated && !allowedRoles.includes(auth.role)) {
+      return {
+        name: 'forbidden',
+        replace: true,
+      }
+    }
+  }
+
+  // 7. PHASE-07: Kiểm tra phân quyền Module/API động cho nhân sự hệ thống (Custom Admin Role)
+  const requiredPermsRecord = [...to.matched].reverse().find(r => r.meta?.requiredPermissions)
+  const requiredPermissions = requiredPermsRecord?.meta?.requiredPermissions
+
+  if (requiredPermissions && Array.isArray(requiredPermissions) && requiredPermissions.length > 0) {
+    if (auth.isAuthenticated && auth.isAdmin && !auth.hasAnyPermission(requiredPermissions)) {
       return {
         name: 'forbidden',
         replace: true,

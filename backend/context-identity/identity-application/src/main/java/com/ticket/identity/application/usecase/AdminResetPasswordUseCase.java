@@ -4,4 +4,8 @@ import com.ticket.identity.application.dto.AdminResetPasswordRequest;
 
 public interface AdminResetPasswordUseCase {
     void execute(Long id, AdminResetPasswordRequest request);
+
+    default void execute(Long id, AdminResetPasswordRequest request, String currentAdminUsername) {
+        execute(id, request);
+    }
 }

@@ -234,6 +234,42 @@ class SecurityIntegrationTest {
     }
 
     // =========================================================================
+    // 7. DYNAMIC ADMIN RBAC MATRIX (PHASE-07: 7 MODULES x 26 APIs)
+    // =========================================================================
+
+    @Test
+    @WithMockUser(username = "accountant1", authorities = {"ROLE_ADMIN", "CUSTOM_ROLE_ROLE_ACCOUNTANT", "PERM_BOOKING_VIEW"})
+    @DisplayName("DYN-RBAC-01: Custom Admin Role WITH required API permission should succeed (200 OK)")
+    void customAdminRole_whenHasPermission_shouldSucceed() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/bookings")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+    }
+
+    @Test
+    @WithMockUser(username = "accountant1", authorities = {"ROLE_ADMIN", "CUSTOM_ROLE_ROLE_ACCOUNTANT", "PERM_PAYMENT_REPORT_VIEW"})
+    @DisplayName("DYN-RBAC-02: Custom Admin Role WITHOUT required API permission should be blocked (403 FORBIDDEN)")
+    void customAdminRole_whenMissingPermission_shouldReturn403() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/bookings")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+    }
+
+    @Test
+    @WithMockUser(username = "intern_empty", authorities = {"ROLE_ADMIN", "CUSTOM_ROLE_ROLE_INTERN"})
+    @DisplayName("DYN-RBAC-03: Custom Admin Role with EMPTY permissions [] must NOT become Super Admin (403 FORBIDDEN)")
+    void customAdminRole_whenPermissionsEmpty_shouldReturn403() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/bookings")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+    }
+
+    // =========================================================================
     // TEST CONTROLLER IMPLEMENTATION
     // =========================================================================
 

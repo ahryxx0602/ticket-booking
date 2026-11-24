@@ -10,7 +10,7 @@
 [![Redis 7.2](https://img.shields.io/badge/Redis-7.2%20Alpine-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io/)
 [![Redisson](https://img.shields.io/badge/Redisson-Distributed_Lock-009688?style=for-the-badge)](https://redisson.org/)
 [![Maven](https://img.shields.io/badge/Maven-33%20Modules-C71A36?style=for-the-badge&logo=apache-maven&logoColor=white)](https://maven.apache.org/)
-[![Tests](https://img.shields.io/badge/Tests-209%20Passed-success?style=for-the-badge&logo=junit5&logoColor=white)]()
+[![Tests](https://img.shields.io/badge/Tests-243%20Passed-success?style=for-the-badge&logo=junit5&logoColor=white)]()
 
 Hệ thống lõi backend của nền tảng **VeloBus**, được thiết kế theo mô hình **Micro-Modular Monolith** kết hợp **Thiết kế hướng miền (Domain-Driven Design - DDD)** và **Kiến trúc Lục giác (Clean / Hexagonal Architecture)** trên nền tảng **Java 21** và **Spring Boot 3.4.1**. Nền tảng được tối ưu hóa cho thông lượng cực lớn với Java 21 Virtual Threads, an toàn tương tranh phân tán thông qua Redisson, tra cứu danh mục dưới 20ms và quyết toán ký quỹ tự động cho các đối tác nhà xe.
 

@@ -11,4 +11,5 @@ public interface StationRepository {
     boolean existsByCode(String code);
     List<Station> findAll();
     Station save(Station station);
+    void deleteById(Long id);
 }

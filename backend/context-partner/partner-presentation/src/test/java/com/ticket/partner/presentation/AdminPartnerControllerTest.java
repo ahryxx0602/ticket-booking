@@ -115,4 +115,46 @@ class AdminPartnerControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.status").value("APPROVED"));
     }
+
+    @Test
+    @DisplayName("POST, PUT, DELETE /api/v1/admin/partners/operators, /banners & /settings - Full Partner Admin CRUD")
+    void testOperatorsBannersAndSettingsCrud() throws Exception {
+        OperatorResponse opResp = OperatorResponse.builder().id(5L).brandName("Sao Viet").status(OperatorStatus.ACTIVE).build();
+        when(adminService.createOperatorByAdmin(any(), eq(1L))).thenReturn(opResp);
+        when(adminService.updateOperatorByAdmin(eq(5L), any(), eq(1L))).thenReturn(opResp);
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/v1/admin/partners/operators")
+                        .principal(mockPrincipal)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"brandName\":\"Sao Viet\",\"taxCode\":\"0109988\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.brandName").value("Sao Viet"));
+
+        mockMvc.perform(put("/api/v1/admin/partners/operators/5")
+                        .principal(mockPrincipal)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"brandName\":\"Sao Viet VIP\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/v1/admin/partners/operators/5")
+                        .principal(mockPrincipal))
+                .andExpect(status().isOk());
+
+        when(queryService.getAllBanners(any())).thenReturn(java.util.List.of());
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/v1/admin/partners/banners")
+                        .principal(mockPrincipal))
+                .andExpect(status().isOk());
+
+        when(queryService.getAllSystemSettings()).thenReturn(java.util.Map.of("defaultCommissionRate", "10.0"));
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/v1/admin/settings")
+                        .principal(mockPrincipal))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.defaultCommissionRate").value("10.0"));
+
+        mockMvc.perform(put("/api/v1/admin/settings")
+                        .principal(mockPrincipal)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"defaultCommissionRate\":\"12.0\"}"))
+                .andExpect(status().isOk());
+    }
 }

@@ -81,4 +81,41 @@ test.describe('E2E: Phân Hệ Ban Quản Trị (Admin Backoffice)', () => {
     await confirmRefundBtn.click()
     await expect(page.locator('text=Lệnh Hoàn Tiền Cưỡng Chế')).toHaveCount(0)
   })
+
+  test('FE-ADM-E2E-04: Phân mục 3 nhóm User CRUD, Tạo Role theo Ma trận 7 Modules x 26 APIs và Xem thử giao diện theo Role', async ({ page }) => {
+    await page.goto('/admin/users-bookings')
+
+    // 1. Kiểm tra 3 phân mục người dùng (1. Khách hàng, 2. Chủ xe, 3. Phía hệ thống)
+    await page.locator('[data-testid="category-tab-CUSTOMER"]').click()
+    await expect(page.locator('text=Phan Văn Thành')).toBeVisible()
+
+    await page.locator('[data-testid="category-tab-OPERATOR"]').click()
+    await expect(page.locator('text=Nguyễn Hoàng Long')).toBeVisible()
+
+    await page.locator('[data-testid="category-tab-SYSTEM"]').click()
+    await expect(page.locator('text=Lê Thị Thu Hà (Kế Toán)')).toBeVisible()
+
+    // 2. Chuyển sang Tab Quản lý Role & Phân quyền 26 APIs
+    await page.locator('[data-testid="tab-admin-roles"]').click()
+    await expect(page.locator('text=Phân Quyền Động Theo Ma Trận 7 Modules × 26 APIs')).toBeVisible()
+
+    // 3. Tạo Role mới ROLE_MOD_BANNER với Module 4 (Banner & Truyền thông)
+    await page.locator('[data-testid="btn-create-role-in-tab"]').click()
+    await page.locator('[data-testid="input-role-code"]').fill('ROLE_MOD_BANNER')
+    await page.locator('[data-testid="input-role-name"]').fill('Điều Hành Chiến Dịch Banner')
+    await page.locator('[data-testid="btn-role-clear-all"]').click()
+    await page.locator('[data-testid="toggle-module-MOD_BANNERS"]').click()
+    await page.locator('[data-testid="btn-save-role"]').click()
+
+    await expect(page.locator('[data-testid="role-card-ROLE_MOD_BANNER"]')).toBeVisible()
+
+    // 4. Bấm "⚡ Xem Thử Giao Diện Với Role Này" trên ROLE_ACCOUNTANT và kiểm tra Banner Preview xuất hiện
+    await page.locator('[data-testid="preview-role-ROLE_ACCOUNTANT"]').click()
+    await expect(page.locator('[data-testid="role-preview-banner"]')).toBeVisible()
+    await expect(page.locator('[data-testid="exit-role-preview-btn"]')).toBeVisible()
+
+    // Thoát chế độ Xem thử
+    await page.locator('[data-testid="exit-role-preview-btn"]').click()
+    await expect(page.locator('[data-testid="role-preview-banner"]')).toHaveCount(0)
+  })
 })

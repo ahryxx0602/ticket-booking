@@ -12,7 +12,7 @@
 [![MySQL](https://img.shields.io/badge/MySQL-8.4%20LTS-4479A1?style=for-the-badge&logo=mysql&logoColor=white)](https://www.mysql.com/)
 [![Redis](https://img.shields.io/badge/Redis-7.2-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io/)
 [![CI Pipeline](https://img.shields.io/badge/CI%2FCD-GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/Tests-259%20Passed-success?style=for-the-badge&logo=junit5&logoColor=white)]()
+[![Tests](https://img.shields.io/badge/Tests-325%20Passed-success?style=for-the-badge&logo=junit5&logoColor=white)]()
 
 Nền tảng thương mại điện tử phân phối vé xe khách liên tỉnh, điều phối đội xe và quyết toán ký quỹ (Fintech Escrow) đa đối tác cấp doanh nghiệp. Hệ thống được kiến trúc theo chuẩn mực **Kiến trúc Lục giác (Hexagonal / Clean Architecture)**, **Thiết kế hướng miền (DDD)**, và mô hình **Modular Monolith** hiện đại.
 
@@ -31,7 +31,7 @@ Vui lòng tham khảo tài liệu chuyên biệt của từng phân hệ:
 ## 🏛️ Cấu Trúc Monorepo Toàn Sàn
 
 ```
-ticket-booking/
+velobus-ticketing-platform/
 ├── backend/                               # Lõi phân tán Spring Boot 3.4.1 + Java 21
 │   ├── shared-kernel/                     # Value Objects, Ngoại lệ lõi, Kiểu dữ liệu chung
 │   ├── context-identity/                  # Xác thực, JWT, Phân quyền RBAC, Quản trị người dùng
@@ -93,15 +93,15 @@ VeloBus áp dụng ngôn ngữ thiết kế **Kinetic Executive**, được tố
 
 ---
 
-## 🧪 Hệ Thống Kiểm Thử Tự Động (259 Tests)
+## 🧪 Hệ Thống Kiểm Thử Tự Động (325 Tests)
 
-Repository đảm bảo chất lượng với **259 bài kiểm thử tự động toàn diện**:
+Repository đảm bảo chất lượng với **325 bài kiểm thử tự động toàn diện**:
 
 ```
-TỔNG SỐ TESTS: 259 PASSED
-├── Backend (Java 21 / JUnit 5 / Testcontainers): 209 Passed
-├── Frontend Unit (Vitest / Happy-DOM):              29 Passed
-└── Frontend E2E & Visual (Playwright / Chromium):   21 Passed
+TỔNG SỐ TESTS: 325 PASSED
+├── Backend (Java 21 / JUnit 5 / Testcontainers): 243 Passed
+├── Frontend Unit (Vitest / Happy-DOM):              60 Passed
+└── Frontend E2E & Visual (Playwright / Chromium):   22 Passed
 ```
 
 ```bash
@@ -211,5 +211,5 @@ make smoke-test
 ## 📄 Bản Quyền & Tác Giả
 
 - **Tác giả:** Phan Văn Thành (Kỹ thuật Phần mềm)
-- **Repository:** [ahryxx0602/ticket-booking](https://github.com/ahryxx0602/ticket-booking)
+- **Repository:** [ahryxx0602/velobus-ticketing-platform](https://github.com/ahryxx0602/velobus-ticketing-platform)
 - **Giấy phép:** MIT License — Sẵn sàng cho việc đánh giá kiến trúc, kiểm tra portfolio CV và ứng dụng thực tiễn.

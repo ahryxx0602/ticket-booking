@@ -42,6 +42,14 @@ public class TripRepositoryImpl implements TripRepository {
     }
 
     @Override
+    public List<Trip> findAll() {
+        return springDataTripRepository.findAllWithStations()
+                .stream()
+                .map(this::toDomain)
+                .toList();
+    }
+
+    @Override
     public List<Trip> searchTrips(String departureCity, String arrivalCity, LocalDateTime fromTime, LocalDateTime toTime) {
         return springDataTripRepository.searchTrips(departureCity, arrivalCity, fromTime, toTime)
                 .stream()
@@ -110,6 +118,12 @@ public class TripRepositoryImpl implements TripRepository {
         savedDomain.setCreatedAt(savedEntity.getCreatedAt());
         savedDomain.setUpdatedAt(savedEntity.getUpdatedAt());
         return savedDomain;
+    }
+
+    @Override
+    public void deleteById(Long id) {
+        springDataTripRepository.deleteById(id);
+        springDataTripRepository.flush();
     }
 
     private Trip toDomain(TripJpaEntity entity) {

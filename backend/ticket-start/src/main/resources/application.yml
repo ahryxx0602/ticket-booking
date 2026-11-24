@@ -12,7 +12,7 @@ spring:
       - optional:file:../environment/.env[.properties]
       - optional:file:../../environment/.env[.properties]
   application:
-    name: ticket-booking-service
+    name: velobus-ticketing-platform
   profiles:
     active: dev
   threads:

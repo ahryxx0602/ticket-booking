@@ -1,16 +1,16 @@
 package com.ticket.identity.infrastructure.service;
 
-import com.ticket.identity.application.dto.AdminResetPasswordRequest;
-import com.ticket.identity.application.dto.ChangeUserRoleRequest;
-import com.ticket.identity.application.dto.UpdateUserStatusRequest;
-import com.ticket.identity.application.dto.UserDetailResponse;
+import com.ticket.identity.application.dto.*;
+import com.ticket.identity.domain.model.SystemRole;
 import com.ticket.identity.domain.model.User;
 import com.ticket.identity.domain.model.UserRole;
 import com.ticket.identity.domain.model.UserStatus;
+import com.ticket.identity.domain.repository.SystemRoleRepository;
 import com.ticket.identity.domain.repository.UserRepository;
 import com.ticket.shared.dto.PageResponse;
 import com.ticket.shared.exception.BusinessException;
 import com.ticket.shared.exception.EntityNotFoundException;
+import com.ticket.shared.exception.ForbiddenException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,6 +18,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.Collections;
@@ -40,6 +41,9 @@ class AdminUserServiceImplTest {
     @Mock
     private PasswordEncoder passwordEncoder;
 
+    @Mock
+    private SystemRoleRepository systemRoleRepository;
+
     @InjectMocks
     private AdminUserServiceImpl adminUserService;
 
@@ -47,6 +51,7 @@ class AdminUserServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        adminUserService.setSystemRoleRepository(systemRoleRepository);
         sampleUser = User.builder()
                 .id(1L)
                 .username("testuser")
@@ -167,5 +172,116 @@ class AdminUserServiceImplTest {
 
         assertThat(sampleUser.getPasswordHash()).isEqualTo("bcrypt_hashed_secret");
         verify(userRepository).save(sampleUser);
+    }
+
+    @Test
+    @DisplayName("createUser: Should create new user with Custom System Role (ROLE_ACCOUNTANT)")
+    void createUser_WithCustomRole_ShouldAssignRoleAdminAndCustomRoleCode() {
+        AdminCreateUserRequest req = AdminCreateUserRequest.builder()
+                .username("ketoan_new")
+                .email("ketoan_new@velobus.vn")
+                .fullName("Nguyen Ke Toan")
+                .phone("0901234567")
+                .password("Password123")
+                .role("ROLE_ACCOUNTANT")
+                .build();
+
+        when(userRepository.existsByUsername("ketoan_new")).thenReturn(false);
+        when(userRepository.existsByEmail("ketoan_new@velobus.vn")).thenReturn(false);
+        when(systemRoleRepository.findByCode("ROLE_ACCOUNTANT")).thenReturn(Optional.of(
+                SystemRole.builder()
+                        .id(4L)
+                        .code("ROLE_ACCOUNTANT")
+                        .name("Kế Toán & Đối Soát")
+                        .category("SYSTEM")
+                        .build()
+        ));
+        when(passwordEncoder.encode("Password123")).thenReturn("hashed_pwd");
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> {
+            User u = inv.getArgument(0);
+            u.setId(20L);
+            return u;
+        });
+
+        UserDetailResponse resp = adminUserService.execute(req, "admin");
+
+        assertThat(resp.getId()).isEqualTo(20L);
+        assertThat(resp.getRole()).isEqualTo("ROLE_ACCOUNTANT");
+        assertThat(resp.getCustomRole()).isEqualTo("ROLE_ACCOUNTANT");
+        assertThat(resp.getCategory()).isEqualTo("SYSTEM");
+    }
+
+    @Test
+    @DisplayName("updateUser & deleteUser: Should update user profile and guard against self-deletion / FK violation")
+    void updateAndDeleteUser_ShouldEnforceGuards() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(sampleUser));
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        AdminUpdateUserRequest updateReq = AdminUpdateUserRequest.builder()
+                .fullName("Updated FullName")
+                .email("testuser@example.com")
+                .phone("0999888777")
+                .build();
+
+        UserDetailResponse updated = adminUserService.execute(1L, updateReq, "admin");
+        assertThat(updated.getFullName()).isEqualTo("Updated FullName");
+
+        // Self-delete guard
+        sampleUser.setUsername("admin");
+        assertThatThrownBy(() -> adminUserService.execute(1L, "admin"))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("ADMIN_CANNOT_DELETE_SELF");
+
+        // Safe delete FK violation guard
+        sampleUser.setUsername("customer_with_bookings");
+        doThrow(new DataIntegrityViolationException("FK constraint")).when(userRepository).deleteById(1L);
+        assertThatThrownBy(() -> adminUserService.execute(1L, "admin"))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("USER_HAS_LINKED_DATA");
+    }
+
+    @Test
+    @DisplayName("SUPER_ADMIN_PROTECTED: Custom role staff cannot reset password, lock, delete or assign ROLE_ADMIN")
+    void superAdminProtection_WhenCallerIsCustomRole_ShouldThrowForbiddenException() {
+        User superAdmin = User.builder()
+                .id(1L)
+                .username("admin")
+                .role(UserRole.ROLE_ADMIN)
+                .customRoleCode("ROLE_ADMIN")
+                .status(UserStatus.ACTIVE)
+                .build();
+
+        User cskhCaller = User.builder()
+                .id(5L)
+                .username("cskh01")
+                .role(UserRole.ROLE_ADMIN)
+                .customRoleCode("ROLE_CSKH")
+                .status(UserStatus.ACTIVE)
+                .build();
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(superAdmin));
+        when(userRepository.findByUsername("cskh01")).thenReturn(Optional.of(cskhCaller));
+
+        // 1. Custom role trying to reset Super Admin password -> FND-001 blocked!
+        AdminResetPasswordRequest resetReq = new AdminResetPasswordRequest();
+        resetReq.setNewPassword("hacked_password");
+        assertThatThrownBy(() -> adminUserService.execute(1L, resetReq, "cskh01"))
+                .isInstanceOf(ForbiddenException.class)
+                .extracting("code").isEqualTo("SUPER_ADMIN_PROTECTED");
+
+        // 2. Custom role trying to lock Super Admin -> blocked!
+        UpdateUserStatusRequest lockReq = new UpdateUserStatusRequest();
+        lockReq.setStatus(UserStatus.LOCKED);
+        assertThatThrownBy(() -> adminUserService.execute(1L, lockReq, "cskh01"))
+                .isInstanceOf(ForbiddenException.class)
+                .extracting("code").isEqualTo("SUPER_ADMIN_PROTECTED");
+
+        // 3. Custom role trying to assign ROLE_ADMIN to another user -> blocked!
+        when(userRepository.findById(2L)).thenReturn(Optional.of(sampleUser));
+        ChangeUserRoleRequest roleReq = new ChangeUserRoleRequest();
+        roleReq.setRole("ROLE_ADMIN");
+        assertThatThrownBy(() -> adminUserService.execute(2L, roleReq, "cskh01"))
+                .isInstanceOf(ForbiddenException.class)
+                .extracting("code").isEqualTo("SUPER_ADMIN_PROTECTED");
     }
 }

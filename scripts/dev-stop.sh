@@ -39,8 +39,8 @@ stop_pid_file() {
     cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
   fi
 
-  if [[ -n "$cmdline" ]] && ! echo "$cmdline" | grep -qE "TicketApplication|ticket-booking|vite|dev\.sh|bash"; then
-    log_warn "PID $pid ($cmdline) does not belong to ticket-booking. Cleaning stale PID file without signaling."
+  if [[ -n "$cmdline" ]] && ! echo "$cmdline" | grep -qE "TicketApplication|velobus-ticketing-platform|ticket-booking|vite|dev\.sh|bash"; then
+    log_warn "PID $pid ($cmdline) does not belong to velobus-ticketing-platform. Cleaning stale PID file without signaling."
     rm -f "$pid_file"
     return 0
   fi

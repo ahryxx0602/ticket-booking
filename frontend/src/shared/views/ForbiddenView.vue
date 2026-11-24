@@ -14,6 +14,14 @@
         </p>
       </div>
       <div class="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+        <AppButton
+          v-if="auth.previewRole"
+          variant="primary"
+          data-testid="forbidden-exit-preview-btn"
+          @click="exitPreviewAndGoBack"
+        >
+          <span>⚡ Thoát Xem Thử Role (Về Super Admin)</span>
+        </AppButton>
         <AppButton variant="primary" @click="goHome">
           <i class="pi pi-home mr-1"></i>
           <span>{{ homeBtnLabel }}</span>
@@ -37,7 +45,12 @@ const router = useRouter()
 const auth = useAuthStore()
 
 const roleDisplay = computed(() => {
-  if (auth.isAdmin) return 'Quản Trị Viên (ROLE_ADMIN)'
+  if (auth.isAdmin) {
+    if (auth.customRole && auth.customRole !== 'ROLE_ADMIN') {
+      return `${auth.roleName} (${auth.customRole} • ROLE_ADMIN)`
+    }
+    return 'Quản Trị Viên (ROLE_ADMIN)'
+  }
   if (auth.isOperator) return 'Đối Tác Nhà Xe (ROLE_OPERATOR)'
   if (auth.isCustomer) return 'Khách Hàng (ROLE_CUSTOMER)'
   return 'Khách Vãng Lai (Chưa đăng nhập)'
@@ -49,10 +62,20 @@ const homeBtnLabel = computed(() => {
   return 'Về Trang Chủ Đặt Vé'
 })
 
+function exitPreviewAndGoBack() {
+  auth.stopRolePreview()
+  router.push('/admin/users-bookings')
+}
+
 function goHome() {
-  if (auth.isAdmin) router.push('/admin')
-  else if (auth.isOperator) router.push('/operator')
-  else router.push('/')
+  if (auth.isAdmin) {
+    const target = auth.getHomeRoute()
+    router.push(target === '/403' ? '/profile' : target)
+  } else if (auth.isOperator) {
+    router.push('/operator')
+  } else {
+    router.push('/')
+  }
 }
 
 function switchAccount() {

@@ -12,5 +12,7 @@ public interface BannerRepository {
     List<Banner> findByOperatorId(Long operatorId);
     List<Banner> findActiveBanners(LocalDateTime now, int limit);
     List<Banner> findByStatus(BannerStatus status);
+    List<Banner> findAll();
     Banner save(Banner banner);
+    void deleteById(Long id);
 }

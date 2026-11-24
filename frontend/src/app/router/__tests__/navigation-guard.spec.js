@@ -21,14 +21,17 @@ Object.defineProperty(globalThis, 'localStorage', {
 })
 
 function makeFakeJwt(payload) {
-  const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '')
-  const body = btoa(JSON.stringify(payload))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '')
+  const encodeUtf8Base64Url = (obj) => {
+    const utf8Str = encodeURIComponent(JSON.stringify(obj)).replace(/%([0-9A-F]{2})/g, (_, p1) =>
+      String.fromCharCode(parseInt(p1, 16))
+    )
+    return btoa(utf8Str)
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '')
+  }
+  const header = encodeUtf8Base64Url({ alg: 'HS256', typ: 'JWT' })
+  const body = encodeUtf8Base64Url(payload)
   return `${header}.${body}.mock_signature`
 }
 
@@ -233,6 +236,79 @@ describe('Vue Router Navigation Guard & RBAC Suite (Phase FE-06)', () => {
     it('tự động chuyển hướng về /admin nếu Admin cố vào lại trang /login', async () => {
       await router.push('/login')
       expect(router.currentRoute.value.path).toBe('/admin')
+    })
+  })
+
+  describe('Kịch bản 4B: Phân quyền Động theo Ma trận 7 Modules x 26 APIs (Phase 07 Custom System Roles)', () => {
+    it('nhân sự mang ROLE_ACCOUNTANT được vào /admin và /admin/withdrawals nhưng bị chặn /403 khi vào /admin/banners hoặc /admin/settings', async () => {
+      const token = makeFakeJwt({
+        sub: 'ketoan01',
+        role: 'ROLE_ADMIN',
+        customRole: 'ROLE_ACCOUNTANT',
+        roleName: 'Kế Toán & Đối Soát',
+        permissions: [
+          'PAYMENT_REPORT_VIEW',
+          'PAYMENT_LIST_VIEW',
+          'WITHDRAWAL_VIEW',
+          'WITHDRAWAL_APPROVE'
+        ],
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      })
+      authStore.token = token
+
+      expect(authStore.isAdmin).toBe(true)
+      expect(authStore.isSuperAdmin).toBe(false)
+      expect(authStore.customRole).toBe('ROLE_ACCOUNTANT')
+
+      await router.push('/admin')
+      expect(router.currentRoute.value.path).toBe('/admin')
+
+      await router.push('/admin/withdrawals')
+      expect(router.currentRoute.value.path).toBe('/admin/withdrawals')
+
+      // Không có quyền BANNER_VIEW -> bị chặn sang /403
+      await router.push('/admin/banners')
+      expect(router.currentRoute.value.name).toBe('forbidden')
+
+      // Không có quyền STATION_VIEW / SYSTEM_SETTINGS_MANAGE -> bị chặn sang /403
+      await router.push('/admin/settings')
+      expect(router.currentRoute.value.name).toBe('forbidden')
+    })
+
+    it('getHomeRoute() tự động tìm trang /admin/* đầu tiên mà Custom Role có quyền xem', async () => {
+      const token = makeFakeJwt({
+        sub: 'banner_mod',
+        role: 'ROLE_ADMIN',
+        customRole: 'ROLE_BANNER_MOD',
+        roleName: 'Kiểm Duyệt Banner',
+        permissions: ['BANNER_VIEW', 'BANNER_APPROVE_REJECT'],
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      })
+      authStore.token = token
+
+      expect(authStore.getHomeRoute()).toBe('/admin/banners')
+
+      // Nếu cố vào /login khi đã đăng nhập -> tự động đẩy về /admin/banners
+      await router.push('/login')
+      expect(router.currentRoute.value.path).toBe('/admin/banners')
+    })
+
+    it('PC-01: Custom Role có permissions rỗng [] tuyệt đối KHÔNG trở thành Super Admin và bị chặn /403', async () => {
+      const token = makeFakeJwt({
+        sub: 'intern01',
+        role: 'ROLE_ADMIN',
+        customRole: 'ROLE_INTERN',
+        roleName: 'Thực Tập Sinh',
+        permissions: [],
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      })
+      authStore.token = token
+
+      expect(authStore.isSuperAdmin).toBe(false)
+      expect(authStore.getHomeRoute()).toBe('/403')
+
+      await router.push('/admin')
+      expect(router.currentRoute.value.name).toBe('forbidden')
     })
   })
 

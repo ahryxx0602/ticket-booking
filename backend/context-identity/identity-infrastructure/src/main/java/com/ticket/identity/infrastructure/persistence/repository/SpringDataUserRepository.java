@@ -21,10 +21,15 @@ public interface SpringDataUserRepository extends JpaRepository<UserJpaEntity, L
            "(:keyword IS NULL OR :keyword = '' OR LOWER(u.username) LIKE LOWER(CONCAT('%', :keyword, '%')) " +
            " OR LOWER(u.email) LIKE LOWER(CONCAT('%', :keyword, '%')) " +
            " OR LOWER(u.fullName) LIKE LOWER(CONCAT('%', :keyword, '%'))) " +
-           "AND (:role IS NULL OR :role = '' OR u.role = :role) " +
+           "AND (:role IS NULL OR :role = '' " +
+           " OR (:role = 'CATEGORY_SYSTEM' AND u.role = 'ROLE_ADMIN') " +
+           " OR (:role != 'CATEGORY_SYSTEM' AND (u.customRoleCode = :role OR (u.customRoleCode IS NULL AND u.role = :role)))) " +
            "AND (:status IS NULL OR u.status = :status)")
     Page<UserJpaEntity> searchUsers(@Param("keyword") String keyword,
                                     @Param("role") String role,
                                     @Param("status") UserStatus status,
                                     Pageable pageable);
+
+    @Query("SELECT COUNT(u) FROM UserJpaEntity u WHERE u.customRoleCode = :roleCode OR (u.customRoleCode IS NULL AND u.role = :roleCode)")
+    long countByRoleCode(@Param("roleCode") String roleCode);
 }

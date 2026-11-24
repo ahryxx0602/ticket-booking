@@ -7,7 +7,9 @@ import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.Date;
+import java.util.List;
 
 @Component
 public class JwtTokenProvider {
@@ -23,34 +25,71 @@ public class JwtTokenProvider {
     }
 
     public String generateToken(String username, String role) {
+        return generateToken(username, role, role, role, Collections.emptyList());
+    }
+
+    public String generateToken(String username,
+                                String role,
+                                String customRole,
+                                String roleName,
+                                List<String> permissions) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + jwtExpirationMs);
 
-        return Jwts.builder()
+        JwtBuilder builder = Jwts.builder()
                 .subject(username)
                 .claim("role", role)
+                .claim("customRole", customRole != null ? customRole : role)
+                .claim("roleName", roleName != null ? roleName : (customRole != null ? customRole : role))
                 .issuedAt(now)
-                .expiration(expiryDate)
-                .signWith(getSigningKey())
-                .compact();
+                .expiration(expiryDate);
+
+        if (permissions != null && !permissions.isEmpty()) {
+            builder.claim("permissions", permissions);
+        }
+
+        return builder.signWith(getSigningKey()).compact();
     }
 
     public String getUsernameFromToken(String token) {
-        return Jwts.parser()
-                .verifyWith(getSigningKey())
-                .build()
-                .parseSignedClaims(token)
-                .getPayload()
-                .getSubject();
+        return parseClaims(token).getSubject();
     }
 
     public String getRoleFromToken(String token) {
+        return parseClaims(token).get("role", String.class);
+    }
+
+    public String getCustomRoleFromToken(String token) {
+        try {
+            String customRole = parseClaims(token).get("customRole", String.class);
+            return (customRole != null && !customRole.isBlank()) ? customRole : getRoleFromToken(token);
+        } catch (Exception e) {
+            return getRoleFromToken(token);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    public List<String> getPermissionsFromToken(String token) {
+        try {
+            Object raw = parseClaims(token).get("permissions");
+            if (raw instanceof List<?> list) {
+                return list.stream()
+                        .filter(item -> item != null && !item.toString().isBlank())
+                        .map(item -> item.toString().trim().toUpperCase())
+                        .toList();
+            }
+            return Collections.emptyList();
+        } catch (Exception e) {
+            return Collections.emptyList();
+        }
+    }
+
+    private Claims parseClaims(String token) {
         return Jwts.parser()
                 .verifyWith(getSigningKey())
                 .build()
                 .parseSignedClaims(token)
-                .getPayload()
-                .get("role", String.class);
+                .getPayload();
     }
 
     public boolean validateToken(String token) {

@@ -64,6 +64,13 @@ public class Payment extends BaseEntity {
         markReconciliationRequired(this.transactionId, reason);
     }
 
+    public void resolveReconciliation(String resolutionNote) {
+        this.reconciliationRequired = false;
+        if (resolutionNote != null && !resolutionNote.isBlank()) {
+            this.refundReason = (this.refundReason != null ? this.refundReason + " | " : "") + "RESOLVED: " + resolutionNote.trim();
+        }
+    }
+
     public void markRefunded(BigDecimal refundAmount, String reason) {
         if (this.status != PaymentStatus.SUCCESS) {
             throw new BusinessException("INVALID_PAYMENT_STATUS", "Only SUCCESS payments can be refunded");

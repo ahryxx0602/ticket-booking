@@ -12,7 +12,7 @@
 [![MySQL](https://img.shields.io/badge/MySQL-8.4%20LTS-4479A1?style=for-the-badge&logo=mysql&logoColor=white)](https://www.mysql.com/)
 [![Redis](https://img.shields.io/badge/Redis-7.2-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io/)
 [![CI Pipeline](https://img.shields.io/badge/CI%2FCD-GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/Tests-259%20Passed-success?style=for-the-badge&logo=junit5&logoColor=white)]()
+[![Tests](https://img.shields.io/badge/Tests-325%20Passed-success?style=for-the-badge&logo=junit5&logoColor=white)]()
 
 An enterprise-grade, high-concurrency multi-tenant ticket booking and fleet mobility marketplace built with **Hexagonal / Clean Architecture**, **Domain-Driven Design (DDD)**, and **Modern Modular Monolith** patterns. 
 
@@ -31,7 +31,7 @@ For granular technical specifications, please consult the sub-system documentati
 ## 🏛️ Monorepo System Architecture
 
 ```
-ticket-booking/
+velobus-ticketing-platform/
 ├── backend/                               # Spring Boot 3.4.1 + Java 21 Distributed Core
 │   ├── shared-kernel/                     # Core Value Objects, Domain Exceptions, Common Types
 │   ├── context-identity/                  # Auth, JWT, RBAC, User Management
@@ -93,15 +93,15 @@ VeloBus features the **Kinetic Executive** design system, tailored for high-dens
 
 ---
 
-## 🧪 Comprehensive Automated Testing (259 Tests)
+## 🧪 Comprehensive Automated Testing (325 Tests)
 
-The repository enforces end-to-end quality with **259 automated passing tests**:
+The repository enforces end-to-end quality with **325 automated passing tests**:
 
 ```
-TOTAL TESTS: 259 PASSED
-├── Backend (Java 21 / JUnit 5 / Testcontainers): 209 Passed
-├── Frontend Unit (Vitest / Happy-DOM):              29 Passed
-└── Frontend E2E & Visual (Playwright / Chromium):   21 Passed
+TOTAL TESTS: 325 PASSED
+├── Backend (Java 21 / JUnit 5 / Testcontainers): 243 Passed
+├── Frontend Unit (Vitest / Happy-DOM):              60 Passed
+└── Frontend E2E & Visual (Playwright / Chromium):   22 Passed
 ```
 
 ```bash
@@ -211,5 +211,5 @@ make smoke-test
 ## 📄 License & Authors
 
 - **Author:** Phan Van Thanh (Software Engineering)
-- **Repository:** [ahryxx0602/ticket-booking](https://github.com/ahryxx0602/ticket-booking)
+- **Repository:** [ahryxx0602/velobus-ticketing-platform](https://github.com/ahryxx0602/velobus-ticketing-platform)
 - **License:** MIT License — Open for architectural review, portfolio inspection, and enterprise adaptation.

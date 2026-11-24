@@ -53,4 +53,10 @@ public class BusOperatorRepositoryImpl implements BusOperatorRepository {
         BusOperatorJpaEntity saved = repository.save(entity);
         return PartnerEntityMapper.toDomain(saved);
     }
+
+    @Override
+    public void deleteById(Long id) {
+        repository.deleteById(id);
+        repository.flush();
+    }
 }

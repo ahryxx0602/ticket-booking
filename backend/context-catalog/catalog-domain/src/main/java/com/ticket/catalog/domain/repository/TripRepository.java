@@ -11,7 +11,9 @@ public interface TripRepository {
     Optional<Trip> findById(Long id);
     Optional<Trip> findByTripCode(String tripCode);
     boolean existsByTripCode(String tripCode);
+    List<Trip> findAll();
     List<Trip> searchTrips(String departureCity, String arrivalCity, LocalDateTime fromTime, LocalDateTime toTime);
     List<Seat> findSeatsByTripId(Long tripId);
     Trip save(Trip trip);
+    void deleteById(Long id);
 }

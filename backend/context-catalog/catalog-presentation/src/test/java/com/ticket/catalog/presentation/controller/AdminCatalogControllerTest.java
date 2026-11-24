@@ -47,11 +47,15 @@ class AdminCatalogControllerTest {
     @Mock
     private CancelTripUseCase cancelTripUseCase;
 
+    @Mock
+    private com.ticket.catalog.application.usecase.AdminManageCatalogUseCase manageCatalogUseCase;
+
     @InjectMocks
     private AdminCatalogController adminCatalogController;
 
     @BeforeEach
     void setUp() {
+        adminCatalogController.setManageCatalogUseCase(manageCatalogUseCase);
         mockMvc = MockMvcBuilders.standaloneSetup(adminCatalogController).build();
         objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
@@ -141,5 +145,35 @@ class AdminCatalogControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.status").value("CANCELLED"));
+    }
+
+    @Test
+    @DisplayName("GET, PUT, DELETE /api/v1/admin/stations & /trips: Should support full catalog CRUD")
+    void fullCatalogCrud_ShouldReturnOk() throws Exception {
+        StationDto stationDto = StationDto.builder().id(1L).code("HAN").name("Nội Bài").city("Hà Nội").build();
+        when(manageCatalogUseCase.getAllStations()).thenReturn(java.util.List.of(stationDto));
+        when(manageCatalogUseCase.updateStation(org.mockito.ArgumentMatchers.eq(1L), any())).thenReturn(stationDto);
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/v1/admin/stations"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].code").value("HAN"));
+
+        CreateStationCommand updateStationCmd = CreateStationCommand.builder().code("HAN").name("Nội Bài T2").city("Hà Nội").build();
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/v1/admin/stations/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(updateStationCmd)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/v1/admin/stations/1"))
+                .andExpect(status().isOk());
+
+        TripDto tripDto = TripDto.builder().id(10L).tripCode("VN789").status("SCHEDULED").build();
+        when(manageCatalogUseCase.getAllTrips()).thenReturn(java.util.List.of(tripDto));
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/v1/admin/trips"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].tripCode").value("VN789"));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/v1/admin/trips/10"))
+                .andExpect(status().isOk());
     }
 }

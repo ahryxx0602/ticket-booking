@@ -1,11 +1,13 @@
 package com.ticket.partner.application.usecase;
 
 import com.ticket.partner.application.dto.*;
+import com.ticket.partner.domain.model.BannerStatus;
 import com.ticket.partner.domain.model.WithdrawalStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 public interface PartnerQueryService {
     OperatorResponse getMyOperatorProfile(Long userId);
@@ -19,7 +21,9 @@ public interface PartnerQueryService {
     // Admin & Public queries
     List<OperatorResponse> getAllOperators();
     List<WithdrawalResponse> getWithdrawalsByStatus(WithdrawalStatus status);
+    List<BannerResponse> getAllBanners(BannerStatus status);
     List<BannerResponse> getActiveBanners(LocalDateTime now, int limit);
     BigDecimal getEffectiveCommissionRate(Long operatorId);
     BigDecimal getGlobalCommissionRate();
+    Map<String, String> getAllSystemSettings();
 }

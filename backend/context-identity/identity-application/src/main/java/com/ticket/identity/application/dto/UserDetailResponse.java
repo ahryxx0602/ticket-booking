@@ -16,7 +16,11 @@ public class UserDetailResponse {
     private String username;
     private String email;
     private String fullName;
+    private String phone;
     private String role;
+    private String customRole;
+    private String roleName;
+    private String category;
     private UserStatus status;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

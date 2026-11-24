@@ -134,4 +134,55 @@ class AuthServiceImplTest {
         assertThat(response.getUsername()).isEqualTo("newuser");
         assertThat(response.getRole()).isEqualTo("ROLE_CUSTOMER");
     }
+
+    @Test
+    @DisplayName("login: When Custom Admin Role user logs in, embed customRole, roleName and permissions in AuthResponse and JWT")
+    void login_WithCustomSystemRole_ShouldEmbedCustomRoleAndPermissions() {
+        com.ticket.identity.domain.repository.SystemRoleRepository sysRoleRepo = org.mockito.Mockito.mock(
+                com.ticket.identity.domain.repository.SystemRoleRepository.class
+        );
+        authService.setSystemRoleRepository(sysRoleRepo);
+
+        User accountantUser = User.builder()
+                .id(10L)
+                .username("ketoan01")
+                .email("ketoan@velobus.vn")
+                .fullName("Ke Toan 01")
+                .passwordHash("hashed_pwd")
+                .role(UserRole.ROLE_ADMIN)
+                .customRoleCode("ROLE_ACCOUNTANT")
+                .status(UserStatus.ACTIVE)
+                .build();
+
+        com.ticket.identity.domain.model.SystemRole accountantRole = com.ticket.identity.domain.model.SystemRole.builder()
+                .id(4L)
+                .code("ROLE_ACCOUNTANT")
+                .name("Kế Toán & Đối Soát")
+                .category("SYSTEM")
+                .permissions(java.util.List.of("PAYMENT_REPORT_VIEW", "WITHDRAWAL_VIEW"))
+                .build();
+
+        when(userRepository.findByUsername("ketoan01")).thenReturn(Optional.of(accountantUser));
+        when(passwordEncoder.matches("raw_pwd", "hashed_pwd")).thenReturn(true);
+        when(sysRoleRepo.findByCode("ROLE_ACCOUNTANT")).thenReturn(Optional.of(accountantRole));
+        when(tokenProvider.generateToken(
+                eq("ketoan01"),
+                eq("ROLE_ADMIN"),
+                eq("ROLE_ACCOUNTANT"),
+                eq("Kế Toán & Đối Soát"),
+                eq(java.util.List.of("PAYMENT_REPORT_VIEW", "WITHDRAWAL_VIEW"))
+        )).thenReturn("jwt_accountant_token");
+
+        AuthRequest req = new AuthRequest();
+        req.setUsername("ketoan01");
+        req.setPassword("raw_pwd");
+
+        AuthResponse resp = authService.execute(req);
+
+        assertThat(resp.getAccessToken()).isEqualTo("jwt_accountant_token");
+        assertThat(resp.getRole()).isEqualTo("ROLE_ADMIN");
+        assertThat(resp.getCustomRole()).isEqualTo("ROLE_ACCOUNTANT");
+        assertThat(resp.getRoleName()).isEqualTo("Kế Toán & Đối Soát");
+        assertThat(resp.getPermissions()).containsExactly("PAYMENT_REPORT_VIEW", "WITHDRAWAL_VIEW");
+    }
 }

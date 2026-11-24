@@ -3,6 +3,7 @@ package com.ticket.partner.presentation.controller;
 import com.ticket.partner.application.dto.*;
 import com.ticket.partner.application.usecase.PartnerAdminService;
 import com.ticket.partner.application.usecase.PartnerQueryService;
+import com.ticket.partner.domain.model.BannerStatus;
 import com.ticket.partner.domain.model.WithdrawalStatus;
 import com.ticket.partner.domain.port.PartnerIdentityPort;
 import com.ticket.shared.dto.ApiResponse;
@@ -16,10 +17,11 @@ import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @RestController
-@RequestMapping("/api/v1/admin/partners")
+@RequestMapping("/api/v1/admin")
 @RequiredArgsConstructor
 @PreAuthorize("hasRole('ADMIN')")
 public class AdminPartnerController {
@@ -51,14 +53,45 @@ public class AdminPartnerController {
         }
     }
 
-    // --- 1. Operator Approval & Suspension ---
-    @GetMapping("/operators")
+    // --- 1. Operator CRUD, Approval & Suspension ---
+    @GetMapping("/partners/operators")
     public ResponseEntity<ApiResponse<List<OperatorResponse>>> getAllOperators() {
         List<OperatorResponse> list = queryService.getAllOperators();
         return ResponseEntity.ok(ApiResponse.ok(list));
     }
 
-    @PutMapping("/operators/{operatorId}/approve")
+    @PostMapping("/partners/operators")
+    public ResponseEntity<ApiResponse<OperatorResponse>> createOperator(
+            Principal principal,
+            @RequestBody RegisterOperatorCommand cmd
+    ) {
+        Long adminId = getAdminId(principal);
+        OperatorResponse response = adminService.createOperatorByAdmin(cmd, adminId);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(response));
+    }
+
+    @PutMapping("/partners/operators/{operatorId}")
+    public ResponseEntity<ApiResponse<OperatorResponse>> updateOperator(
+            Principal principal,
+            @PathVariable Long operatorId,
+            @RequestBody RegisterOperatorCommand cmd
+    ) {
+        Long adminId = getAdminId(principal);
+        OperatorResponse response = adminService.updateOperatorByAdmin(operatorId, cmd, adminId);
+        return ResponseEntity.ok(ApiResponse.ok(response));
+    }
+
+    @DeleteMapping("/partners/operators/{operatorId}")
+    public ResponseEntity<ApiResponse<Void>> deleteOperator(
+            Principal principal,
+            @PathVariable Long operatorId
+    ) {
+        Long adminId = getAdminId(principal);
+        adminService.deleteOperatorByAdmin(operatorId, adminId);
+        return ResponseEntity.ok(ApiResponse.ok("Operator deleted successfully", null));
+    }
+
+    @PutMapping("/partners/operators/{operatorId}/approve")
     public ResponseEntity<ApiResponse<OperatorResponse>> approveOperator(
             Principal principal,
             @PathVariable Long operatorId
@@ -68,7 +101,7 @@ public class AdminPartnerController {
         return ResponseEntity.ok(ApiResponse.ok(response));
     }
 
-    @PutMapping("/operators/{operatorId}/reject")
+    @PutMapping("/partners/operators/{operatorId}/reject")
     public ResponseEntity<ApiResponse<OperatorResponse>> rejectOperator(
             Principal principal,
             @PathVariable Long operatorId,
@@ -79,19 +112,20 @@ public class AdminPartnerController {
         return ResponseEntity.ok(ApiResponse.ok(response));
     }
 
-    @PutMapping("/operators/{operatorId}/suspend")
+    @PutMapping("/partners/operators/{operatorId}/suspend")
     public ResponseEntity<ApiResponse<OperatorResponse>> suspendOperator(
             Principal principal,
             @PathVariable Long operatorId,
-            @RequestBody ProcessWithdrawalCommand cmd
+            @RequestBody(required = false) ProcessWithdrawalCommand cmd
     ) {
         Long adminId = getAdminId(principal);
-        OperatorResponse response = adminService.suspendOperator(operatorId, cmd.getNote(), adminId);
+        String note = cmd != null ? cmd.getNote() : null;
+        OperatorResponse response = adminService.suspendOperator(operatorId, note, adminId);
         return ResponseEntity.ok(ApiResponse.ok(response));
     }
 
-    // --- 2. 2-Tier Commission Setting ---
-    @PutMapping("/operators/{operatorId}/commission")
+    // --- 2. 2-Tier Commission & Global Settings ---
+    @PutMapping("/partners/operators/{operatorId}/commission")
     public ResponseEntity<ApiResponse<OperatorResponse>> updateCustomCommission(
             @PathVariable Long operatorId,
             @RequestBody UpdateCommissionCommand cmd
@@ -100,7 +134,7 @@ public class AdminPartnerController {
         return ResponseEntity.ok(ApiResponse.ok(response));
     }
 
-    @PutMapping("/commission/global")
+    @PutMapping("/partners/commission/global")
     public ResponseEntity<ApiResponse<String>> updateGlobalCommission(
             @RequestBody UpdateCommissionCommand cmd
     ) {
@@ -108,14 +142,27 @@ public class AdminPartnerController {
         return ResponseEntity.ok(ApiResponse.ok("Global commission rate updated to " + cmd.getCommissionRate() + "%"));
     }
 
-    @GetMapping("/commission/global")
+    @GetMapping("/partners/commission/global")
     public ResponseEntity<ApiResponse<UpdateCommissionCommand>> getGlobalCommission() {
         var rate = queryService.getGlobalCommissionRate();
         return ResponseEntity.ok(ApiResponse.ok(new UpdateCommissionCommand(rate)));
     }
 
+    @GetMapping("/settings")
+    public ResponseEntity<ApiResponse<Map<String, String>>> getSystemSettings() {
+        return ResponseEntity.ok(ApiResponse.ok(queryService.getAllSystemSettings()));
+    }
+
+    @PutMapping("/settings")
+    public ResponseEntity<ApiResponse<Map<String, String>>> updateSystemSettings(
+            @RequestBody Map<String, String> settings
+    ) {
+        adminService.updateSystemSettings(settings);
+        return ResponseEntity.ok(ApiResponse.ok("System settings updated successfully", queryService.getAllSystemSettings()));
+    }
+
     // --- 3. Withdrawal Processing ---
-    @GetMapping("/withdrawals")
+    @GetMapping("/partners/withdrawals")
     public ResponseEntity<ApiResponse<List<WithdrawalResponse>>> getWithdrawals(
             @RequestParam(required = false) WithdrawalStatus status
     ) {
@@ -123,7 +170,7 @@ public class AdminPartnerController {
         return ResponseEntity.ok(ApiResponse.ok(list));
     }
 
-    @PutMapping("/withdrawals/{withdrawalId}/approve")
+    @PutMapping("/partners/withdrawals/{withdrawalId}/approve")
     public ResponseEntity<ApiResponse<WithdrawalResponse>> approveWithdrawal(
             Principal principal,
             @PathVariable Long withdrawalId,
@@ -135,7 +182,7 @@ public class AdminPartnerController {
         return ResponseEntity.ok(ApiResponse.ok(response));
     }
 
-    @PutMapping("/withdrawals/{withdrawalId}/reject")
+    @PutMapping("/partners/withdrawals/{withdrawalId}/reject")
     public ResponseEntity<ApiResponse<WithdrawalResponse>> rejectWithdrawal(
             Principal principal,
             @PathVariable Long withdrawalId,
@@ -147,7 +194,15 @@ public class AdminPartnerController {
     }
 
     // --- 4. Banners ---
-    @PutMapping("/banners/{bannerId}/approve")
+    @GetMapping("/partners/banners")
+    public ResponseEntity<ApiResponse<List<BannerResponse>>> getBanners(
+            @RequestParam(required = false) BannerStatus status
+    ) {
+        List<BannerResponse> list = queryService.getAllBanners(status);
+        return ResponseEntity.ok(ApiResponse.ok(list));
+    }
+
+    @PutMapping("/partners/banners/{bannerId}/approve")
     public ResponseEntity<ApiResponse<BannerResponse>> approveBanner(
             Principal principal,
             @PathVariable Long bannerId
@@ -157,18 +212,19 @@ public class AdminPartnerController {
         return ResponseEntity.ok(ApiResponse.ok(response));
     }
 
-    @PutMapping("/banners/{bannerId}/reject")
+    @PutMapping("/partners/banners/{bannerId}/reject")
     public ResponseEntity<ApiResponse<BannerResponse>> rejectBanner(
             Principal principal,
             @PathVariable Long bannerId,
-            @RequestBody ProcessWithdrawalCommand cmd
+            @RequestBody(required = false) ProcessWithdrawalCommand cmd
     ) {
         Long adminId = getAdminId(principal);
-        BannerResponse response = adminService.rejectBanner(bannerId, cmd.getNote(), adminId);
+        String note = cmd != null ? cmd.getNote() : null;
+        BannerResponse response = adminService.rejectBanner(bannerId, note, adminId);
         return ResponseEntity.ok(ApiResponse.ok(response));
     }
 
-    @PostMapping("/banners/platform")
+    @PostMapping("/partners/banners/platform")
     public ResponseEntity<ApiResponse<BannerResponse>> createPlatformBanner(
             Principal principal,
             @RequestBody BannerCommand cmd
@@ -176,5 +232,26 @@ public class AdminPartnerController {
         Long adminId = getAdminId(principal);
         BannerResponse response = adminService.createPlatformBanner(cmd, adminId);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(response));
+    }
+
+    @PutMapping({"/partners/banners/{bannerId}", "/partners/banners/platform/{bannerId}"})
+    public ResponseEntity<ApiResponse<BannerResponse>> updateBanner(
+            Principal principal,
+            @PathVariable Long bannerId,
+            @RequestBody BannerCommand cmd
+    ) {
+        Long adminId = getAdminId(principal);
+        BannerResponse response = adminService.updateBannerByAdmin(bannerId, cmd, adminId);
+        return ResponseEntity.ok(ApiResponse.ok(response));
+    }
+
+    @DeleteMapping({"/partners/banners/{bannerId}", "/partners/banners/platform/{bannerId}"})
+    public ResponseEntity<ApiResponse<Void>> deleteBanner(
+            Principal principal,
+            @PathVariable Long bannerId
+    ) {
+        Long adminId = getAdminId(principal);
+        adminService.deleteBannerByAdmin(bannerId, adminId);
+        return ResponseEntity.ok(ApiResponse.ok("Banner deleted successfully", null));
     }
 }

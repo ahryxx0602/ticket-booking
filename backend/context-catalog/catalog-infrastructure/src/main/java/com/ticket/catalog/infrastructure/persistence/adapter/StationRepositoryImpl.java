@@ -50,6 +50,12 @@ public class StationRepositoryImpl implements StationRepository {
         return toDomain(saved);
     }
 
+    @Override
+    public void deleteById(Long id) {
+        jpaRepository.deleteById(id);
+        jpaRepository.flush();
+    }
+
     private Station toDomain(StationJpaEntity entity) {
         return Station.builder()
                 .id(entity.getId())

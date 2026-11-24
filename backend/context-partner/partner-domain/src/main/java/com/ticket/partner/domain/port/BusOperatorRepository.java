@@ -13,4 +13,5 @@ public interface BusOperatorRepository {
     List<BusOperator> findAll();
     boolean existsByTaxCode(String taxCode);
     BusOperator save(BusOperator operator);
+    void deleteById(Long id);
 }

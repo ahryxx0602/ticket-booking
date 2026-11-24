@@ -43,12 +43,15 @@ class AdminPaymentControllerTest {
     private GetPaymentReportUseCase getPaymentReportUseCase;
     @Mock
     private AdminGetPaymentsUseCase adminGetPaymentsUseCase;
+    @Mock
+    private com.ticket.payment.application.usecase.AdminReconcilePaymentUseCase adminReconcilePaymentUseCase;
 
     @InjectMocks
     private AdminPaymentController adminPaymentController;
 
     @BeforeEach
     void setUp() {
+        adminPaymentController.setAdminReconcilePaymentUseCase(adminReconcilePaymentUseCase);
         mockMvc = MockMvcBuilders.standaloneSetup(adminPaymentController)
                 .setControllerAdvice(new TestExceptionHandler())
                 .build();
@@ -127,5 +130,22 @@ class AdminPaymentControllerTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+    }
+
+    @Test
+    void resolveReconciliation_shouldReturnOk() throws Exception {
+        PaymentDetailResponse resolved = PaymentDetailResponse.builder()
+                .id(1L)
+                .paymentReference("PAY_REC_01")
+                .reconciliationRequired(false)
+                .build();
+        when(adminReconcilePaymentUseCase.execute(org.mockito.ArgumentMatchers.eq(1L), any())).thenReturn(resolved);
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/v1/admin/payments/1/reconcile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"note\":\"Verified with VNPay\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.reconciliationRequired").value(false));
     }
 }

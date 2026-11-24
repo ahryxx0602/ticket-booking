@@ -47,9 +47,22 @@ public class BannerRepositoryImpl implements BannerRepository {
     }
 
     @Override
+    public List<Banner> findAll() {
+        return repository.findAll().stream()
+                .map(PartnerEntityMapper::toDomain)
+                .collect(Collectors.toList());
+    }
+
+    @Override
     public Banner save(Banner banner) {
         BannerJpaEntity entity = PartnerEntityMapper.toEntity(banner);
         BannerJpaEntity saved = repository.save(entity);
         return PartnerEntityMapper.toDomain(saved);
+    }
+
+    @Override
+    public void deleteById(Long id) {
+        repository.deleteById(id);
+        repository.flush();
     }
 }

@@ -1,6 +1,7 @@
 package com.ticket.identity.infrastructure.persistence.adapter;
 
 import com.ticket.identity.domain.model.User;
+import com.ticket.identity.domain.model.UserRole;
 import com.ticket.identity.domain.model.UserStatus;
 import com.ticket.identity.domain.repository.UserRepository;
 import com.ticket.identity.infrastructure.persistence.entity.UserJpaEntity;
@@ -43,6 +44,12 @@ public class UserRepositoryImpl implements UserRepository {
     }
 
     @Override
+    public void deleteById(Long id) {
+        jpaRepository.deleteById(id);
+        jpaRepository.flush();
+    }
+
+    @Override
     public boolean existsByUsername(String username) {
         return jpaRepository.existsByUsername(username);
     }
@@ -66,7 +73,19 @@ public class UserRepositoryImpl implements UserRepository {
         return jpaRepository.searchUsers(keyword, role, status, pageable).getTotalElements();
     }
 
+    @Override
+    public long countByRoleCode(String roleCode) {
+        if (roleCode == null || roleCode.isBlank()) {
+            return 0;
+        }
+        return jpaRepository.countByRoleCode(roleCode.trim().toUpperCase());
+    }
+
     private User toDomain(UserJpaEntity entity) {
+        UserRole baseRole = UserRole.fromString(entity.getRole());
+        String customCode = (entity.getCustomRoleCode() != null && !entity.getCustomRoleCode().isBlank())
+                ? entity.getCustomRoleCode()
+                : baseRole.name();
         User u = User.builder()
                 .id(entity.getId())
                 .username(entity.getUsername())
@@ -74,7 +93,8 @@ public class UserRepositoryImpl implements UserRepository {
                 .passwordHash(entity.getPasswordHash())
                 .fullName(entity.getFullName())
                 .phone(entity.getPhone())
-                .role(com.ticket.identity.domain.model.UserRole.fromString(entity.getRole()))
+                .role(baseRole)
+                .customRoleCode(customCode)
                 .status(entity.getStatus())
                 .build();
         u.setCreatedAt(entity.getCreatedAt());
@@ -90,7 +110,9 @@ public class UserRepositoryImpl implements UserRepository {
         entity.setPasswordHash(user.getPasswordHash());
         entity.setFullName(user.getFullName());
         entity.setPhone(user.getPhone());
-        entity.setRole(user.getRole() != null ? user.getRole().name() : "ROLE_CUSTOMER");
+        String baseRoleName = user.getRole() != null ? user.getRole().name() : "ROLE_CUSTOMER";
+        entity.setRole(baseRoleName);
+        entity.setCustomRoleCode(user.getEffectiveRoleCode());
         entity.setStatus(user.getStatus());
         return entity;
     }

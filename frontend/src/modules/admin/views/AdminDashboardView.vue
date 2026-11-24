@@ -2,6 +2,10 @@
 import { ref } from 'vue'
 import StatusBadge from '@/shared/components/StatusBadge.vue'
 import AppButton from '@/shared/components/AppButton.vue'
+import { useAdminPermissions } from '@/modules/admin/composables/useAdminPermissions'
+import { adminApi } from '@/modules/admin/api'
+
+const { hasPermission } = useAdminPermissions()
 
 // 4 KPI Metrics (corresponds to API-ADM-02 & API-PAY-ADM-01)
 const platformMetrics = ref({
@@ -48,10 +52,13 @@ function triggerManualReconciliation() {
   }, 800)
 }
 
-function resolveAlert(alertItem) {
+async function resolveAlert(alertItem) {
+  if (!hasPermission('PAYMENT_RECONCILE_RESOLVE')) return
   alertItem.resolved = true
   alertItem.discrepancy = 0
   alertItem.issueType = 'RESOLVED_MANUAL'
+  const paymentId = alertItem.paymentId || alertItem.id || 1
+  adminApi.reconcilePayment(paymentId, 'Resolved manually by admin').catch(() => {})
 }
 </script>
 
@@ -67,6 +74,7 @@ function resolveAlert(alertItem) {
       </div>
 
       <AppButton
+        v-if="hasPermission('PAYMENT_RECONCILE_RESOLVE')"
         variant="primary"
         class="self-start sm:self-auto px-4 py-2.5 text-xs font-bold"
         data-testid="btn-run-reconciliation"
@@ -78,8 +86,8 @@ function resolveAlert(alertItem) {
       </AppButton>
     </div>
 
-    <!-- 4 KPI System Cards -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <!-- 4 KPI System Cards (Protected by PAYMENT_REPORT_VIEW) -->
+    <div v-if="hasPermission('PAYMENT_REPORT_VIEW')" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       <div class="bg-surface rounded-xl border border-border-default p-5 shadow-card space-y-2">
         <div class="flex items-center justify-between">
           <span class="text-xs font-bold uppercase tracking-wider text-text-secondary">Tổng GMV Toàn Sàn</span>
@@ -125,8 +133,8 @@ function resolveAlert(alertItem) {
       </div>
     </div>
 
-    <!-- Reconciliation Alerts Panel -->
-    <div class="bg-surface rounded-xl border border-border-default shadow-card overflow-hidden">
+    <!-- Reconciliation Alerts Panel (Protected by PAYMENT_LIST_VIEW) -->
+    <div v-if="hasPermission('PAYMENT_LIST_VIEW')" class="bg-surface rounded-xl border border-border-default shadow-card overflow-hidden">
       <div class="p-5 border-b border-border-default flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
           <h2 class="text-base font-bold text-text-primary flex items-center gap-2">
@@ -190,7 +198,7 @@ function resolveAlert(alertItem) {
               </td>
               <td class="py-3.5 px-4 text-right">
                 <button
-                  v-if="!item.resolved"
+                  v-if="!item.resolved && hasPermission('PAYMENT_RECONCILE_RESOLVE')"
                   type="button"
                   @click="resolveAlert(item)"
                   data-testid="btn-resolve-alert"
@@ -198,7 +206,9 @@ function resolveAlert(alertItem) {
                 >
                   Xác Nhận Đã Xử Lý
                 </button>
-                <span v-else class="text-text-muted text-[11px]">Hoàn tất</span>
+                <span v-else class="text-text-muted text-[11px]">
+                  {{ item.resolved ? 'Hoàn tất' : 'Chỉ xem (Thiếu quyền xử lý)' }}
+                </span>
               </td>
             </tr>
           </tbody>

@@ -1,15 +1,15 @@
 package com.ticket.identity.presentation.controller;
 
-import com.ticket.identity.application.dto.AdminResetPasswordRequest;
-import com.ticket.identity.application.dto.ChangeUserRoleRequest;
-import com.ticket.identity.application.dto.UpdateUserStatusRequest;
-import com.ticket.identity.application.dto.UserDetailResponse;
+import com.ticket.identity.application.dto.*;
 import com.ticket.identity.application.usecase.*;
 import com.ticket.identity.domain.model.UserStatus;
 import com.ticket.shared.dto.ApiResponse;
 import com.ticket.shared.dto.PageResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -27,6 +27,25 @@ public class AdminUserController {
     private final AdminChangeUserRoleUseCase changeUserRoleUseCase;
     private final AdminResetPasswordUseCase resetPasswordUseCase;
 
+    private AdminCreateUserUseCase createUserUseCase;
+    private AdminUpdateUserUseCase updateUserUseCase;
+    private AdminDeleteUserUseCase deleteUserUseCase;
+
+    @Autowired(required = false)
+    public void setCreateUserUseCase(AdminCreateUserUseCase createUserUseCase) {
+        this.createUserUseCase = createUserUseCase;
+    }
+
+    @Autowired(required = false)
+    public void setUpdateUserUseCase(AdminUpdateUserUseCase updateUserUseCase) {
+        this.updateUserUseCase = updateUserUseCase;
+    }
+
+    @Autowired(required = false)
+    public void setDeleteUserUseCase(AdminDeleteUserUseCase deleteUserUseCase) {
+        this.deleteUserUseCase = deleteUserUseCase;
+    }
+
     @GetMapping
     public ApiResponse<PageResponse<UserDetailResponse>> getUsers(
             @RequestParam(required = false) String keyword,
@@ -42,6 +61,35 @@ public class AdminUserController {
     public ApiResponse<UserDetailResponse> getUserDetail(@PathVariable Long id) {
         UserDetailResponse response = getUserDetailUseCase.execute(id);
         return ApiResponse.ok("User details retrieved successfully", response);
+    }
+
+    @PostMapping
+    public ResponseEntity<ApiResponse<UserDetailResponse>> createUser(
+            @Valid @RequestBody AdminCreateUserRequest request,
+            Principal principal) {
+        String adminUsername = principal != null ? principal.getName() : "admin";
+        UserDetailResponse response = createUserUseCase.execute(request, adminUsername);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.ok("User created successfully", response));
+    }
+
+    @PutMapping("/{id}")
+    public ApiResponse<UserDetailResponse> updateUser(
+            @PathVariable Long id,
+            @Valid @RequestBody AdminUpdateUserRequest request,
+            Principal principal) {
+        String adminUsername = principal != null ? principal.getName() : "admin";
+        UserDetailResponse response = updateUserUseCase.execute(id, request, adminUsername);
+        return ApiResponse.ok("User updated successfully", response);
+    }
+
+    @DeleteMapping("/{id}")
+    public ApiResponse<Void> deleteUser(
+            @PathVariable Long id,
+            Principal principal) {
+        String adminUsername = principal != null ? principal.getName() : "admin";
+        deleteUserUseCase.execute(id, adminUsername);
+        return ApiResponse.ok("User deleted successfully", null);
     }
 
     @PatchMapping("/{id}/status")
@@ -67,8 +115,13 @@ public class AdminUserController {
     @PostMapping("/{id}/reset-password")
     public ApiResponse<Void> resetPassword(
             @PathVariable Long id,
-            @Valid @RequestBody AdminResetPasswordRequest request) {
-        resetPasswordUseCase.execute(id, request);
+            @Valid @RequestBody AdminResetPasswordRequest request,
+            Principal principal) {
+        if (principal != null && principal.getName() != null) {
+            resetPasswordUseCase.execute(id, request, principal.getName());
+        } else {
+            resetPasswordUseCase.execute(id, request);
+        }
         return ApiResponse.ok("User password reset successfully", null);
     }
 }

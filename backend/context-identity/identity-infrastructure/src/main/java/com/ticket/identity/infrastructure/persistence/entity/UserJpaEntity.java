@@ -33,6 +33,9 @@ public class UserJpaEntity {
     @Column(nullable = false, length = 20)
     private String role;
 
+    @Column(name = "custom_role_code", length = 50)
+    private String customRoleCode;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private UserStatus status;
@@ -47,10 +50,16 @@ public class UserJpaEntity {
     public void prePersist() {
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
+        if (this.customRoleCode == null || this.customRoleCode.isBlank()) {
+            this.customRoleCode = this.role;
+        }
     }
 
     @PreUpdate
     public void preUpdate() {
         this.updatedAt = LocalDateTime.now();
+        if (this.customRoleCode == null || this.customRoleCode.isBlank()) {
+            this.customRoleCode = this.role;
+        }
     }
 }

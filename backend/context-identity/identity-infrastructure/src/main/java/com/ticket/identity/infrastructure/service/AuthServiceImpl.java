@@ -5,15 +5,24 @@ import com.ticket.identity.application.dto.AuthResponse;
 import com.ticket.identity.application.dto.RegisterRequest;
 import com.ticket.identity.application.usecase.LoginUseCase;
 import com.ticket.identity.application.usecase.RegisterUseCase;
+import com.ticket.identity.domain.model.AdminPermissionCatalog;
+import com.ticket.identity.domain.model.SystemRole;
 import com.ticket.identity.domain.model.User;
+import com.ticket.identity.domain.model.UserRole;
 import com.ticket.identity.domain.model.UserStatus;
+import com.ticket.identity.domain.repository.SystemRoleRepository;
 import com.ticket.identity.domain.repository.UserRepository;
 import com.ticket.identity.infrastructure.security.JwtTokenProvider;
 import com.ticket.shared.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -22,6 +31,13 @@ public class AuthServiceImpl implements LoginUseCase, RegisterUseCase {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider tokenProvider;
+
+    private SystemRoleRepository systemRoleRepository;
+
+    @Autowired(required = false)
+    public void setSystemRoleRepository(SystemRoleRepository systemRoleRepository) {
+        this.systemRoleRepository = systemRoleRepository;
+    }
 
     @Override
     @Transactional(readOnly = true)
@@ -37,15 +53,7 @@ public class AuthServiceImpl implements LoginUseCase, RegisterUseCase {
             throw new BusinessException("ACCOUNT_LOCKED", "Your account has been locked. Please contact administrator.");
         }
 
-        String roleName = user.getRole() != null ? user.getRole().name() : "ROLE_CUSTOMER";
-        String token = tokenProvider.generateToken(user.getUsername(), roleName);
-        return AuthResponse.builder()
-                .accessToken(token)
-                .tokenType("Bearer")
-                .expiresIn(86400000L)
-                .username(user.getUsername())
-                .role(roleName)
-                .build();
+        return buildAuthResponse(user);
     }
 
     @Override
@@ -63,20 +71,58 @@ public class AuthServiceImpl implements LoginUseCase, RegisterUseCase {
                 .email(request.getEmail())
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
                 .fullName(request.getFullName())
-                .role(com.ticket.identity.domain.model.UserRole.ROLE_CUSTOMER)
+                .role(UserRole.ROLE_CUSTOMER)
+                .customRoleCode("ROLE_CUSTOMER")
                 .status(UserStatus.ACTIVE)
                 .build();
 
         User saved = userRepository.save(user);
-        String roleName = saved.getRole() != null ? saved.getRole().name() : "ROLE_CUSTOMER";
-        String token = tokenProvider.generateToken(saved.getUsername(), roleName);
+        return buildAuthResponse(saved);
+    }
+
+    private AuthResponse buildAuthResponse(User user) {
+        String baseRole = user.getRole() != null ? user.getRole().name() : "ROLE_CUSTOMER";
+        String customRole = user.getEffectiveRoleCode();
+        String displayRoleName = customRole;
+        List<String> permissions = Collections.emptyList();
+
+        if ("ROLE_ADMIN".equalsIgnoreCase(baseRole)) {
+            if ("ROLE_ADMIN".equalsIgnoreCase(customRole)) {
+                displayRoleName = "Quản Trị Viên Toàn Sàn (Super Admin)";
+                permissions = AdminPermissionCatalog.allPermissionsList();
+            } else if (systemRoleRepository != null) {
+                Optional<SystemRole> srOpt = systemRoleRepository.findByCode(customRole);
+                if (srOpt.isPresent()) {
+                    displayRoleName = srOpt.get().getName();
+                    permissions = srOpt.get().getPermissions();
+                }
+            }
+        } else if ("ROLE_OPERATOR".equalsIgnoreCase(baseRole)) {
+            displayRoleName = "Chủ Xe / Đối Tác Vận Tải";
+        } else {
+            displayRoleName = "Khách Hàng Đặt Vé";
+        }
+
+        String token;
+        if (baseRole.equalsIgnoreCase(customRole) && permissions.isEmpty()) {
+            token = tokenProvider.generateToken(user.getUsername(), baseRole);
+        } else {
+            token = tokenProvider.generateToken(user.getUsername(), baseRole, customRole, displayRoleName, permissions);
+            if (token == null) {
+                // Tương thích với unit test cũ mock tokenProvider.generateToken(username, role)
+                token = tokenProvider.generateToken(user.getUsername(), baseRole);
+            }
+        }
 
         return AuthResponse.builder()
                 .accessToken(token)
                 .tokenType("Bearer")
                 .expiresIn(86400000L)
-                .username(saved.getUsername())
-                .role(roleName)
+                .username(user.getUsername())
+                .role(baseRole)
+                .customRole(customRole)
+                .roleName(displayRoleName)
+                .permissions(permissions)
                 .build();
     }
 }
