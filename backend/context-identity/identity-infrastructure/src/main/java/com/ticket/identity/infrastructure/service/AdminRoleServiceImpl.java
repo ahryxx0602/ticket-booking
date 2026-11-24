@@ -77,6 +77,9 @@ public class AdminRoleServiceImpl implements AdminRoleManagementUseCase {
                 .build();
         role.validateAndNormalize();
 
+        // BE-SEC-002: Chống leo thang đặc quyền — Custom Admin không được tạo Role chứa quyền mà chính họ không có
+        enforcePermissionSubsetForCaller(role.getPermissions(), currentAdminUsername);
+
         SystemRole saved = systemRoleRepository.save(role);
         log.info("[ADMIN ROLE] Created custom role {} ({} permissions) by {}",
                 saved.getCode(), saved.getPermissions().size(), currentAdminUsername);
@@ -95,6 +98,8 @@ public class AdminRoleServiceImpl implements AdminRoleManagementUseCase {
         }
 
         enforceCannotModifyOwnCustomRole(existing.getCode(), currentAdminUsername);
+        // BE-SEC-002: Không được chỉnh sửa một Role đang có quyền cao hơn quyền hiện tại của caller
+        enforcePermissionSubsetForCaller(existing.getPermissions(), currentAdminUsername);
 
         existing.setName(request.getName());
         existing.setDescription(request.getDescription());
@@ -103,6 +108,9 @@ public class AdminRoleServiceImpl implements AdminRoleManagementUseCase {
         }
         existing.setPermissions(request.getPermissions());
         existing.validateAndNormalize();
+
+        // BE-SEC-002: Tập quyền mới gán vào Role cũng phải là tập con của quyền hiện tại của caller
+        enforcePermissionSubsetForCaller(existing.getPermissions(), currentAdminUsername);
 
         SystemRole saved = systemRoleRepository.save(existing);
         log.info("[ADMIN ROLE] Updated custom role {} ({} permissions) by {}",
@@ -122,6 +130,7 @@ public class AdminRoleServiceImpl implements AdminRoleManagementUseCase {
         }
 
         enforceCannotModifyOwnCustomRole(existing.getCode(), currentAdminUsername);
+        enforcePermissionSubsetForCaller(existing.getPermissions(), currentAdminUsername);
 
         long assignedUsers = userRepository.countByRoleCode(existing.getCode());
         if (assignedUsers > 0) {
@@ -148,6 +157,52 @@ public class AdminRoleServiceImpl implements AdminRoleManagementUseCase {
                         "Bạn không được phép tự chỉnh sửa quyền hạn hoặc xóa chính Role mà tài khoản của bạn đang sử dụng");
             }
         }
+    }
+
+    /**
+     * BE-SEC-002: Nhân sự mang Custom Role chỉ được phép tạo/sửa/xóa các Role mà tập quyền là tập con (subset) của quyền họ đang sở hữu.
+     */
+    private void enforcePermissionSubsetForCaller(List<String> targetPermissions, String currentAdminUsername) {
+        if (targetPermissions == null || targetPermissions.isEmpty()) {
+            return;
+        }
+        java.util.Set<String> callerPermissions = resolveCallerPermissionsIfCustomAdmin(currentAdminUsername);
+        if (callerPermissions == null) {
+            return; // Super Admin -> toàn quyền
+        }
+        for (String perm : targetPermissions) {
+            if (perm != null && !callerPermissions.contains(perm.trim().toUpperCase())) {
+                throw new ForbiddenException("PRIVILEGE_ESCALATION_DETECTED",
+                        "Bạn không thể cấp phát hoặc thao tác trên vai trò chứa quyền '" + perm + "' vượt quá phạm vi quyền hiện tại của bạn");
+            }
+        }
+    }
+
+    private java.util.Set<String> resolveCallerPermissionsIfCustomAdmin(String currentAdminUsername) {
+        org.springframework.security.core.Authentication auth =
+                org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getAuthorities() != null && !auth.getAuthorities().isEmpty()) {
+            boolean hasCustomRole = auth.getAuthorities().stream()
+                    .map(org.springframework.security.core.GrantedAuthority::getAuthority)
+                    .anyMatch(a -> a != null && a.startsWith("CUSTOM_ROLE_"));
+            if (hasCustomRole) {
+                return auth.getAuthorities().stream()
+                        .map(org.springframework.security.core.GrantedAuthority::getAuthority)
+                        .filter(a -> a != null && a.startsWith("PERM_"))
+                        .map(a -> a.substring(5))
+                        .collect(java.util.stream.Collectors.toSet());
+            }
+        }
+        if (currentAdminUsername != null && !currentAdminUsername.isBlank()) {
+            Optional<User> callerOpt = userRepository.findByUsername(currentAdminUsername);
+            if (callerOpt.isPresent() && !callerOpt.get().isSuperAdmin()) {
+                String callerRoleCode = callerOpt.get().getEffectiveRoleCode();
+                return systemRoleRepository.findByCode(callerRoleCode)
+                        .map(sr -> new java.util.HashSet<>(sr.getPermissions()))
+                        .orElseGet(java.util.HashSet::new);
+            }
+        }
+        return null;
     }
 
     private SystemRoleResponse toResponse(SystemRole role) {

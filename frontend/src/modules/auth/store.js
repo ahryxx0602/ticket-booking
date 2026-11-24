@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { authApi } from './api'
+import { setHttpClientPreviewRole } from '@/shared/api/httpClient'
 
 /**
  * Danh mục chuẩn 7 Modules & 26 API Permissions của hệ thống Quản trị (/admin)
@@ -168,26 +169,30 @@ export const useAuthStore = defineStore('auth', () => {
   // State phục vụ chế độ "⚡ Xem thử giao diện với Role này (Preview Role)" của Super Admin
   const previewRole = ref(null)
 
+  // FE-SEC-002 & FE-SEC-003: Quyền thực tế đồng bộ từ GET /api/v1/auth/me và Catalog đồng bộ từ Backend
+  const liveProfile = ref(null)
+  const permissionCatalog = ref(ADMIN_PERMISSION_MODULES)
+
   // Single Source of Truth cho JWT payload
   const jwtPayload = computed(() => parseJwt(token.value))
   const isAuthenticated = computed(() => Boolean(token.value && jwtPayload.value))
 
-  // Trích xuất vai trò TUYỆT ĐỐI từ JWT payload (chống sửa đổi localStorage)
+  // Trích xuất vai trò ưu tiên từ liveProfile (nếu đã gọi /auth/me) hoặc JWT payload
   const role = computed(() => {
     if (!isAuthenticated.value) return 'GUEST'
-    return jwtPayload.value?.role || 'GUEST'
+    return liveProfile.value?.role || jwtPayload.value?.role || 'GUEST'
   })
 
   const customRole = computed(() => {
     if (!isAuthenticated.value) return 'GUEST'
     if (previewRole.value?.code) return previewRole.value.code
-    return jwtPayload.value?.customRole || role.value
+    return liveProfile.value?.customRole || jwtPayload.value?.customRole || role.value
   })
 
   const roleName = computed(() => {
     if (!isAuthenticated.value) return 'Khách vãng lai'
     if (previewRole.value?.name) return previewRole.value.name
-    return jwtPayload.value?.roleName || customRole.value
+    return liveProfile.value?.roleName || jwtPayload.value?.roleName || customRole.value
   })
 
   const isAdmin = computed(() => role.value === 'ROLE_ADMIN')
@@ -202,7 +207,7 @@ export const useAuthStore = defineStore('auth', () => {
   const isSuperAdmin = computed(() => {
     if (!isAdmin.value) return false
     if (previewRole.value) return previewRole.value.code === 'ROLE_ADMIN'
-    const claimCustomRole = jwtPayload.value?.customRole
+    const claimCustomRole = liveProfile.value?.customRole || jwtPayload.value?.customRole
     return !claimCustomRole || claimCustomRole === 'ROLE_ADMIN'
   })
 
@@ -212,21 +217,22 @@ export const useAuthStore = defineStore('auth', () => {
     if (previewRole.value) {
       return Array.isArray(previewRole.value.permissions) ? previewRole.value.permissions : []
     }
+    if (Array.isArray(liveProfile.value?.permissions)) {
+      return liveProfile.value.permissions
+    }
     const claimPerms = jwtPayload.value?.permissions
     return Array.isArray(claimPerms) ? claimPerms : []
   })
 
   function hasPermission(code) {
-    if (!isAdmin.value) return false
+    if (!isAdmin.value || !code || typeof code !== 'string') return false
     if (isSuperAdmin.value) return true
-    if (!code) return true
     return permissions.value.includes(code)
   }
 
   function hasAnyPermission(codes) {
-    if (!isAdmin.value) return false
+    if (!isAdmin.value || !codes || !Array.isArray(codes) || codes.length === 0) return false
     if (isSuperAdmin.value) return true
-    if (!codes || !Array.isArray(codes) || codes.length === 0) return true
     return codes.some(c => permissions.value.includes(c))
   }
 
@@ -237,10 +243,50 @@ export const useAuthStore = defineStore('auth', () => {
       name: targetRole.name,
       permissions: Array.isArray(targetRole.permissions) ? [...targetRole.permissions] : []
     }
+    // FE-SEC-005: Ghi dấu trạng thái preview để httpClient khóa các lệnh ghi (POST/PUT/PATCH/DELETE) vào /admin/**
+    setHttpClientPreviewRole(targetRole.code)
+    safeSetStorage('velobus_preview_role', targetRole.code)
   }
 
   function stopRolePreview() {
     previewRole.value = null
+    setHttpClientPreviewRole(null)
+    safeRemoveStorage('velobus_preview_role')
+  }
+
+  /**
+   * FE-SEC-002: Đồng bộ lại thông tin role & permissions mới nhất từ GET /api/v1/auth/me
+   */
+  async function refreshProfile() {
+    if (!isAuthenticated.value) return null
+    try {
+      const res = await authApi.getMe()
+      if (res?.data) {
+        liveProfile.value = {
+          role: res.data.role,
+          customRole: res.data.customRole,
+          roleName: res.data.roleName,
+          permissions: Array.isArray(res.data.permissions) ? res.data.permissions : []
+        }
+        if (res.data.accessToken) {
+          token.value = res.data.accessToken
+          safeSetStorage('velobus_access_token', token.value)
+        }
+        return liveProfile.value
+      }
+    } catch (_) {
+      // Giữ nguyên state hiện tại nếu mất mạng tạm thời; nếu 401 thì httpClient đã tự động logout
+    }
+    return null
+  }
+
+  /**
+   * FE-SEC-003: Đồng bộ danh mục 7 Modules x 26 Permissions từ Backend API
+   */
+  function syncPermissionCatalog(modulesFromApi) {
+    if (Array.isArray(modulesFromApi) && modulesFromApi.length > 0) {
+      permissionCatalog.value = modulesFromApi
+    }
   }
 
   /**
@@ -313,14 +359,39 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = ''
     user.value = null
     previewRole.value = null
+    liveProfile.value = null
+    setHttpClientPreviewRole(null)
     safeRemoveStorage('velobus_access_token')
     safeRemoveStorage('velobus_user')
+    safeRemoveStorage('velobus_preview_role')
+  }
+
+  // FE-SEC-004 & FE-SEC-002: Lắng nghe sự kiện 401/403 và đồng bộ đăng xuất đa tab qua StorageEvent
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('velobus:unauthorized', () => {
+      logout()
+    })
+    window.addEventListener('velobus:forbidden', () => {
+      refreshProfile()
+    })
+    window.addEventListener('storage', (event) => {
+      if (event.key === 'velobus_access_token') {
+        if (!event.newValue) {
+          logout()
+        } else if (event.newValue !== token.value) {
+          token.value = event.newValue
+          liveProfile.value = null
+        }
+      }
+    })
   }
 
   return {
     token,
     user,
     previewRole,
+    liveProfile,
+    permissionCatalog,
     isAuthenticated,
     role,
     customRole,
@@ -334,6 +405,8 @@ export const useAuthStore = defineStore('auth', () => {
     hasAnyPermission,
     startRolePreview,
     stopRolePreview,
+    refreshProfile,
+    syncPermissionCatalog,
     getHomeRoute,
     login,
     register,

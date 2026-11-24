@@ -26,8 +26,12 @@ public class PaymentBookingConfirmPortAdapter implements PaymentBookingConfirmPo
             if (confirmed) {
                 return BookingConfirmResult.CONFIRMED;
             }
-        } catch (Exception ex) {
-            log.warn("Exception during booking confirmation for bookingId {}: {}", bookingId, ex.getMessage());
+        } catch (org.springframework.orm.ObjectOptimisticLockingFailureException
+                 | com.ticket.shared.exception.BusinessException
+                 | IllegalStateException ex) {
+            // BE-TXN-001: Chỉ bắt các ngoại lệ xung đột trạng thái nghiệp vụ (Optimistic Lock / Illegal transition).
+            // Các ngoại lệ hạ tầng DB (DataAccessException khác) phải được ném ra để rollback transaction cho VNPay IPN retry.
+            log.warn("Business/Optimistic lock conflict during booking confirmation for bookingId {}: {}", bookingId, ex.getMessage());
         }
 
         Booking booking = bookingRepository.findById(bookingId).orElse(null);

@@ -66,6 +66,17 @@ public class TripRepositoryImpl implements TripRepository {
     }
 
     @Override
+    public List<Seat> lockSeatsByTripIdAndNumbers(Long tripId, List<String> seatNumbers) {
+        if (seatNumbers == null || seatNumbers.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return springDataSeatRepository.findAndLockSeatsByTripIdAndNumbers(tripId, seatNumbers)
+                .stream()
+                .map(this::toSeatDomain)
+                .toList();
+    }
+
+    @Override
     public Trip save(Trip trip) {
         TripJpaEntity entity = new TripJpaEntity();
         entity.setId(trip.getId());

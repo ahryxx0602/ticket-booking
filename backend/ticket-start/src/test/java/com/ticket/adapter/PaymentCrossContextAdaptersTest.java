@@ -117,6 +117,16 @@ class PaymentCrossContextAdaptersTest {
     }
 
     @Test
+    void paymentBookingConfirmPortAdapter_whenInfrastructureRuntimeExceptionThrown_shouldPropagateForRollback() {
+        when(confirmBookingUseCase.execute(eq(104L), any(LocalDateTime.class)))
+                .thenThrow(new RuntimeException("Simulated DB connection failure"));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> confirmPortAdapter.confirmBooking(104L, LocalDateTime.now()))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("Simulated DB connection failure");
+    }
+
+    @Test
     void paymentIdentityPortAdapter_whenActiveUser_shouldReturnId() {
         User user = User.builder()
                 .id(7L)

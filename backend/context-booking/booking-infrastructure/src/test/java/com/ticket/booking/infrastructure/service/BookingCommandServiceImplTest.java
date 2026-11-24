@@ -99,6 +99,8 @@ class BookingCommandServiceImplTest {
         assertThat(response.getTotalAmount()).isEqualByComparingTo("2500000.00");
         assertThat(response.getSeatNumbers()).containsExactly("01A", "02B");
         assertThat(response.getItems()).extracting("seatId").containsExactly(101L, 102L);
+        // BE-CON-001: Verify row-level DB seat lock was acquired in sorted seat order before checking active booked seats
+        verify(catalogTripPort).lockSeatsForBooking(1L, List.of("01A", "02B"));
         verify(seatLockRepository, never()).releaseOwnedLocks(any(), anyList(), anyString());
     }
 

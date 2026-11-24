@@ -269,6 +269,17 @@ class SecurityIntegrationTest {
                 .andExpect(jsonPath("$.code").value("FORBIDDEN"));
     }
 
+    @Test
+    @WithMockUser(username = "cskh_no_op_perm", authorities = {"ROLE_ADMIN", "CUSTOM_ROLE_ROLE_CSKH", "PERM_BOOKING_VIEW"})
+    @DisplayName("BE-SEC-004: Custom Admin without PERM_OPERATOR_VIEW cannot access /api/v1/partners/** (403 FORBIDDEN)")
+    void customAdminRole_withoutOperatorPermission_callingPartnersApi_shouldReturn403() throws Exception {
+        mockMvc.perform(get("/api/v1/partners/vehicles")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+    }
+
     // =========================================================================
     // TEST CONTROLLER IMPLEMENTATION
     // =========================================================================

@@ -85,7 +85,7 @@ class PaymentServiceImplTest {
         );
 
         when(paymentIdentityPort.findActiveUserIdByUsername("customer1")).thenReturn(Optional.of(10L));
-        when(paymentBookingPort.findBookingByReference("BKG_123456")).thenReturn(Optional.of(snapshot));
+        when(paymentBookingPort.findBookingByReferenceForUpdate("BKG_123456")).thenReturn(Optional.of(snapshot));
         when(paymentRepository.findFirstByBookingIdAndStatus(100L, PaymentStatus.SUCCESS)).thenReturn(Optional.empty());
         when(paymentRepository.findFirstByBookingIdAndStatus(100L, PaymentStatus.PENDING)).thenReturn(Optional.empty());
         when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -114,7 +114,7 @@ class PaymentServiceImplTest {
         );
 
         when(paymentIdentityPort.findActiveUserIdByUsername("attacker")).thenReturn(Optional.of(99L)); // Attacker is 99
-        when(paymentBookingPort.findBookingByReference("BKG_123456")).thenReturn(Optional.of(snapshot));
+        when(paymentBookingPort.findBookingByReferenceForUpdate("BKG_123456")).thenReturn(Optional.of(snapshot));
 
         assertThatThrownBy(() -> paymentService.execute(command, "attacker", "127.0.0.1"))
                 .isInstanceOf(ForbiddenException.class)
@@ -138,7 +138,7 @@ class PaymentServiceImplTest {
         );
 
         when(paymentIdentityPort.findActiveUserIdByUsername("customer1")).thenReturn(Optional.of(10L));
-        when(paymentBookingPort.findBookingByReference("BKG_123456")).thenReturn(Optional.of(snapshot));
+        when(paymentBookingPort.findBookingByReferenceForUpdate("BKG_123456")).thenReturn(Optional.of(snapshot));
 
         assertThatThrownBy(() -> paymentService.execute(command, "customer1", "127.0.0.1"))
                 .isInstanceOf(BusinessException.class)
@@ -435,7 +435,7 @@ class PaymentServiceImplTest {
         existingPending.setCreatedAt(LocalDateTime.now().minusMinutes(1));
 
         when(paymentIdentityPort.findActiveUserIdByUsername("customer1")).thenReturn(Optional.of(10L));
-        when(paymentBookingPort.findBookingByReference("BKG_REUSE_01")).thenReturn(Optional.of(snapshot));
+        when(paymentBookingPort.findBookingByReferenceForUpdate("BKG_REUSE_01")).thenReturn(Optional.of(snapshot));
         when(paymentRepository.findFirstByBookingIdAndStatus(200L, PaymentStatus.SUCCESS)).thenReturn(Optional.empty());
         when(paymentRepository.findFirstByBookingIdAndStatus(200L, PaymentStatus.PENDING)).thenReturn(Optional.of(existingPending));
 
@@ -473,7 +473,7 @@ class PaymentServiceImplTest {
         Payment successfulPayment = Payment.builder().paymentReference("PAY_DONE").status(PaymentStatus.SUCCESS).build();
 
         when(paymentIdentityPort.findActiveUserIdByUsername("customer1")).thenReturn(Optional.of(10L));
-        when(paymentBookingPort.findBookingByReference("BKG_PAID_01")).thenReturn(Optional.of(snapshot));
+        when(paymentBookingPort.findBookingByReferenceForUpdate("BKG_PAID_01")).thenReturn(Optional.of(snapshot));
         when(paymentRepository.findFirstByBookingIdAndStatus(300L, PaymentStatus.SUCCESS)).thenReturn(Optional.of(successfulPayment));
 
         assertThatThrownBy(() -> paymentService.execute(command, "customer1", "127.0.0.1"))
@@ -501,7 +501,7 @@ class PaymentServiceImplTest {
         stalePending.setCreatedAt(LocalDateTime.now().minusMinutes(15)); // Expired >10 mins ago
 
         when(paymentIdentityPort.findActiveUserIdByUsername("customer1")).thenReturn(Optional.of(10L));
-        when(paymentBookingPort.findBookingByReference("BKG_EXP_PENDING")).thenReturn(Optional.of(snapshot));
+        when(paymentBookingPort.findBookingByReferenceForUpdate("BKG_EXP_PENDING")).thenReturn(Optional.of(snapshot));
         when(paymentRepository.findFirstByBookingIdAndStatus(205L, PaymentStatus.SUCCESS)).thenReturn(Optional.empty());
         when(paymentRepository.findFirstByBookingIdAndStatus(205L, PaymentStatus.PENDING)).thenReturn(Optional.of(stalePending));
         when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -560,7 +560,7 @@ class PaymentServiceImplTest {
         );
 
         when(paymentIdentityPort.findActiveUserIdByUsername("customer1")).thenReturn(Optional.of(10L));
-        when(paymentBookingPort.findBookingByReference("BKG_EXP_59S")).thenReturn(Optional.of(snapshot));
+        when(paymentBookingPort.findBookingByReferenceForUpdate("BKG_EXP_59S")).thenReturn(Optional.of(snapshot));
 
         assertThatThrownBy(() -> paymentService.execute(command, "customer1", "127.0.0.1"))
                 .isInstanceOf(BusinessException.class)

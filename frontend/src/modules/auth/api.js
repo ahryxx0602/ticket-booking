@@ -7,6 +7,9 @@ export const authApi = {
   register(payload) {
     return httpClient.post('/auth/register', payload)
   },
+  getMe() {
+    return httpClient.get('/auth/me')
+  },
   generateTelegramOtp() {
     return httpClient.post('/notifications/telegram/link-token')
   },

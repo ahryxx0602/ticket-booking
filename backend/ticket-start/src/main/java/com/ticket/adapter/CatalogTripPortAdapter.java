@@ -24,6 +24,11 @@ public class CatalogTripPortAdapter implements CatalogTripPort {
         return tripRepository.findById(tripId).map(trip -> toSnapshot(trip, tripRepository.findSeatsByTripId(tripId)));
     }
 
+    @Override
+    public void lockSeatsForBooking(Long tripId, List<String> sortedSeatNumbers) {
+        tripRepository.lockSeatsByTripIdAndNumbers(tripId, sortedSeatNumbers);
+    }
+
     private TripSnapshot toSnapshot(Trip trip, List<Seat> seats) {
         Map<String, TripSeatInfo> seatMap = seats.stream()
                 .collect(Collectors.toMap(

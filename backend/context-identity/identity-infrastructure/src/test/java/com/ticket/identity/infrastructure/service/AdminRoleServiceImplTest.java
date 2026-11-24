@@ -235,5 +235,46 @@ class AdminRoleServiceImplTest {
                 .containsExactly("TRIP_MANAGE_CRUD");
         assertThat(AdminApiPermissionFilter.resolveRequiredPermissions("PUT", "/api/v1/admin/settings"))
                 .containsExactly("SYSTEM_SETTINGS_MANAGE");
+
+        // BE-SEC-003: Unmapped methods or unknown sub-paths MUST return empty list (Fail-Closed)
+        assertThat(AdminApiPermissionFilter.resolveRequiredPermissions("DELETE", "/api/v1/admin/payments/55")).isEmpty();
+        assertThat(AdminApiPermissionFilter.resolveRequiredPermissions("POST", "/api/v1/admin/users/10/unknown-action")).isEmpty();
+        assertThat(AdminApiPermissionFilter.resolveRequiredPermissions("DELETE", "/api/v1/admin/bookings/BKG1")).isEmpty();
+        assertThat(AdminApiPermissionFilter.resolveRequiredPermissions("POST", "/api/v1/admin/partners/withdrawals/1/unknown")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("BE-SEC-002: Custom Admin cannot create or update a Role with permissions outside their own permission set")
+    void createOrUpdateRole_WhenCustomAdminEscalatesPermissions_ShouldThrowForbiddenException() {
+        User caller = User.builder()
+                .id(88L)
+                .username("iam_operator")
+                .role(UserRole.ROLE_ADMIN)
+                .customRoleCode("ROLE_IAM_MINI")
+                .status(UserStatus.ACTIVE)
+                .build();
+
+        SystemRole callerRole = SystemRole.builder()
+                .id(12L)
+                .code("ROLE_IAM_MINI")
+                .name("IAM Mini")
+                .permissions(List.of("USER_VIEW", "ROLE_MANAGE_CRUD"))
+                .systemDefault(false)
+                .build();
+
+        when(userRepository.findByUsername("iam_operator")).thenReturn(Optional.of(caller));
+        when(systemRoleRepository.findByCode("ROLE_IAM_MINI")).thenReturn(Optional.of(callerRole));
+        when(systemRoleRepository.existsByCode("ROLE_ESCALATED")).thenReturn(false);
+
+        // Attempt to create a role containing WITHDRAWAL_APPROVE (which caller does not possess)
+        SystemRoleRequest escalateReq = SystemRoleRequest.builder()
+                .code("ROLE_ESCALATED")
+                .name("Escalated Role")
+                .permissions(List.of("USER_VIEW", "WITHDRAWAL_APPROVE"))
+                .build();
+
+        assertThatThrownBy(() -> adminRoleService.createRole(escalateReq, "iam_operator"))
+                .isInstanceOf(ForbiddenException.class)
+                .extracting("code").isEqualTo("PRIVILEGE_ESCALATION_DETECTED");
     }
 }

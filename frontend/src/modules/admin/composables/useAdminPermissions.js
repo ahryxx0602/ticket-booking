@@ -1,38 +1,35 @@
 import { computed } from 'vue'
 import { getActivePinia } from 'pinia'
-import { useAuthStore, ALL_ADMIN_PERMISSION_CODES } from '@/modules/auth/store'
+import { useAuthStore } from '@/modules/auth/store'
 
 /**
- * Composable kiểm tra quyền Admin an toàn (PA-02 & PC-10):
- * - Khi chạy trong ứng dụng thật hoặc test có Pinia: ủy quyền sang useAuthStore()
- * - Khi chạy trong unit test mount view độc lập không truyền createPinia() (VD: admin-views.spec.js):
- *   tự động fallback về Super Admin (hasPermission -> true) để không bao giờ crash getActivePinia().
+ * Composable kiểm tra quyền Admin theo chuẩn Fail-Closed (FE-SEC-001):
+ * - Ủy quyền sang useAuthStore() khi có active Pinia instance và người dùng đã xác thực.
+ * - Nếu chưa khởi tạo Pinia hoặc chưa đăng nhập (!auth || !auth.isAuthenticated):
+ *   tuyệt đối Fail-Closed (isSuperAdmin = false, permissions = [], hasPermission = false).
  */
 export function useAdminPermissions() {
   const activePinia = getActivePinia()
   const auth = activePinia ? useAuthStore() : null
 
-  const isSuperAdmin = computed(() => (auth ? auth.isSuperAdmin : true))
-  const customRole = computed(() => (auth ? auth.customRole : 'ROLE_ADMIN'))
-  const roleName = computed(() => (auth ? auth.roleName : 'Quản Trị Viên Toàn Sàn'))
+  const isSuperAdmin = computed(() => (auth && auth.isAuthenticated ? auth.isSuperAdmin : false))
+  const customRole = computed(() => (auth && auth.isAuthenticated ? auth.customRole : 'GUEST'))
+  const roleName = computed(() => (auth && auth.isAuthenticated ? auth.roleName : 'Khách vãng lai'))
   const previewRole = computed(() => (auth ? auth.previewRole : null))
-  const permissions = computed(() => (auth ? auth.permissions : ALL_ADMIN_PERMISSION_CODES))
+  const permissions = computed(() => (auth && auth.isAuthenticated ? auth.permissions : []))
 
   function hasPermission(code) {
-    if (!auth) return true
-    // Nếu trong unit test mount view mà chưa login token (role === 'GUEST'), fallback true để test UI component
-    if (!auth.isAuthenticated) return true
+    if (!auth || !auth.isAuthenticated || !code) return false
     return auth.hasPermission(code)
   }
 
   function hasAnyPermission(codes) {
-    if (!auth) return true
-    if (!auth.isAuthenticated) return true
+    if (!auth || !auth.isAuthenticated || !Array.isArray(codes) || codes.length === 0) return false
     return auth.hasAnyPermission(codes)
   }
 
   function startRolePreview(roleObj) {
-    if (auth) {
+    if (auth && auth.isAuthenticated) {
       auth.startRolePreview(roleObj)
     }
   }

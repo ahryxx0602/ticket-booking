@@ -284,4 +284,55 @@ class AdminUserServiceImplTest {
                 .isInstanceOf(ForbiddenException.class)
                 .extracting("code").isEqualTo("SUPER_ADMIN_PROTECTED");
     }
+
+    @Test
+    @DisplayName("BE-SEC-002 & BE-SEC-005: Custom Admin without USER_ROLE_ASSIGN cannot change role via PUT /users/{id} and cannot assign role with higher permissions")
+    void customAdmin_RoleAssignAndSubsetGuards_ShouldBlockPrivilegeEscalation() {
+        User callerWithoutRoleAssign = User.builder()
+                .id(10L)
+                .username("staff_crud_only")
+                .role(UserRole.ROLE_ADMIN)
+                .customRoleCode("ROLE_USER_EDITOR")
+                .status(UserStatus.ACTIVE)
+                .build();
+
+        SystemRole editorRole = SystemRole.builder()
+                .id(11L)
+                .code("ROLE_USER_EDITOR")
+                .name("User Editor")
+                .permissions(List.of("USER_VIEW", "USER_CREATE_UPDATE_DELETE"))
+                .build();
+
+        SystemRole accountantRole = SystemRole.builder()
+                .id(4L)
+                .code("ROLE_ACCOUNTANT")
+                .name("Accountant")
+                .permissions(List.of("PAYMENT_REPORT_VIEW", "WITHDRAWAL_APPROVE"))
+                .build();
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(sampleUser));
+        when(userRepository.findByUsername("staff_crud_only")).thenReturn(Optional.of(callerWithoutRoleAssign));
+        when(systemRoleRepository.findByCode("ROLE_USER_EDITOR")).thenReturn(Optional.of(editorRole));
+        when(systemRoleRepository.findByCode("ROLE_ACCOUNTANT")).thenReturn(Optional.of(accountantRole));
+
+        // 1. BE-SEC-005: Attempt to mutate user role via PUT /api/v1/admin/users/{id} without USER_ROLE_ASSIGN -> Blocked!
+        AdminUpdateUserRequest updateWithRoleChange = AdminUpdateUserRequest.builder()
+                .fullName("Updated Name")
+                .email("testuser@example.com")
+                .role("ROLE_ACCOUNTANT")
+                .build();
+
+        assertThatThrownBy(() -> adminUserService.execute(1L, updateWithRoleChange, "staff_crud_only"))
+                .isInstanceOf(ForbiddenException.class)
+                .extracting("code").isEqualTo("MISSING_ROLE_ASSIGN_PERMISSION");
+
+        // 2. BE-SEC-002: Even if caller has USER_ROLE_ASSIGN, cannot assign ROLE_ACCOUNTANT containing WITHDRAWAL_APPROVE
+        editorRole.setPermissions(List.of("USER_VIEW", "USER_CREATE_UPDATE_DELETE", "USER_ROLE_ASSIGN"));
+        ChangeUserRoleRequest escalateRoleReq = new ChangeUserRoleRequest();
+        escalateRoleReq.setRole("ROLE_ACCOUNTANT");
+
+        assertThatThrownBy(() -> adminUserService.execute(1L, escalateRoleReq, "staff_crud_only"))
+                .isInstanceOf(ForbiddenException.class)
+                .extracting("code").isEqualTo("PRIVILEGE_ESCALATION_DETECTED");
+    }
 }

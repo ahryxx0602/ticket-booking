@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { useAuthStore } from '@/modules/auth/store'
+import { useAdminPermissions } from '../composables/useAdminPermissions'
 import AdminDashboardView from '../views/AdminDashboardView.vue'
 import AdminOperatorsView from '../views/AdminOperatorsView.vue'
 import AdminWithdrawalsView from '../views/AdminWithdrawalsView.vue'
@@ -23,6 +24,38 @@ function makeFakeJwt(payload) {
 }
 
 describe('Admin Backoffice Views & Platform Governance Tests (Phase FE-03)', () => {
+  beforeEach(() => {
+    // Khởi tạo Pinia với token Super Admin hợp lệ cho các bài test UI mặc định (vì useAdminPermissions đã chuyển sang Fail-Closed chuẩn FE-SEC-001)
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const auth = useAuthStore()
+    auth.token = makeFakeJwt({
+      sub: 'admin',
+      role: 'ROLE_ADMIN',
+      customRole: 'ROLE_ADMIN',
+      roleName: 'Quản Trị Viên Toàn Sàn (Super Admin)',
+      exp: Math.floor(Date.now() / 1000) + 3600
+    })
+  })
+
+  describe('FE-SEC-001: useAdminPermissions Fail-Closed Security Invariant', () => {
+    it('returns false for all permissions and isSuperAdmin when user is unauthenticated (GUEST)', () => {
+      const pinia = createPinia()
+      setActivePinia(pinia)
+      const auth = useAuthStore()
+      auth.logout()
+
+      const perms = useAdminPermissions()
+      expect(perms.isSuperAdmin.value).toBe(false)
+      expect(perms.customRole.value).toBe('GUEST')
+      expect(perms.permissions.value).toEqual([])
+      expect(perms.hasPermission('PAYMENT_REPORT_VIEW')).toBe(false)
+      expect(perms.hasPermission('')).toBe(false)
+      expect(perms.hasPermission(null)).toBe(false)
+      expect(perms.hasAnyPermission(['USER_VIEW', 'BOOKING_VIEW'])).toBe(false)
+      expect(perms.hasAnyPermission([])).toBe(false)
+    })
+  })
   describe('AdminDashboardView.vue - KPI & Reconciliation', () => {
     it('renders 4 system KPI cards and resolves reconciliation discrepancy', async () => {
       const wrapper = mount(AdminDashboardView)

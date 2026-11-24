@@ -39,6 +39,7 @@ public class SecurityConfig {
             .addFilterAfter(new AdminApiPermissionFilter(), AuthorizationFilter.class)
             .authorizeHttpRequests(auth -> auth
                 // 1. Guest & Public APIs (Strictly scoped)
+                .requestMatchers("/api/v1/auth/me").authenticated()
                 .requestMatchers("/api/v1/auth/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/catalog/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/public/banners/active", "/api/v1/public/settings").permitAll()
@@ -47,8 +48,10 @@ public class SecurityConfig {
 
                 // Health probes: Allow minimal probe endpoint for container healthchecks
                 .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info", "/internal/actuator/health/**").permitAll()
-                // All other Actuator operational metrics require ADMIN
-                .requestMatchers("/actuator/**", "/internal/actuator/**").hasRole("ADMIN")
+                // BE-SEC-004: All other Actuator operational metrics require Super Admin (or explicit PERM_SYSTEM_SETTINGS_MANAGE)
+                .requestMatchers("/actuator/**", "/internal/actuator/**").access((authentication, context) ->
+                    new org.springframework.security.authorization.AuthorizationDecision(hasSuperAdminOrPermission(authentication.get(), "PERM_SYSTEM_SETTINGS_MANAGE"))
+                )
 
                 // Swagger / OpenAPI documentation (public in dev/staging; disabled via springdoc.api-docs.enabled in prod)
                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html").permitAll()
@@ -63,9 +66,11 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/bookings/**").hasRole("CUSTOMER")
                 .requestMatchers("/api/v1/payments/checkout").hasRole("CUSTOMER")
 
-                // 5. Partner Role APIs
+                // 5. Partner Role APIs (BE-SEC-004: Custom Admin without PERM_OPERATOR_VIEW cannot access /api/v1/partners/**)
                 .requestMatchers("/api/v1/partners/register").authenticated()
-                .requestMatchers("/api/v1/partners/**").hasAnyRole("OPERATOR", "ADMIN")
+                .requestMatchers("/api/v1/partners/**").access((authentication, context) ->
+                    new org.springframework.security.authorization.AuthorizationDecision(hasOperatorOrSuperAdminOrPermission(authentication.get(), "PERM_OPERATOR_VIEW"))
+                )
 
                 // 6. Any other requests require authentication
                 .anyRequest().authenticated()
@@ -90,5 +95,32 @@ public class SecurityConfig {
                 })
             );
         return http.build();
+    }
+
+    private static boolean hasSuperAdminOrPermission(org.springframework.security.core.Authentication auth, String requiredPerm) {
+        if (auth == null || !auth.isAuthenticated() || auth instanceof org.springframework.security.authentication.AnonymousAuthenticationToken) {
+            return false;
+        }
+        java.util.Set<String> authorities = auth.getAuthorities().stream()
+                .map(org.springframework.security.core.GrantedAuthority::getAuthority)
+                .collect(java.util.stream.Collectors.toSet());
+        if (!authorities.contains("ROLE_ADMIN")) {
+            return false;
+        }
+        boolean isCustomAdmin = authorities.stream().anyMatch(a -> a != null && a.startsWith("CUSTOM_ROLE_"));
+        return !isCustomAdmin || authorities.contains(requiredPerm);
+    }
+
+    private static boolean hasOperatorOrSuperAdminOrPermission(org.springframework.security.core.Authentication auth, String requiredPerm) {
+        if (auth == null || !auth.isAuthenticated() || auth instanceof org.springframework.security.authentication.AnonymousAuthenticationToken) {
+            return false;
+        }
+        java.util.Set<String> authorities = auth.getAuthorities().stream()
+                .map(org.springframework.security.core.GrantedAuthority::getAuthority)
+                .collect(java.util.stream.Collectors.toSet());
+        if (authorities.contains("ROLE_OPERATOR")) {
+            return true;
+        }
+        return hasSuperAdminOrPermission(auth, requiredPerm);
     }
 }

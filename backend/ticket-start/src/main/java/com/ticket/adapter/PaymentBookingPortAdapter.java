@@ -24,6 +24,12 @@ public class PaymentBookingPortAdapter implements PaymentBookingPort {
     }
 
     @Override
+    public Optional<BookingSnapshot> findBookingByReferenceForUpdate(String bookingReference) {
+        return bookingRepository.findByReferenceForUpdate(bookingReference)
+                .map(this::toSnapshot);
+    }
+
+    @Override
     public Optional<BookingSnapshot> findBookingById(Long bookingId) {
         if (bookingId == null) {
             return Optional.empty();

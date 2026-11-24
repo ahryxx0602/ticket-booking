@@ -125,6 +125,10 @@ public class BookingCommandServiceImpl implements HoldSeatUseCase, CancelBooking
             totalAmount = totalAmount.add(seatInfo.price());
         }
 
+        // BE-CON-001: Khóa bi quan (SELECT ... FOR UPDATE ORDER BY seat_number ASC) trên các dòng Seat vật lý trong MySQL
+        // Đảm bảo tuần tự hóa 100% ở tầng DB chống Double-Booking ngay cả khi Redis gặp sự cố mất lock
+        catalogTripPort.lockSeatsForBooking(command.getTripId(), normalizedSeats);
+
         Set<String> activeBookedSeats = bookingRepository.findActiveBookedSeatNumbers(command.getTripId(), LocalDateTime.now());
         for (String seatNumber : normalizedSeats) {
             if (activeBookedSeats.contains(seatNumber)) {
@@ -240,14 +244,10 @@ public class BookingCommandServiceImpl implements HoldSeatUseCase, CancelBooking
 
     @Override
     public boolean execute(Long bookingId, LocalDateTime now) {
-        TransactionTemplate template = this.transactionTemplate;
-        if (template != null && template.getTransactionManager() != null) {
-            TransactionTemplate requiresNew = new TransactionTemplate(template.getTransactionManager());
-            requiresNew.setPropagationBehavior(org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-            template = requiresNew;
-        }
+        // BE-TXN-001: Sử dụng PROPAGATION_REQUIRED mặc định để tham gia cùng transaction với PaymentServiceImpl (VNPay IPN),
+        // tránh mở connection thứ 2 gây Split-Brain giữa Booking và Payment hoặc HikariCP Pool Deadlock.
         try {
-            return Boolean.TRUE.equals(template.execute(status -> {
+            return Boolean.TRUE.equals(transactionTemplate.execute(status -> {
                 Booking booking = bookingRepository.findById(bookingId)
                         .orElseThrow(() -> new EntityNotFoundException("Booking", bookingId));
                 if (booking.getStatus() == BookingStatus.CONFIRMED) {

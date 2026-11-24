@@ -1,11 +1,11 @@
 # ==============================================================================
-# STAGE 1: Build JAR package with Maven & Eclipse Temurin JDK 21
+# STAGE 1: Build JAR package with Pinned Maven 3.9.9 & Eclipse Temurin JDK 21
 # ==============================================================================
-FROM eclipse-temurin:21-jdk-alpine AS builder
+FROM maven:3.9.9-eclipse-temurin-21-alpine AS builder
 
 WORKDIR /build
 
-# Copy Maven Wrapper & POM files
+# Copy Maven POM files first for deterministic dependency layer caching
 COPY backend/pom.xml ./
 COPY backend/shared-kernel/pom.xml shared-kernel/
 COPY backend/context-identity/pom.xml context-identity/
@@ -50,9 +50,8 @@ COPY backend/context-notification/ context-notification/
 COPY backend/context-partner/ context-partner/
 COPY backend/ticket-start/src ticket-start/src
 
-# Cài đặt maven và build trọn gói runnable jar
-RUN apk add --no-cache maven && \
-    mvn clean package -DskipTests -pl ticket-start -am
+# Build trọn gói runnable jar với Maven 3.9.9 cố định
+RUN mvn clean package -DskipTests -B -pl ticket-start -am
 
 # ==============================================================================
 # STAGE 2: Lightweight Runtime Container (Alpine JRE 21 < 180MB)
@@ -72,5 +71,8 @@ COPY --from=builder --chown=appuser:appgroup /build/ticket-start/target/ticket-s
 ENV JAVA_OPTS="-XX:+UseG1GC -XX:MaxRAMPercentage=75.0 -Djava.security.egd=file:/dev/./urandom"
 
 EXPOSE 8080
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:8080/actuator/health || exit 1
 
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]

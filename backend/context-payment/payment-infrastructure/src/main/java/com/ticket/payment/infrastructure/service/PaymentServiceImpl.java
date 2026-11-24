@@ -57,7 +57,8 @@ public class PaymentServiceImpl implements CreatePaymentUseCase, HandlePaymentCa
         Long currentUserId = paymentIdentityPort.findActiveUserIdByUsername(username)
                 .orElseThrow(() -> new ForbiddenException("ACCOUNT_LOCKED", "User account is locked or does not exist"));
 
-        PaymentBookingPort.BookingSnapshot booking = paymentBookingPort.findBookingByReference(command.getBookingReference())
+        // BE-PAY-001: Khóa bi quan dòng Booking (FOR UPDATE) để tuần tự hóa các request khởi tạo thanh toán song song
+        PaymentBookingPort.BookingSnapshot booking = paymentBookingPort.findBookingByReferenceForUpdate(command.getBookingReference())
                 .orElseThrow(() -> new EntityNotFoundException("Booking", command.getBookingReference()));
 
         if (!booking.userId().equals(currentUserId)) {

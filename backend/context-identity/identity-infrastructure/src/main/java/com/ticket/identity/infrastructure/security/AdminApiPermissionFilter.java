@@ -78,117 +78,91 @@ public class AdminApiPermissionFilter extends OncePerRequestFilter {
     }
 
     /**
-     * PA-03 & PC-06: Thuật toán Specificity-First Matching ánh xạ (HttpMethod, URI) -> Required Permission Code(s).
+     * PA-03, PC-06 & BE-SEC-003: Thuật toán Specificity-First + Exact AntPattern/HttpMethod Matching.
+     * Mọi tổ hợp (HttpMethod, URI) không khớp chính xác với 26 API quản trị chuẩn sẽ trả về List.of() -> Fail-Closed 403!
      */
+    private static final org.springframework.util.AntPathMatcher PATH_MATCHER = new org.springframework.util.AntPathMatcher();
+
+    private record EndpointRule(Set<String> methods, String pattern, List<String> permissions) {}
+
+    private static final List<EndpointRule> ENDPOINT_RULES = List.of(
+            // 1. MODULE 1: DASHBOARD & PAYMENTS
+            new EndpointRule(Set.of("GET"), "/api/v1/admin/payments/reports", List.of("PAYMENT_REPORT_VIEW")),
+            new EndpointRule(Set.of("POST"), "/api/v1/admin/payments/*/reconcile", List.of("PAYMENT_RECONCILE_RESOLVE")),
+            new EndpointRule(Set.of("GET"), "/api/v1/admin/payments", List.of("PAYMENT_LIST_VIEW")),
+            new EndpointRule(Set.of("GET"), "/api/v1/admin/payments/*", List.of("PAYMENT_LIST_VIEW")),
+
+            // 2. GLOBAL COMMISSION & SYSTEM SETTINGS
+            new EndpointRule(Set.of("GET", "PUT"), "/api/v1/admin/partners/commission/global", List.of("SYSTEM_SETTINGS_MANAGE")),
+            new EndpointRule(Set.of("GET", "PUT"), "/api/v1/admin/settings", List.of("SYSTEM_SETTINGS_MANAGE")),
+
+            // 3. MODULE 2: OPERATORS
+            new EndpointRule(Set.of("PUT"), "/api/v1/admin/partners/operators/*/approve", List.of("OPERATOR_APPROVE_REJECT")),
+            new EndpointRule(Set.of("PUT"), "/api/v1/admin/partners/operators/*/reject", List.of("OPERATOR_APPROVE_REJECT")),
+            new EndpointRule(Set.of("PUT"), "/api/v1/admin/partners/operators/*/suspend", List.of("OPERATOR_SUSPEND")),
+            new EndpointRule(Set.of("PUT"), "/api/v1/admin/partners/operators/*/commission", List.of("OPERATOR_COMMISSION_MANAGE")),
+            new EndpointRule(Set.of("GET"), "/api/v1/admin/partners/operators", List.of("OPERATOR_VIEW")),
+            new EndpointRule(Set.of("GET"), "/api/v1/admin/partners/operators/*", List.of("OPERATOR_VIEW")),
+            new EndpointRule(Set.of("POST"), "/api/v1/admin/partners/operators", List.of("OPERATOR_CREATE_UPDATE")),
+            new EndpointRule(Set.of("PUT", "DELETE"), "/api/v1/admin/partners/operators/*", List.of("OPERATOR_CREATE_UPDATE")),
+
+            // 4. MODULE 3: WITHDRAWALS
+            new EndpointRule(Set.of("PUT"), "/api/v1/admin/partners/withdrawals/*/approve", List.of("WITHDRAWAL_APPROVE")),
+            new EndpointRule(Set.of("PUT"), "/api/v1/admin/partners/withdrawals/*/reject", List.of("WITHDRAWAL_REJECT")),
+            new EndpointRule(Set.of("GET"), "/api/v1/admin/partners/withdrawals", List.of("WITHDRAWAL_VIEW")),
+            new EndpointRule(Set.of("GET"), "/api/v1/admin/partners/withdrawals/*", List.of("WITHDRAWAL_VIEW")),
+
+            // 5. MODULE 4: BANNERS
+            new EndpointRule(Set.of("PUT"), "/api/v1/admin/partners/banners/*/approve", List.of("BANNER_APPROVE_REJECT")),
+            new EndpointRule(Set.of("PUT"), "/api/v1/admin/partners/banners/*/reject", List.of("BANNER_APPROVE_REJECT")),
+            new EndpointRule(Set.of("GET"), "/api/v1/admin/partners/banners", List.of("BANNER_VIEW")),
+            new EndpointRule(Set.of("GET"), "/api/v1/admin/partners/banners/*", List.of("BANNER_VIEW")),
+            new EndpointRule(Set.of("POST"), "/api/v1/admin/partners/banners", List.of("BANNER_CREATE_DELETE")),
+            new EndpointRule(Set.of("POST"), "/api/v1/admin/partners/banners/platform", List.of("BANNER_CREATE_DELETE")),
+            new EndpointRule(Set.of("PUT", "DELETE"), "/api/v1/admin/partners/banners/*", List.of("BANNER_CREATE_DELETE")),
+
+            // 6. MODULE 5: IAM - USERS
+            new EndpointRule(Set.of("PATCH"), "/api/v1/admin/users/*/status", List.of("USER_STATUS_LOCK")),
+            new EndpointRule(Set.of("POST"), "/api/v1/admin/users/*/reset-password", List.of("USER_PASSWORD_RESET")),
+            new EndpointRule(Set.of("PATCH"), "/api/v1/admin/users/*/role", List.of("USER_ROLE_ASSIGN")),
+            new EndpointRule(Set.of("GET"), "/api/v1/admin/users", List.of("USER_VIEW")),
+            new EndpointRule(Set.of("GET"), "/api/v1/admin/users/*", List.of("USER_VIEW")),
+            new EndpointRule(Set.of("POST"), "/api/v1/admin/users", List.of("USER_CREATE_UPDATE_DELETE")),
+            new EndpointRule(Set.of("PUT", "DELETE"), "/api/v1/admin/users/*", List.of("USER_CREATE_UPDATE_DELETE")),
+
+            // 7. MODULE 5: IAM - ROLES
+            new EndpointRule(Set.of("GET"), "/api/v1/admin/roles/permissions-catalog", List.of("ROLE_MANAGE_CRUD", "USER_VIEW", "USER_CREATE_UPDATE_DELETE", "USER_ROLE_ASSIGN")),
+            new EndpointRule(Set.of("GET"), "/api/v1/admin/roles", List.of("ROLE_MANAGE_CRUD", "USER_VIEW", "USER_CREATE_UPDATE_DELETE", "USER_ROLE_ASSIGN")),
+            new EndpointRule(Set.of("GET"), "/api/v1/admin/roles/*", List.of("ROLE_MANAGE_CRUD", "USER_VIEW", "USER_CREATE_UPDATE_DELETE", "USER_ROLE_ASSIGN")),
+            new EndpointRule(Set.of("POST"), "/api/v1/admin/roles", List.of("ROLE_MANAGE_CRUD")),
+            new EndpointRule(Set.of("PUT", "DELETE"), "/api/v1/admin/roles/*", List.of("ROLE_MANAGE_CRUD")),
+
+            // 8. MODULE 6: BOOKINGS
+            new EndpointRule(Set.of("POST"), "/api/v1/admin/bookings/*/refund", List.of("BOOKING_FORCE_REFUND")),
+            new EndpointRule(Set.of("GET"), "/api/v1/admin/bookings", List.of("BOOKING_VIEW")),
+            new EndpointRule(Set.of("GET"), "/api/v1/admin/bookings/*", List.of("BOOKING_VIEW")),
+
+            // 9. MODULE 7: STATIONS & TRIPS
+            new EndpointRule(Set.of("GET"), "/api/v1/admin/stations", List.of("STATION_VIEW", "TRIP_MANAGE_CRUD")),
+            new EndpointRule(Set.of("GET"), "/api/v1/admin/stations/*", List.of("STATION_VIEW", "TRIP_MANAGE_CRUD")),
+            new EndpointRule(Set.of("POST"), "/api/v1/admin/stations", List.of("STATION_CREATE_UPDATE_DELETE")),
+            new EndpointRule(Set.of("PUT", "DELETE"), "/api/v1/admin/stations/*", List.of("STATION_CREATE_UPDATE_DELETE")),
+            new EndpointRule(Set.of("GET", "POST"), "/api/v1/admin/trips", List.of("TRIP_MANAGE_CRUD")),
+            new EndpointRule(Set.of("GET", "PUT", "PATCH", "DELETE"), "/api/v1/admin/trips/*", List.of("TRIP_MANAGE_CRUD")),
+            new EndpointRule(Set.of("PUT", "PATCH", "POST"), "/api/v1/admin/trips/*/cancel", List.of("TRIP_MANAGE_CRUD"))
+    );
+
     public static List<String> resolveRequiredPermissions(String method, String uri) {
+        if (method == null || uri == null) {
+            return List.of();
+        }
+        String cleanMethod = method.trim().toUpperCase();
         String path = uri.endsWith("/") && uri.length() > 1 ? uri.substring(0, uri.length() - 1) : uri;
 
-        // 1. MODULE 1: DASHBOARD & PAYMENTS (/api/v1/admin/payments**)
-        if (path.startsWith("/api/v1/admin/payments")) {
-            if ("GET".equals(method) && path.startsWith("/api/v1/admin/payments/reports")) {
-                return List.of("PAYMENT_REPORT_VIEW");
+        for (EndpointRule rule : ENDPOINT_RULES) {
+            if (rule.methods().contains(cleanMethod) && PATH_MATCHER.match(rule.pattern(), path)) {
+                return rule.permissions();
             }
-            if ("POST".equals(method) && path.endsWith("/reconcile")) {
-                return List.of("PAYMENT_RECONCILE_RESOLVE");
-            }
-            if ("GET".equals(method)) {
-                return List.of("PAYMENT_LIST_VIEW");
-            }
-            return List.of("PAYMENT_RECONCILE_RESOLVE");
-        }
-
-        // 2. GLOBAL COMMISSION & SYSTEM SETTINGS
-        if (path.startsWith("/api/v1/admin/partners/commission/global") || path.startsWith("/api/v1/admin/settings")) {
-            return List.of("SYSTEM_SETTINGS_MANAGE");
-        }
-
-        // 3. MODULE 2: OPERATORS (/api/v1/admin/partners/operators**)
-        if (path.startsWith("/api/v1/admin/partners/operators")) {
-            if (path.endsWith("/approve") || path.endsWith("/reject")) {
-                return List.of("OPERATOR_APPROVE_REJECT");
-            }
-            if (path.endsWith("/suspend")) {
-                return List.of("OPERATOR_SUSPEND");
-            }
-            if (path.endsWith("/commission")) {
-                return List.of("OPERATOR_COMMISSION_MANAGE");
-            }
-            if ("GET".equals(method)) {
-                return List.of("OPERATOR_VIEW");
-            }
-            return List.of("OPERATOR_CREATE_UPDATE");
-        }
-
-        // 4. MODULE 3: WITHDRAWALS (/api/v1/admin/partners/withdrawals**)
-        if (path.startsWith("/api/v1/admin/partners/withdrawals")) {
-            if (path.endsWith("/approve")) {
-                return List.of("WITHDRAWAL_APPROVE");
-            }
-            if (path.endsWith("/reject")) {
-                return List.of("WITHDRAWAL_REJECT");
-            }
-            if ("GET".equals(method)) {
-                return List.of("WITHDRAWAL_VIEW");
-            }
-            return List.of("WITHDRAWAL_APPROVE");
-        }
-
-        // 5. MODULE 4: BANNERS (/api/v1/admin/partners/banners**)
-        if (path.startsWith("/api/v1/admin/partners/banners")) {
-            if (path.endsWith("/approve") || path.endsWith("/reject")) {
-                return List.of("BANNER_APPROVE_REJECT");
-            }
-            if ("GET".equals(method)) {
-                return List.of("BANNER_VIEW");
-            }
-            return List.of("BANNER_CREATE_DELETE");
-        }
-
-        // 6. MODULE 5: IAM - USERS (/api/v1/admin/users**)
-        if (path.startsWith("/api/v1/admin/users")) {
-            if (path.endsWith("/status")) {
-                return List.of("USER_STATUS_LOCK");
-            }
-            if (path.endsWith("/reset-password")) {
-                return List.of("USER_PASSWORD_RESET");
-            }
-            if (path.endsWith("/role")) {
-                return List.of("USER_ROLE_ASSIGN");
-            }
-            if ("GET".equals(method)) {
-                return List.of("USER_VIEW");
-            }
-            return List.of("USER_CREATE_UPDATE_DELETE");
-        }
-
-        // 7. MODULE 5: IAM - ROLES (/api/v1/admin/roles**)
-        if (path.startsWith("/api/v1/admin/roles")) {
-            if ("GET".equals(method)) {
-                return List.of("ROLE_MANAGE_CRUD", "USER_VIEW", "USER_CREATE_UPDATE_DELETE", "USER_ROLE_ASSIGN");
-            }
-            return List.of("ROLE_MANAGE_CRUD");
-        }
-
-        // 8. MODULE 6: BOOKINGS (/api/v1/admin/bookings**)
-        if (path.startsWith("/api/v1/admin/bookings")) {
-            if (path.endsWith("/refund")) {
-                return List.of("BOOKING_FORCE_REFUND");
-            }
-            if ("GET".equals(method)) {
-                return List.of("BOOKING_VIEW");
-            }
-            return List.of("BOOKING_FORCE_REFUND");
-        }
-
-        // 9. MODULE 7: STATIONS & TRIPS (/api/v1/admin/stations** & /api/v1/admin/trips**)
-        if (path.startsWith("/api/v1/admin/stations")) {
-            if ("GET".equals(method)) {
-                return List.of("STATION_VIEW", "TRIP_MANAGE_CRUD");
-            }
-            return List.of("STATION_CREATE_UPDATE_DELETE");
-        }
-        if (path.startsWith("/api/v1/admin/trips")) {
-            return List.of("TRIP_MANAGE_CRUD");
         }
 
         return List.of();

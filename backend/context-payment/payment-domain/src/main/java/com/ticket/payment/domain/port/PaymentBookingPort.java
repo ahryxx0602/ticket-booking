@@ -8,6 +8,15 @@ import java.util.Optional;
 public interface PaymentBookingPort {
 
     Optional<BookingSnapshot> findBookingByReference(String bookingReference);
+
+    /**
+     * BE-PAY-001: Khóa bi quan dòng Booking (SELECT ... FOR UPDATE) khi khởi tạo giao dịch thanh toán,
+     * chống race condition tạo trùng 2 bản ghi Payment PENDING khi người dùng nhấn đúp nút thanh toán.
+     */
+    default Optional<BookingSnapshot> findBookingByReferenceForUpdate(String bookingReference) {
+        return findBookingByReference(bookingReference);
+    }
+
     Optional<BookingSnapshot> findBookingById(Long bookingId);
 
     record BookingSnapshot(

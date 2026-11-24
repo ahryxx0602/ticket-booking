@@ -111,6 +111,11 @@ public class AdminUserServiceImpl implements
 
         ResolvedRole resolved = resolveTargetRole(request.getRole());
         enforceSuperAdminCreationGuard(resolved.customRoleCode(), currentAdminUsername);
+        // BE-SEC-005 & BE-SEC-002: Nếu tạo user với Role khác ROLE_CUSTOMER, bắt buộc kiểm tra quyền USER_ROLE_ASSIGN và Subset Permissions
+        if (!"ROLE_CUSTOMER".equalsIgnoreCase(resolved.customRoleCode())) {
+            enforceCallerHasRoleAssignPermission(currentAdminUsername);
+            enforceTargetRolePermissionSubset(resolved.customRoleCode(), currentAdminUsername);
+        }
 
         User newUser = User.builder()
                 .username(cleanUsername)
@@ -134,6 +139,7 @@ public class AdminUserServiceImpl implements
     public UserDetailResponse execute(Long id, AdminUpdateUserRequest request, String currentAdminUsername) {
         User user = findUserOrThrow(id);
         enforceTargetSuperAdminProtection(user, currentAdminUsername);
+        enforceTargetUserPermissionSubset(user, currentAdminUsername);
 
         String cleanEmail = request.getEmail().trim();
         if (!cleanEmail.equalsIgnoreCase(user.getEmail()) && userRepository.existsByEmail(cleanEmail)) {
@@ -148,7 +154,9 @@ public class AdminUserServiceImpl implements
                 if (user.getUsername().equalsIgnoreCase(currentAdminUsername)) {
                     throw new BusinessException("ADMIN_CANNOT_DEMOTE_SELF", "You cannot modify role of your own account");
                 }
+                enforceCallerHasRoleAssignPermission(currentAdminUsername);
                 enforceSuperAdminCreationGuard(resolved.customRoleCode(), currentAdminUsername);
+                enforceTargetRolePermissionSubset(resolved.customRoleCode(), currentAdminUsername);
                 user.assignSystemRole(resolved.baseRole(), resolved.customRoleCode());
             }
         }
@@ -167,6 +175,7 @@ public class AdminUserServiceImpl implements
             throw new BusinessException("ADMIN_CANNOT_DELETE_SELF", "Bạn không thể tự xóa tài khoản quản trị đang đăng nhập của chính mình");
         }
         enforceTargetSuperAdminProtection(user, currentAdminUsername);
+        enforceTargetUserPermissionSubset(user, currentAdminUsername);
 
         try {
             userRepository.deleteById(user.getId());
@@ -186,6 +195,7 @@ public class AdminUserServiceImpl implements
             throw new BusinessException("ADMIN_CANNOT_LOCK_SELF", "You cannot lock your own administrator account");
         }
         enforceTargetSuperAdminProtection(user, currentAdminUsername);
+        enforceTargetUserPermissionSubset(user, currentAdminUsername);
 
         if (request.getStatus() == UserStatus.LOCKED) {
             user.lock();
@@ -210,9 +220,12 @@ public class AdminUserServiceImpl implements
             throw new BusinessException("ADMIN_CANNOT_DEMOTE_SELF", "You cannot modify role of your own account");
         }
         enforceTargetSuperAdminProtection(user, currentAdminUsername);
+        enforceTargetUserPermissionSubset(user, currentAdminUsername);
 
         ResolvedRole resolved = resolveTargetRole(request.getRole());
         enforceSuperAdminCreationGuard(resolved.customRoleCode(), currentAdminUsername);
+        enforceCallerHasRoleAssignPermission(currentAdminUsername);
+        enforceTargetRolePermissionSubset(resolved.customRoleCode(), currentAdminUsername);
 
         user.assignSystemRole(resolved.baseRole(), resolved.customRoleCode());
         User updated = userRepository.save(user);
@@ -231,8 +244,9 @@ public class AdminUserServiceImpl implements
     @Transactional
     public void execute(Long id, AdminResetPasswordRequest request, String currentAdminUsername) {
         User user = findUserOrThrow(id);
-        // FND-001: Chốt chặn bảo vệ tài khoản Super Admin trước thao tác Reset Password từ nhân sự Custom Role
+        // FND-001 & BE-SEC-002: Chốt chặn bảo vệ tài khoản Super Admin và tài khoản có quyền cao hơn trước thao tác Reset Password
         enforceTargetSuperAdminProtection(user, currentAdminUsername);
+        enforceTargetUserPermissionSubset(user, currentAdminUsername);
 
         user.updatePassword(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
@@ -295,6 +309,86 @@ public class AdminUserServiceImpl implements
             throw new ForbiddenException("SUPER_ADMIN_PROTECTED",
                     "Chỉ Super Admin (ROLE_ADMIN) mới có quyền cấp phát hoặc gán quyền ROLE_ADMIN cho tài khoản khác");
         }
+    }
+
+    /**
+     * BE-SEC-005: Ngăn nhân sự chỉ có USER_CREATE_UPDATE_DELETE (nhưng không có USER_ROLE_ASSIGN) tự ý gán/đổi Role qua POST/PUT user.
+     */
+    private void enforceCallerHasRoleAssignPermission(String currentAdminUsername) {
+        if (isCallerSuperAdmin(currentAdminUsername)) {
+            return;
+        }
+        java.util.Set<String> callerPerms = resolveCallerPermissionsIfCustomAdmin(currentAdminUsername);
+        if (callerPerms != null && !callerPerms.contains("USER_ROLE_ASSIGN")) {
+            throw new ForbiddenException("MISSING_ROLE_ASSIGN_PERMISSION",
+                    "Bạn cần quyền USER_ROLE_ASSIGN để gán hoặc thay đổi vai trò của người dùng");
+        }
+    }
+
+    /**
+     * BE-SEC-002: Ngăn nhân sự Custom Role gán một Custom Role có quyền cao hơn mình cho người khác.
+     */
+    private void enforceTargetRolePermissionSubset(String targetRoleCode, String currentAdminUsername) {
+        if (targetRoleCode == null || "ROLE_CUSTOMER".equalsIgnoreCase(targetRoleCode) || "ROLE_OPERATOR".equalsIgnoreCase(targetRoleCode)) {
+            return;
+        }
+        if (isCallerSuperAdmin(currentAdminUsername)) {
+            return;
+        }
+        java.util.Set<String> callerPerms = resolveCallerPermissionsIfCustomAdmin(currentAdminUsername);
+        if (callerPerms == null || systemRoleRepository == null) {
+            return;
+        }
+        Optional<SystemRole> targetRoleOpt = systemRoleRepository.findByCode(targetRoleCode.trim().toUpperCase());
+        if (targetRoleOpt.isPresent()) {
+            for (String perm : targetRoleOpt.get().getPermissions()) {
+                if (perm != null && !callerPerms.contains(perm.trim().toUpperCase())) {
+                    throw new ForbiddenException("PRIVILEGE_ESCALATION_DETECTED",
+                            "Bạn không thể gán vai trò '" + targetRoleCode + "' vì vai trò này chứa quyền '" + perm + "' vượt quá quyền hiện tại của bạn");
+                }
+            }
+        }
+    }
+
+    /**
+     * BE-SEC-002: Ngăn nhân sự Custom Role sửa/khóa/xóa/reset mật khẩu của một nhân sự hệ thống khác có quyền mà caller không sở hữu.
+     */
+    private void enforceTargetUserPermissionSubset(User targetUser, String currentAdminUsername) {
+        if (targetUser == null || !"SYSTEM".equalsIgnoreCase(targetUser.getCategory())) {
+            return;
+        }
+        if (targetUser.getUsername() != null && targetUser.getUsername().equalsIgnoreCase(currentAdminUsername)) {
+            return;
+        }
+        enforceTargetRolePermissionSubset(targetUser.getEffectiveRoleCode(), currentAdminUsername);
+    }
+
+    private java.util.Set<String> resolveCallerPermissionsIfCustomAdmin(String currentAdminUsername) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getAuthorities() != null && !auth.getAuthorities().isEmpty()) {
+            boolean hasCustomRoleAuthority = auth.getAuthorities().stream()
+                    .map(GrantedAuthority::getAuthority)
+                    .anyMatch(a -> a != null && a.startsWith("CUSTOM_ROLE_"));
+            if (hasCustomRoleAuthority) {
+                return auth.getAuthorities().stream()
+                        .map(GrantedAuthority::getAuthority)
+                        .filter(a -> a != null && a.startsWith("PERM_"))
+                        .map(a -> a.substring(5))
+                        .collect(java.util.stream.Collectors.toSet());
+            }
+        }
+        if (currentAdminUsername != null && !currentAdminUsername.isBlank()) {
+            Optional<User> callerOpt = userRepository.findByUsername(currentAdminUsername);
+            if (callerOpt.isPresent() && !callerOpt.get().isSuperAdmin()) {
+                if (systemRoleRepository != null) {
+                    return systemRoleRepository.findByCode(callerOpt.get().getEffectiveRoleCode())
+                            .map(sr -> new java.util.HashSet<>(sr.getPermissions()))
+                            .orElseGet(java.util.HashSet::new);
+                }
+                return new java.util.HashSet<>();
+            }
+        }
+        return null;
     }
 
     private boolean isCallerSuperAdmin(String currentAdminUsername) {

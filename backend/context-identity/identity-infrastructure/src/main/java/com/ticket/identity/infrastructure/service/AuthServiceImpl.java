@@ -3,6 +3,7 @@ package com.ticket.identity.infrastructure.service;
 import com.ticket.identity.application.dto.AuthRequest;
 import com.ticket.identity.application.dto.AuthResponse;
 import com.ticket.identity.application.dto.RegisterRequest;
+import com.ticket.identity.application.usecase.GetCurrentUserProfileUseCase;
 import com.ticket.identity.application.usecase.LoginUseCase;
 import com.ticket.identity.application.usecase.RegisterUseCase;
 import com.ticket.identity.domain.model.AdminPermissionCatalog;
@@ -26,7 +27,7 @@ import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
-public class AuthServiceImpl implements LoginUseCase, RegisterUseCase {
+public class AuthServiceImpl implements LoginUseCase, RegisterUseCase, GetCurrentUserProfileUseCase {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -78,6 +79,20 @@ public class AuthServiceImpl implements LoginUseCase, RegisterUseCase {
 
         User saved = userRepository.save(user);
         return buildAuthResponse(saved);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AuthResponse getCurrentProfile(String username) {
+        if (username == null || username.isBlank()) {
+            throw new BusinessException("UNAUTHORIZED", "Authentication is required");
+        }
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new BusinessException("USER_NOT_FOUND", "User account no longer exists"));
+        if (user.isLocked()) {
+            throw new BusinessException("ACCOUNT_LOCKED", "Your account has been locked by administrator");
+        }
+        return buildAuthResponse(user);
     }
 
     private AuthResponse buildAuthResponse(User user) {

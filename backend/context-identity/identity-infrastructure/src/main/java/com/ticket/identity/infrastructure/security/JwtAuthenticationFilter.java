@@ -1,7 +1,10 @@
 package com.ticket.identity.infrastructure.security;
 
 import com.ticket.identity.domain.model.SystemRole;
+import com.ticket.identity.domain.model.User;
+import com.ticket.identity.domain.model.UserStatus;
 import com.ticket.identity.domain.repository.SystemRoleRepository;
+import com.ticket.identity.domain.repository.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -26,6 +29,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
     private SystemRoleRepository systemRoleRepository;
+    private UserRepository userRepository;
 
     public JwtAuthenticationFilter(JwtTokenProvider jwtTokenProvider) {
         this.jwtTokenProvider = jwtTokenProvider;
@@ -34,6 +38,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Autowired(required = false)
     public void setSystemRoleRepository(SystemRoleRepository systemRoleRepository) {
         this.systemRoleRepository = systemRoleRepository;
+    }
+
+    @Autowired(required = false)
+    public void setUserRepository(UserRepository userRepository) {
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -45,6 +54,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String username = jwtTokenProvider.getUsernameFromToken(token);
             String role = jwtTokenProvider.getRoleFromToken(token);
             String customRole = jwtTokenProvider.getCustomRoleFromToken(token);
+
+            // BE-SEC-001: Đối chiếu trạng thái thực tế của User trong DB (nếu có UserRepository)
+            // Thu hồi quyền ngay lập tức nếu tài khoản bị LOCKED, bị xóa hoặc bị thay đổi Role sau khi cấp JWT
+            if (userRepository != null && StringUtils.hasText(username)) {
+                Optional<User> liveUserOpt = userRepository.findByUsername(username);
+                if (liveUserOpt.isEmpty() || liveUserOpt.get().getStatus() == UserStatus.LOCKED) {
+                    SecurityContextHolder.clearContext();
+                    filterChain.doFilter(request, response);
+                    return;
+                }
+                User liveUser = liveUserOpt.get();
+                role = liveUser.getRole() != null ? liveUser.getRole().name() : "ROLE_CUSTOMER";
+                customRole = liveUser.getEffectiveRoleCode();
+            }
 
             String baseRole = (role != null && !role.isBlank()) ? role : "ROLE_CUSTOMER";
             List<GrantedAuthority> authorities = new ArrayList<>();
