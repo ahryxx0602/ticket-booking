@@ -42,6 +42,14 @@ const delegatedProps = computed(() => {
 })
 
 const forwarded = useForwardPropsEmits(delegatedProps, emits)
+
+function formatWeekday(day: string) {
+  const cleaned = day.trim()
+  if (/chủ\s*nhật|cn/i.test(cleaned)) return 'CN'
+  const match = cleaned.match(/\d+/)
+  if (match) return `T${match[0]}`
+  return cleaned
+}
 </script>
 
 <template>
@@ -73,9 +81,9 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
             <RangeCalendarHeadCell
               v-for="day in weekDays"
               :key="day"
-              class="text-muted-foreground rounded-md w-8 font-semibold text-[0.8rem] text-center"
+              class="text-muted-foreground rounded-calendar w-8 font-semibold text-[0.8rem] text-center whitespace-nowrap"
             >
-              {{ day }}
+              {{ formatWeekday(day) }}
             </RangeCalendarHeadCell>
           </RangeCalendarGridRow>
         </RangeCalendarGridHead>

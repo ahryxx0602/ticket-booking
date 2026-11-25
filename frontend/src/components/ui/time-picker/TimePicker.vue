@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useId } from 'reka-ui'
 import { Clock, ChevronDown } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import {
@@ -21,19 +22,23 @@ const props = withDefaults(
     modelValue?: string
     defaultValue?: string
     disabled?: boolean
+    invalid?: boolean
     id?: string
     label?: string
     placeholder?: string
     class?: any
     minuteStep?: number
     variant?: 'select' | 'popover'
+    presets?: string[]
   }>(),
   {
     modelValue: '08:00',
     placeholder: 'HH:mm',
     disabled: false,
+    invalid: false,
     minuteStep: 5,
-    variant: 'select'
+    variant: 'select',
+    presets: () => ['06:00', '08:30', '12:00', '14:30', '18:00', '21:00']
   }
 )
 
@@ -41,6 +46,8 @@ const emits = defineEmits<{
   (e: 'update:modelValue', val: string): void
 }>()
 
+const instanceId = useId(props.id, 'velobus-timepicker')
+const uniqueId = computed(() => props.id || instanceId)
 const isPopoverOpen = ref(false)
 
 const rawTime = computed(() => props.modelValue ?? props.defaultValue ?? '08:00')
@@ -84,7 +91,7 @@ const minuteOptions = computed(() => {
   return list
 })
 
-const quickPresets = ['06:00', '08:30', '12:00', '14:30', '18:00', '21:00']
+const quickPresets = computed(() => props.presets && props.presets.length > 0 ? props.presets : ['06:00', '08:30', '12:00', '14:30', '18:00', '21:00'])
 
 function setPreset(preset: string) {
   emits('update:modelValue', preset)
@@ -103,7 +110,7 @@ function setCurrentTime() {
     <!-- Component Label with 24H Badge -->
     <label
       v-if="label"
-      :for="id || 'time-picker'"
+      :for="uniqueId"
       class="text-xs font-semibold text-foreground flex items-center justify-between"
     >
       <span>{{ label }}</span>

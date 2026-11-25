@@ -134,7 +134,7 @@ function handleReset() {
               <p class="text-xs text-muted-foreground">Claude+ Warm Minimalist Customizer</p>
             </div>
           </div>
-          <Button variant="ghost" size="icon" class="h-8 w-8" @click="handleCancel">
+          <Button variant="ghost" size="icon" class="h-8 w-8" aria-label="Đóng tùy biến" @click="handleCancel">
             <X class="h-4 w-4" />
           </Button>
         </div>
