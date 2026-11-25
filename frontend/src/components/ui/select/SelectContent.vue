@@ -10,7 +10,8 @@ import {
 import { cn } from '@/lib/utils'
 
 const props = withDefaults(defineProps<SelectContentProps & { class?: any }>(), {
-  position: 'popper'
+  position: 'popper',
+  bodyLock: false
 })
 const emits = defineEmits<SelectContentEmits>()
 

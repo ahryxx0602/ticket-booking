@@ -199,6 +199,11 @@
   --status-info-bg: oklch(0.26 0.08 240.0);
 }
 
+html {
+  /* Prevent horizontal layout shifts when scrollbar appears or modals/dropdowns open */
+  scrollbar-gutter: stable;
+}
+
 html, body {
   font-family: var(--font-sans);
   background-color: var(--background);
@@ -209,6 +214,12 @@ html, body {
   max-width: 100vw;
   -webkit-font-smoothing: antialiased;
   transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+body {
+  /* Prevent scroll lock layout shift when Reka UI / Radix primitives inject padding-right or margin-right */
+  padding-right: 0px !important;
+  margin-right: 0px !important;
 }
 
 .tabular-nums {
