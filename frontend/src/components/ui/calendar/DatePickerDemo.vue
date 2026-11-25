@@ -3,7 +3,8 @@ import { ref } from 'vue'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
-import { Calendar as CalendarIcon, Clock } from 'lucide-vue-next'
+import { TimePicker } from '@/components/ui/time-picker'
+import { Calendar as CalendarIcon } from 'lucide-vue-next'
 import { today, getLocalTimeZone } from '@internationalized/date'
 
 // Use any to prevent TypeScript private field conflicts with transitive @internationalized/date
@@ -22,10 +23,13 @@ function formatDate(date: any) {
 
 <template>
   <div class="space-y-4">
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
       <!-- Popover Date Picker -->
-      <div class="space-y-2">
-        <label class="text-xs font-semibold text-foreground">Date Picker (Popover Mode):</label>
+      <div class="space-y-1.5">
+        <label class="text-xs font-semibold text-foreground flex items-center justify-between">
+          <span>Date Picker (Popover Mode):</span>
+          <span class="text-[11px] font-mono text-muted-foreground font-normal">dd/MM/yyyy</span>
+        </label>
         <Popover v-model:open="isPopoverOpen">
           <PopoverTrigger as-child>
             <Button
@@ -36,7 +40,7 @@ function formatDate(date: any) {
               <span class="text-xs font-medium">{{ formatDate(selectedDate) }}</span>
             </Button>
           </PopoverTrigger>
-          <PopoverContent class="w-auto p-0" align="start">
+          <PopoverContent class="w-auto p-0 border border-border rounded-xl shadow-lg" align="start">
             <Calendar
               v-model="selectedDate"
               :min-value="(today(getLocalTimeZone()) as any)"
@@ -46,18 +50,11 @@ function formatDate(date: any) {
         </Popover>
       </div>
 
-      <!-- Time Picker Composition -->
-      <div class="space-y-2">
-        <label class="text-xs font-semibold text-foreground">Time Picker (24H Format):</label>
-        <div class="relative flex items-center">
-          <Clock class="absolute left-3 h-4 w-4 text-primary pointer-events-none" />
-          <input
-            v-model="selectedTime"
-            type="time"
-            class="w-full h-10 pl-9 pr-3 rounded-lg border border-input text-xs font-medium text-foreground bg-background focus:ring-2 focus:ring-ring focus:outline-hidden"
-          />
-        </div>
-      </div>
+      <!-- Time Picker Reusable Component -->
+      <TimePicker
+        v-model="selectedTime"
+        label="Time Picker (24H Format):"
+      />
     </div>
 
     <!-- Selected Summary -->

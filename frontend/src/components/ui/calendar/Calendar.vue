@@ -27,6 +27,8 @@ defineOptions({
 const props = withDefaults(
   defineProps<CalendarRootProps & { class?: HTMLAttributes['class'] }>(),
   {
+    locale: 'vi-VN',
+    weekStartsOn: 1,
     weekdayFormat: 'short',
     fixedWeeks: false,
   }
@@ -93,7 +95,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
                 :day="weekDay"
                 :month="month.value"
                 :class="cn(
-                  'inline-flex items-center justify-center whitespace-nowrap rounded-lg text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-30 hover:bg-muted text-foreground h-8 w-8 p-0 cursor-pointer',
+                  'inline-flex items-center justify-center whitespace-nowrap rounded-[6px] text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-30 hover:bg-muted text-foreground h-8 w-8 p-0 cursor-pointer',
                   // Today marker
                   '[&[data-today]:not([data-selected])]:border [&[data-today]:not([data-selected])]:border-primary/50 [&[data-today]:not([data-selected])]:font-bold',
                   // Selected state with canonical Claude+ primary token

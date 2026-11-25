@@ -27,6 +27,8 @@ defineOptions({
 const props = withDefaults(
   defineProps<RangeCalendarRootProps & { class?: HTMLAttributes['class'] }>(),
   {
+    locale: 'vi-VN',
+    weekStartsOn: 1,
     weekdayFormat: 'short',
     fixedWeeks: false,
   }
@@ -93,10 +95,10 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
                 :day="weekDay"
                 :month="month.value"
                 :class="cn(
-                  'inline-flex items-center justify-center whitespace-nowrap rounded-lg text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-30 hover:bg-muted text-foreground h-8 w-8 p-0 cursor-pointer',
+                  'inline-flex items-center justify-center whitespace-nowrap rounded-[6px] text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-30 hover:bg-muted text-foreground h-8 w-8 p-0 cursor-pointer',
                   // Selection states
-                  'data-[selection-start]:bg-primary data-[selection-start]:text-primary-foreground data-[selection-start]:font-bold data-[selection-start]:rounded-l-lg',
-                  'data-[selection-end]:bg-primary data-[selection-end]:text-primary-foreground data-[selection-end]:font-bold data-[selection-end]:rounded-r-lg',
+                  'data-[selection-start]:bg-primary data-[selection-start]:text-primary-foreground data-[selection-start]:font-bold data-[selection-start]:rounded-l-[6px]',
+                  'data-[selection-end]:bg-primary data-[selection-end]:text-primary-foreground data-[selection-end]:font-bold data-[selection-end]:rounded-r-[6px]',
                   'data-[highlighted]:bg-transparent data-[highlighted]:text-foreground',
                   // Today marker
                   '[&[data-today]:not([data-selected])]:border [&[data-today]:not([data-selected])]:border-primary/50',
