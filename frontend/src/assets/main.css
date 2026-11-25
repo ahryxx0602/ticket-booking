@@ -8,8 +8,19 @@
      ========================================================================== */
   --font-sans: "Outfit", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  --radius: 1rem;
+  --radius: 1rem; /* Canonical Claude+ 16px */
+  --radius-checkbox: 4px;
+  --radius-calendar: 6px;
+  --radius-control: 8px; /* Button, Input, Select, Textarea */
+  --radius-badge: 6px;
+  --radius-surface: 16px; /* Card, Dialog, Popover, Drawer */
+  --radius-pill: 9999px;
   --spacing: 0.25rem;
+
+  /* Component Control Heights by Density (REV-06) */
+  --control-height: 40px;
+  --control-height-sm: 36px;
+  --control-height-lg: 44px;
 
   /* Light Mode Palette (OKLCH Source of Truth) */
   --background: oklch(0.9818 0.0054 95.0986);       /* #FAF9F5 */
@@ -88,6 +99,9 @@
    Scoped to data tables without breaking calendar day cells or dialogs
    ========================================================================== */
 [data-density="compact"] {
+  --control-height: 36px;
+  --control-height-sm: 32px;
+  --control-height-lg: 40px;
   --spacing-density: 0.85;
   --table-cell-py: 0.5rem;
   --table-cell-px: 0.75rem;
@@ -95,6 +109,9 @@
 }
 
 [data-density="comfortable"] {
+  --control-height: 44px;
+  --control-height-sm: 40px;
+  --control-height-lg: 48px;
   --spacing-density: 1.15;
   --table-cell-py: 1rem;
   --table-cell-px: 1.25rem;

@@ -89,11 +89,18 @@ export default {
       },
       borderRadius: {
         DEFAULT: 'var(--radius)',
-        sm: 'calc(var(--radius) - 4px)',
-        md: 'calc(var(--radius) - 2px)',
-        lg: 'var(--radius)',
-        xl: 'calc(var(--radius) + 4px)',
+        sm: 'var(--radius-checkbox, 4px)',
+        md: 'var(--radius-control, 8px)',
+        lg: 'calc(var(--radius) - 4px)',
+        xl: 'var(--radius-surface, 16px)',
         hero: '20px',
+        // Semantic role-specific geometry tokens (REV-01)
+        checkbox: 'var(--radius-checkbox, 4px)',
+        calendar: 'var(--radius-calendar, 6px)',
+        control: 'var(--radius-control, 8px)',
+        badge: 'var(--radius-badge, 6px)',
+        surface: 'var(--radius-surface, 16px)',
+        pill: 'var(--radius-pill, 9999px)',
       },
       boxShadow: {
         card: '0 2px 8px rgba(15, 23, 42, .04)',

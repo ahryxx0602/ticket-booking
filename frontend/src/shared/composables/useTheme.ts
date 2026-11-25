@@ -154,8 +154,15 @@ function applyTheme(cfg: ThemeConfig) {
     root.classList.remove('dark')
   }
 
-  // 2. Radius
+  // 2. Radius & Role-Specific Geometry (REV-01)
+  const numRadius = parseFloat(cfg.radius) || 16
+  const px = cfg.radius.includes('rem') ? numRadius * 16 : numRadius
   root.style.setProperty('--radius', cfg.radius)
+  root.style.setProperty('--radius-surface', `${px}px`)
+  root.style.setProperty('--radius-control', `${Math.round(px * 0.5)}px`)
+  root.style.setProperty('--radius-checkbox', '4px')
+  root.style.setProperty('--radius-calendar', '6px')
+  root.style.setProperty('--radius-badge', `${Math.min(6, Math.round(px * 0.375))}px`)
 
   // 3. Density
   root.setAttribute('data-density', cfg.density)
