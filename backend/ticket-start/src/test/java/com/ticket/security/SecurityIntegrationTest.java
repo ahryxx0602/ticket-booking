@@ -69,6 +69,12 @@ class SecurityIntegrationTest {
     @MockBean
     private JwtTokenProvider jwtTokenProvider;
 
+    @MockBean
+    private com.ticket.identity.domain.repository.UserRepository userRepository;
+
+    @MockBean
+    private com.ticket.identity.domain.repository.SystemRoleRepository systemRoleRepository;
+
     private MockMvc mockMvc;
 
     @BeforeEach

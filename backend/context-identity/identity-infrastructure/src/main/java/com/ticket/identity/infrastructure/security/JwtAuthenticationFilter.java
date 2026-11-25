@@ -28,19 +28,26 @@ import java.util.Optional;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
-    private SystemRoleRepository systemRoleRepository;
     private UserRepository userRepository;
+    private SystemRoleRepository systemRoleRepository;
+
+    @Autowired
+    public JwtAuthenticationFilter(JwtTokenProvider jwtTokenProvider,
+                                   UserRepository userRepository,
+                                   SystemRoleRepository systemRoleRepository) {
+        this.jwtTokenProvider = jwtTokenProvider;
+        this.userRepository = userRepository;
+        this.systemRoleRepository = systemRoleRepository;
+    }
 
     public JwtAuthenticationFilter(JwtTokenProvider jwtTokenProvider) {
         this.jwtTokenProvider = jwtTokenProvider;
     }
 
-    @Autowired(required = false)
     public void setSystemRoleRepository(SystemRoleRepository systemRoleRepository) {
         this.systemRoleRepository = systemRoleRepository;
     }
 
-    @Autowired(required = false)
     public void setUserRepository(UserRepository userRepository) {
         this.userRepository = userRepository;
     }
@@ -52,27 +59,36 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String token = resolveToken(request);
         if (StringUtils.hasText(token) && jwtTokenProvider.validateToken(token)) {
             String username = jwtTokenProvider.getUsernameFromToken(token);
-            if (!StringUtils.hasText(username) || jwtTokenProvider.isTokenRevokedForUser(username, token)) {
+            if (!StringUtils.hasText(username)) {
                 SecurityContextHolder.clearContext();
                 filterChain.doFilter(request, response);
                 return;
             }
-            String role = jwtTokenProvider.getRoleFromToken(token);
-            String customRole = jwtTokenProvider.getCustomRoleFromToken(token);
 
-            // BE-SEC-001: Đối chiếu trạng thái thực tế của User trong DB (nếu có UserRepository)
-            // Thu hồi quyền ngay lập tức nếu tài khoản bị LOCKED, bị xóa hoặc bị thay đổi Role sau khi cấp JWT
-            if (userRepository != null) {
-                Optional<User> liveUserOpt = userRepository.findByUsername(username);
-                if (liveUserOpt.isEmpty() || liveUserOpt.get().getStatus() == UserStatus.LOCKED) {
-                    SecurityContextHolder.clearContext();
-                    filterChain.doFilter(request, response);
-                    return;
-                }
-                User liveUser = liveUserOpt.get();
-                role = liveUser.getRole() != null ? liveUser.getRole().name() : "ROLE_CUSTOMER";
-                customRole = liveUser.getEffectiveRoleCode();
+            // BE-SEC-001: Bắt buộc đối chiếu trạng thái thực tế của User và persistent tokenVersion trong DB
+            if (userRepository == null) {
+                SecurityContextHolder.clearContext();
+                filterChain.doFilter(request, response);
+                return;
             }
+
+            Optional<User> liveUserOpt = userRepository.findByUsername(username);
+            if (liveUserOpt.isEmpty() || liveUserOpt.get().getStatus() != UserStatus.ACTIVE) {
+                SecurityContextHolder.clearContext();
+                filterChain.doFilter(request, response);
+                return;
+            }
+
+            User liveUser = liveUserOpt.get();
+            long tokenVersion = jwtTokenProvider.getTokenVersionFromToken(token);
+            if (tokenVersion != liveUser.getEffectiveTokenVersion()) {
+                SecurityContextHolder.clearContext();
+                filterChain.doFilter(request, response);
+                return;
+            }
+
+            String role = liveUser.getRole() != null ? liveUser.getRole().name() : "ROLE_CUSTOMER";
+            String customRole = liveUser.getEffectiveRoleCode();
 
             String baseRole = (role != null && !role.isBlank()) ? role : "ROLE_CUSTOMER";
             List<GrantedAuthority> authorities = new ArrayList<>();
@@ -86,7 +102,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 String cleanCustomRole = customRole.trim().toUpperCase();
                 authorities.add(new SimpleGrantedAuthority("CUSTOM_ROLE_" + cleanCustomRole));
 
-                List<String> effectivePerms = resolveLiveOrTokenPermissions(cleanCustomRole, token);
+                List<String> effectivePerms = resolveLivePermissions(cleanCustomRole);
                 for (String perm : effectivePerms) {
                     if (perm != null && !perm.isBlank()) {
                         authorities.add(new SimpleGrantedAuthority("PERM_" + perm.trim().toUpperCase()));
@@ -103,16 +119,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     /**
-     * PC-03 & FND-005: Ưu tiên đọc permissions mới nhất từ DB (nếu có SystemRoleRepository).
-     * Nếu Role đã bị xóa khỏi DB (roleOpt.isEmpty()), trả về emptyList() (thu hồi toàn bộ quyền) chứ không dùng lại JWT cũ.
-     * Chỉ khi chạy trong unit test không inject SystemRoleRepository thì mới đọc từ JWT claims.
+     * BE-SEC-001: Chỉ đọc permissions mới nhất từ SystemRoleRepository trong DB.
+     * Nếu Role đã bị xóa khỏi DB hoặc repository chưa cấu hình -> trả về emptyList() (Fail-Closed).
      */
-    private List<String> resolveLiveOrTokenPermissions(String customRoleCode, String token) {
-        if (systemRoleRepository != null) {
-            Optional<SystemRole> roleOpt = systemRoleRepository.findByCode(customRoleCode);
-            return roleOpt.map(SystemRole::getPermissions).orElse(Collections.emptyList());
+    private List<String> resolveLivePermissions(String customRoleCode) {
+        if (systemRoleRepository == null) {
+            return Collections.emptyList();
         }
-        return jwtTokenProvider.getPermissionsFromToken(token);
+        Optional<SystemRole> roleOpt = systemRoleRepository.findByCode(customRoleCode);
+        return roleOpt.map(SystemRole::getPermissions).orElse(Collections.emptyList());
     }
 
     private String resolveToken(HttpServletRequest request) {

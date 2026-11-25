@@ -50,9 +50,7 @@ class JwtAuthenticationFilterTest {
     @BeforeEach
     void setUp() {
         SecurityContextHolder.clearContext();
-        filter = new JwtAuthenticationFilter(jwtTokenProvider);
-        filter.setUserRepository(userRepository);
-        filter.setSystemRoleRepository(systemRoleRepository);
+        filter = new JwtAuthenticationFilter(jwtTokenProvider, userRepository, systemRoleRepository);
     }
 
     @AfterEach
@@ -69,8 +67,6 @@ class JwtAuthenticationFilterTest {
 
         when(jwtTokenProvider.validateToken("valid.jwt.token")).thenReturn(true);
         when(jwtTokenProvider.getUsernameFromToken("valid.jwt.token")).thenReturn("locked_user");
-        when(jwtTokenProvider.getRoleFromToken("valid.jwt.token")).thenReturn("ROLE_ADMIN");
-        when(jwtTokenProvider.getCustomRoleFromToken("valid.jwt.token")).thenReturn("ROLE_ADMIN");
 
         User lockedUser = User.builder()
                 .id(10L)
@@ -113,9 +109,6 @@ class JwtAuthenticationFilterTest {
 
         when(jwtTokenProvider.validateToken("stale.admin.token")).thenReturn(true);
         when(jwtTokenProvider.getUsernameFromToken("stale.admin.token")).thenReturn("former_staff");
-        // Stale JWT still claims ROLE_ADMIN / ROLE_CSKH
-        when(jwtTokenProvider.getRoleFromToken("stale.admin.token")).thenReturn("ROLE_ADMIN");
-        when(jwtTokenProvider.getCustomRoleFromToken("stale.admin.token")).thenReturn("ROLE_CSKH");
 
         // Live DB has already demoted user to ROLE_CUSTOMER
         User demotedUser = User.builder()
@@ -146,8 +139,6 @@ class JwtAuthenticationFilterTest {
 
         when(jwtTokenProvider.validateToken("reassigned.staff.token")).thenReturn(true);
         when(jwtTokenProvider.getUsernameFromToken("reassigned.staff.token")).thenReturn("staff01");
-        when(jwtTokenProvider.getRoleFromToken("reassigned.staff.token")).thenReturn("ROLE_ADMIN");
-        when(jwtTokenProvider.getCustomRoleFromToken("reassigned.staff.token")).thenReturn("ROLE_ACCOUNTANT");
 
         // Live DB reassigned staff01 to ROLE_BANNER_MOD
         User liveUser = User.builder()
@@ -183,17 +174,30 @@ class JwtAuthenticationFilterTest {
     }
 
     @Test
-    @DisplayName("BE-SEC-001: JWT issued before password reset must be immediately rejected")
-    void doFilterInternal_WhenTokenRevokedByPasswordReset_ShouldNotSetAuthentication() throws Exception {
+    @DisplayName("BE-SEC-001: JWT issued before password reset (stale tokenVersion) must be immediately rejected across restarts/instances")
+    void doFilterInternal_WhenTokenVersionMismatchesDb_ShouldNotSetAuthentication() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("Authorization", "Bearer pre.reset.token");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         when(jwtTokenProvider.validateToken("pre.reset.token")).thenReturn(true);
         when(jwtTokenProvider.getUsernameFromToken("pre.reset.token")).thenReturn("compromised_user");
-        when(jwtTokenProvider.isTokenRevokedForUser("compromised_user", "pre.reset.token")).thenReturn(true);
+        when(jwtTokenProvider.getTokenVersionFromToken("pre.reset.token")).thenReturn(0L);
 
-        filter.doFilterInternal(request, response, filterChain);
+        // In DB, admin already reset password so tokenVersion incremented to 1
+        User userAfterReset = User.builder()
+                .id(77L)
+                .username("compromised_user")
+                .role(UserRole.ROLE_CUSTOMER)
+                .status(UserStatus.ACTIVE)
+                .tokenVersion(1L)
+                .build();
+        when(userRepository.findByUsername("compromised_user")).thenReturn(Optional.of(userAfterReset));
+
+        // Simulate a brand new filter instance (second backend instance or after JVM restart)
+        JwtAuthenticationFilter secondInstanceFilter =
+                new JwtAuthenticationFilter(jwtTokenProvider, userRepository, systemRoleRepository);
+        secondInstanceFilter.doFilterInternal(request, response, filterChain);
 
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
         verify(filterChain).doFilter(request, response);

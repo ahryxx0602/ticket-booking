@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
 import { createPinia, setActivePinia } from 'pinia'
 import { useAuthStore, ADMIN_PERMISSION_MODULES, ALL_ADMIN_PERMISSION_CODES } from '@/modules/auth/store'
+import { authApi } from '@/modules/auth/api'
 import httpClient, { isJwtTokenExpired } from '@/shared/api/httpClient'
 
 function makeFakeJwt(payload) {
@@ -122,5 +123,79 @@ describe('Phase 3 & Phase 4 Remediation: RBAC Contract Parity & Auth/HttpClient 
     })
 
     auth.stopRolePreview()
+  })
+
+  it('FE-STATE-001: refreshProfile enforces single-flight deduplication and ignores stale responses after logout', async () => {
+    const auth = useAuthStore()
+    auth.token = makeFakeJwt({
+      sub: 'staff01',
+      role: 'ROLE_ADMIN',
+      customRole: 'ROLE_CSKH',
+      permissions: ['BOOKING_VIEW'],
+      exp: Math.floor(Date.now() / 1000) + 3600
+    })
+
+    let resolveGetMe
+    const getMeSpy = vi.spyOn(authApi, 'getMe').mockImplementation(
+      () => new Promise(resolve => { resolveGetMe = resolve })
+    )
+
+    // 1. Trigger 3 concurrent refreshProfile calls (e.g. from simultaneous 403 events)
+    const p1 = auth.refreshProfile()
+    const p2 = auth.refreshProfile()
+    const p3 = auth.refreshProfile()
+
+    expect(getMeSpy).toHaveBeenCalledTimes(1)
+
+    // 2. User logs out while /auth/me is still in-flight
+    auth.logout()
+
+    // 3. Stale response arrives after logout -> must be ignored
+    resolveGetMe({
+      data: {
+        role: 'ROLE_ADMIN',
+        customRole: 'ROLE_CSKH',
+        roleName: 'CSKH',
+        permissions: ['BOOKING_VIEW', 'USER_VIEW']
+      }
+    })
+    await Promise.all([p1, p2, p3])
+
+    expect(auth.isAuthenticated).toBe(false)
+    expect(auth.liveProfile).toBeNull()
+    expect(auth.permissions).toEqual([])
+    getMeSpy.mockRestore()
+  })
+
+  it('FE-STATE-002: Role Preview is memory-only so page reload (new store initialization) never leaves hidden mutation block', async () => {
+    const auth = useAuthStore()
+    auth.token = makeFakeJwt({
+      sub: 'admin',
+      role: 'ROLE_ADMIN',
+      customRole: 'ROLE_ADMIN',
+      exp: Math.floor(Date.now() / 1000) + 3600
+    })
+
+    auth.startRolePreview({
+      code: 'ROLE_CSKH',
+      name: 'CSKH',
+      permissions: ['BOOKING_VIEW']
+    })
+
+    // Simulate page reload (F5) by creating a fresh Pinia instance and initializing store
+    const freshPinia = createPinia()
+    setActivePinia(freshPinia)
+    const reloadedAuth = useAuthStore()
+    reloadedAuth.token = auth.token
+
+    expect(reloadedAuth.previewRole).toBeNull()
+
+    const reqInterceptor = httpClient.interceptors.request.handlers[0].fulfilled
+    const allowedConfig = await reqInterceptor({
+      method: 'post',
+      url: '/admin/bookings/BKG-1/refund',
+      headers: {}
+    })
+    expect(allowedConfig.method).toBe('post')
   })
 })

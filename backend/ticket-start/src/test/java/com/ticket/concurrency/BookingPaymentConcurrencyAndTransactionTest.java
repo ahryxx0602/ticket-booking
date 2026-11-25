@@ -65,7 +65,7 @@ import static org.mockito.Mockito.mock;
  * QA-001, BE-CON-001, BE-PAY-001, BE-TXN-001:
  * Kiểm thử đa luồng (Multi-Thread Concurrency) và Transaction Rollback-Only Boundary.
  */
-@DisplayName("Concurrency, Row-Level Locking & Shared Transaction Boundary Verification Suite")
+@DisplayName("In-Memory Concurrency & Transaction Simulation Unit Suite (Supplemented by RealMySqlConcurrencyAndTransactionIT)")
 class BookingPaymentConcurrencyAndTransactionTest {
 
     @Test

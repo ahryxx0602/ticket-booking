@@ -1,0 +1,17 @@
+# ==============================================================================
+# OSV-Scanner Configuration (CI-SEC-001)
+# Only upstream-EOL Spring Framework 6.2 advisories where the affected feature
+# is not used by VeloBus are listed here with explicit expiration and reason.
+# Any other or newly introduced CVE in Backend (257 Maven packages) or
+# Frontend (282 NPM packages) immediately fails the CI build.
+# ==============================================================================
+
+[[IgnoredVulns]]
+id = "GHSA-j9f9-w8pj-32f8"
+ignoreUntil = 2027-06-01
+reason = "Spring Framework 6.2.19 is the final 6.2.x OSS release (fix is in Spring 7.0.9 / Boot 4.x). VeloBus is a pure JSON REST API and does not render HTML view fragments over Server-Sent Events (SSE)."
+
+[[IgnoredVulns]]
+id = "GHSA-pc63-qcmh-9cmg"
+ignoreUntil = 2027-06-01
+reason = "Spring Framework 6.2.19 is the final 6.2.x OSS release (fix is in Spring 7.0.9 / Boot 4.x). VeloBus does not use XsltView or server-side MVC view resolution."

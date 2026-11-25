@@ -37,6 +37,14 @@ public class WalletTransactionRepositoryImpl implements WalletTransactionReposit
     }
 
     @Override
+    public boolean existsByBookingIdAndTransactionType(Long bookingId, com.ticket.partner.domain.model.WalletTransactionType transactionType) {
+        if (bookingId == null || transactionType == null) {
+            return false;
+        }
+        return repository.existsByBookingIdAndTransactionType(bookingId, transactionType);
+    }
+
+    @Override
     public WalletTransaction save(WalletTransaction transaction) {
         WalletTransactionJpaEntity entity = PartnerEntityMapper.toEntity(transaction);
         WalletTransactionJpaEntity saved = repository.save(entity);

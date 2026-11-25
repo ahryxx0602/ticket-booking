@@ -23,8 +23,12 @@ public class FirebaseCloudStorageAdapter implements CloudStoragePort {
 
     @Override
     public String uploadFile(InputStream inputStream, String originalFilename, String contentType, String folder) {
+        String safeFolder = sanitizeFolder(folder);
+        String safeExtension = resolveSafeExtension(contentType);
+        String objectKey = safeFolder + "/" + UUID.randomUUID() + safeExtension;
+
         if (!properties.isEnabled() || FirebaseApp.getApps().isEmpty()) {
-            String mockUrl = "https://mock-storage.ticketbooking.local/" + folder + "/" + UUID.randomUUID() + "-" + originalFilename;
+            String mockUrl = "https://mock-storage.ticketbooking.local/" + objectKey;
             log.info("[MOCK FIREBASE STORAGE] Firebase disabled. Generated mock URL: {}", mockUrl);
             return mockUrl;
         }
@@ -35,28 +39,41 @@ public class FirebaseCloudStorageAdapter implements CloudStoragePort {
                 throw new IllegalStateException("Firebase Storage bucket is not configured");
             }
 
-            String extension = "";
-            if (originalFilename != null && originalFilename.contains(".")) {
-                extension = originalFilename.substring(originalFilename.lastIndexOf("."));
-            }
-            String sanitizedFolder = (folder != null && !folder.trim().isEmpty()) ? folder.trim() : "uploads";
-            String blobName = sanitizedFolder + "/" + UUID.randomUUID() + extension;
-
             String mimeType = (contentType != null && !contentType.trim().isEmpty()) ? contentType : "application/octet-stream";
 
-            Blob blob = bucket.create(blobName, inputStream, mimeType);
+            Blob blob = bucket.create(objectKey, inputStream, mimeType);
 
             // Tạo link truy cập công khai dạng Firebase Storage download URL
-            String encodedBlobName = URLEncoder.encode(blobName, StandardCharsets.UTF_8).replace("+", "%20");
+            String encodedBlobName = URLEncoder.encode(objectKey, StandardCharsets.UTF_8).replace("+", "%20");
             String publicUrl = String.format("https://firebasestorage.googleapis.com/v0/b/%s/o/%s?alt=media",
                     bucket.getName(), encodedBlobName);
 
-            log.info("[FIREBASE STORAGE UPLOAD] Uploaded {} to bucket {} -> {}", blobName, bucket.getName(), publicUrl);
+            log.info("[FIREBASE STORAGE UPLOAD] Uploaded {} to bucket {} -> {}", objectKey, bucket.getName(), publicUrl);
             return publicUrl;
         } catch (Exception ex) {
-            log.error("[FIREBASE STORAGE ERROR] Failed to upload file: {}", originalFilename, ex);
-            throw new RuntimeException("Could not upload file to Firebase Storage: " + ex.getMessage(), ex);
+            log.error("[FIREBASE STORAGE ERROR] Failed to upload file", ex);
+            throw new RuntimeException("Could not upload file to cloud storage", ex);
         }
+    }
+
+    private static String sanitizeFolder(String folder) {
+        if (folder == null || folder.trim().isEmpty()) {
+            return "uploads";
+        }
+        String cleaned = folder.trim().replaceAll("[^a-zA-Z0-9_-]", "");
+        return cleaned.isEmpty() ? "uploads" : cleaned;
+    }
+
+    private static String resolveSafeExtension(String contentType) {
+        if (contentType == null) {
+            return ".jpg";
+        }
+        return switch (contentType.trim().toLowerCase()) {
+            case "image/png" -> ".png";
+            case "image/webp" -> ".webp";
+            case "image/gif" -> ".gif";
+            default -> ".jpg";
+        };
     }
 
     @Override

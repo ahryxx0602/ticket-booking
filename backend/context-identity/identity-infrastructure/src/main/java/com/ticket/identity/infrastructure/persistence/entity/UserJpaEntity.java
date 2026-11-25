@@ -40,6 +40,9 @@ public class UserJpaEntity {
     @Column(nullable = false, length = 20)
     private UserStatus status;
 
+    @Column(name = "token_version", nullable = false)
+    private Long tokenVersion = 0L;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
@@ -53,6 +56,9 @@ public class UserJpaEntity {
         if (this.customRoleCode == null || this.customRoleCode.isBlank()) {
             this.customRoleCode = this.role;
         }
+        if (this.tokenVersion == null) {
+            this.tokenVersion = 0L;
+        }
     }
 
     @PreUpdate
@@ -60,6 +66,9 @@ public class UserJpaEntity {
         this.updatedAt = LocalDateTime.now();
         if (this.customRoleCode == null || this.customRoleCode.isBlank()) {
             this.customRoleCode = this.role;
+        }
+        if (this.tokenVersion == null) {
+            this.tokenVersion = 0L;
         }
     }
 }

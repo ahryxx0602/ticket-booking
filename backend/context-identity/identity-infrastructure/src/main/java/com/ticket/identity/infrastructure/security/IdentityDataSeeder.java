@@ -9,29 +9,60 @@ import com.ticket.identity.infrastructure.persistence.repository.SpringDataUserR
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Set;
 
 @Component
 public class IdentityDataSeeder implements CommandLineRunner {
 
     private static final Logger log = LoggerFactory.getLogger(IdentityDataSeeder.class);
 
+    private static final Set<String> FORBIDDEN_PROD_PASSWORDS = Set.of(
+            "admin_dev_password",
+            "customer_dev_password",
+            "operator_dev_password",
+            "password",
+            "admin",
+            "123456",
+            "12345678",
+            "123456789012"
+    );
+
     private final SpringDataUserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private SpringDataSystemRoleRepository systemRoleRepository;
+    private Environment environment;
 
-    @org.springframework.beans.factory.annotation.Value("${app.seed.admin-password:admin_dev_password}")
+    @Value("${app.seed.demo-users-enabled:false}")
+    private boolean demoUsersEnabled;
+
+    @Value("${app.seed.admin-password:admin_dev_password}")
     private String adminPassword;
 
-    @org.springframework.beans.factory.annotation.Value("${app.seed.customer-password:customer_dev_password}")
+    @Value("${app.seed.customer-password:customer_dev_password}")
     private String customerPassword;
 
-    @org.springframework.beans.factory.annotation.Value("${app.seed.operator-password:operator_dev_password}")
+    @Value("${app.seed.operator-password:operator_dev_password}")
     private String operatorPassword;
+
+    @Value("${app.bootstrap.admin.enabled:false}")
+    private boolean bootstrapAdminEnabled;
+
+    @Value("${app.bootstrap.admin.username:}")
+    private String bootstrapAdminUsername;
+
+    @Value("${app.bootstrap.admin.email:}")
+    private String bootstrapAdminEmail;
+
+    @Value("${app.bootstrap.admin.password:}")
+    private String bootstrapAdminPassword;
 
     public IdentityDataSeeder(SpringDataUserRepository userRepository, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
@@ -43,12 +74,68 @@ public class IdentityDataSeeder implements CommandLineRunner {
         this.systemRoleRepository = systemRoleRepository;
     }
 
+    @Autowired(required = false)
+    public void setEnvironment(Environment environment) {
+        this.environment = environment;
+    }
+
+    public void setDemoUsersEnabled(boolean demoUsersEnabled) {
+        this.demoUsersEnabled = demoUsersEnabled;
+    }
+
+    public void setBootstrapAdminConfig(boolean enabled, String username, String email, String password) {
+        this.bootstrapAdminEnabled = enabled;
+        this.bootstrapAdminUsername = username;
+        this.bootstrapAdminEmail = email;
+        this.bootstrapAdminPassword = password;
+    }
+
     @Override
     public void run(String... args) {
+        // 1. Luôn khởi tạo 5 System Roles chuẩn (danh mục hệ thống không chứa thông tin đăng nhập)
         seedDefaultRoles();
-        seedAdminUser();
-        seedCustomerUser();
-        seedOperatorUser();
+
+        boolean isProdProfile = environment != null && environment.acceptsProfiles(Profiles.of("prod", "production"));
+
+        // 2. BE-SEC-006: Tuyệt đối KHÔNG tạo tài khoản demo trên Production
+        if (!isProdProfile && demoUsersEnabled) {
+            seedAdminUser();
+            seedCustomerUser();
+            seedOperatorUser();
+        } else if (isProdProfile && demoUsersEnabled) {
+            log.warn("[IDENTITY SEEDER] Refusing to seed demo accounts because active profile is 'prod'");
+        }
+
+        // 3. BE-SEC-006: Opt-in Production Admin Bootstrap với kiểm tra mật khẩu mạnh bắt buộc
+        if (bootstrapAdminEnabled) {
+            bootstrapProductionAdmin();
+        }
+    }
+
+    private void bootstrapProductionAdmin() {
+        String cleanUsername = bootstrapAdminUsername != null ? bootstrapAdminUsername.trim() : "";
+        String cleanEmail = bootstrapAdminEmail != null ? bootstrapAdminEmail.trim() : "";
+        String rawPassword = bootstrapAdminPassword != null ? bootstrapAdminPassword : "";
+
+        if (cleanUsername.isEmpty() || cleanEmail.isEmpty()) {
+            throw new IllegalStateException("Production admin bootstrap requires non-empty username and email");
+        }
+        if (rawPassword.trim().length() < 12 || FORBIDDEN_PROD_PASSWORDS.contains(rawPassword.trim().toLowerCase())) {
+            throw new IllegalStateException("Production admin bootstrap password must be at least 12 characters and must not use known default/demo passwords");
+        }
+
+        if (!userRepository.existsByUsername(cleanUsername)) {
+            UserJpaEntity admin = new UserJpaEntity();
+            admin.setUsername(cleanUsername);
+            admin.setEmail(cleanEmail);
+            admin.setPasswordHash(passwordEncoder.encode(rawPassword));
+            admin.setFullName("Platform Super Administrator");
+            admin.setRole("ROLE_ADMIN");
+            admin.setCustomRoleCode("ROLE_ADMIN");
+            admin.setStatus(UserStatus.ACTIVE);
+            userRepository.save(admin);
+            log.info("[IDENTITY SEEDER] Bootstrapped opt-in production Super Admin account: {}", cleanUsername);
+        }
     }
 
     private void seedDefaultRoles() {

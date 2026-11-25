@@ -199,8 +199,8 @@ public class AdminUserServiceImpl implements
 
         if (request.getStatus() == UserStatus.LOCKED) {
             user.lock();
-            com.ticket.identity.infrastructure.security.JwtTokenProvider.revokeTokensIssuedBeforeNow(user.getUsername());
-            log.info("[ADMIN USER] User {} has been LOCKED by admin {}", user.getUsername(), currentAdminUsername);
+            log.info("[ADMIN USER] User {} has been LOCKED (tokenVersion={}) by admin {}",
+                    user.getUsername(), user.getEffectiveTokenVersion(), currentAdminUsername);
         } else if (request.getStatus() == UserStatus.ACTIVE) {
             user.activate();
             log.info("[ADMIN USER] User {} has been ACTIVATED by admin {}", user.getUsername(), currentAdminUsername);
@@ -249,11 +249,11 @@ public class AdminUserServiceImpl implements
         enforceTargetSuperAdminProtection(user, currentAdminUsername);
         enforceTargetUserPermissionSubset(user, currentAdminUsername);
 
+        // BE-SEC-001: user.updatePassword() tự động tăng tokenVersion nguyên tử trong cùng DB transaction
         user.updatePassword(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
-        // BE-SEC-001: Vô hiệu hóa toàn bộ các JWT cũ đã cấp cho user trước thời điểm reset mật khẩu
-        com.ticket.identity.infrastructure.security.JwtTokenProvider.revokeTokensIssuedBeforeNow(user.getUsername());
-        log.info("[ADMIN USER] Password of user {} reset successfully by admin {}", user.getUsername(), currentAdminUsername);
+        log.info("[ADMIN USER] Password of user {} reset successfully (tokenVersion={}) by admin {}",
+                user.getUsername(), user.getEffectiveTokenVersion(), currentAdminUsername);
     }
 
     private String resolveAuthenticatedUsername() {

@@ -96,6 +96,7 @@ public class UserRepositoryImpl implements UserRepository {
                 .role(baseRole)
                 .customRoleCode(customCode)
                 .status(entity.getStatus())
+                .tokenVersion(entity.getTokenVersion() != null ? entity.getTokenVersion() : 0L)
                 .build();
         u.setCreatedAt(entity.getCreatedAt());
         u.setUpdatedAt(entity.getUpdatedAt());
@@ -114,6 +115,7 @@ public class UserRepositoryImpl implements UserRepository {
         entity.setRole(baseRoleName);
         entity.setCustomRoleCode(user.getEffectiveRoleCode());
         entity.setStatus(user.getStatus());
+        entity.setTokenVersion(user.getEffectiveTokenVersion());
         return entity;
     }
 }

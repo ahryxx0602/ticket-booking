@@ -23,25 +23,25 @@ public interface SpringDataBookingRepository extends JpaRepository<BookingJpaEnt
     Optional<BookingJpaEntity> findByIdWithItems(@Param("id") Long id);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT DISTINCT b FROM BookingJpaEntity b LEFT JOIN FETCH b.items WHERE b.id = :id")
+    @Query("SELECT b FROM BookingJpaEntity b LEFT JOIN FETCH b.items WHERE b.id = :id")
     Optional<BookingJpaEntity> findByIdForUpdate(@Param("id") Long id);
 
     @Query("SELECT DISTINCT b FROM BookingJpaEntity b LEFT JOIN FETCH b.items WHERE b.bookingReference = :bookingReference")
     Optional<BookingJpaEntity> findByBookingReferenceWithItems(@Param("bookingReference") String bookingReference);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT DISTINCT b FROM BookingJpaEntity b LEFT JOIN FETCH b.items WHERE b.bookingReference = :bookingReference")
+    @Query("SELECT b FROM BookingJpaEntity b LEFT JOIN FETCH b.items WHERE b.bookingReference = :bookingReference")
     Optional<BookingJpaEntity> findByBookingReferenceForUpdate(@Param("bookingReference") String bookingReference);
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("""
-            SELECT DISTINCT i.seatNumber
-            FROM BookingItemJpaEntity i
-            JOIN i.booking b
-            WHERE b.tripId = :tripId
-              AND (b.status = com.ticket.booking.domain.model.BookingStatus.CONFIRMED
-                   OR (b.status = com.ticket.booking.domain.model.BookingStatus.HELD AND b.expiresAt > :now))
-            """)
+    @Query(value = """
+            SELECT i.seat_number
+            FROM booking_items i
+            INNER JOIN bookings b ON b.id = i.booking_id
+            WHERE b.trip_id = :tripId
+              AND (b.status = 'CONFIRMED'
+                   OR (b.status = 'HELD' AND b.expires_at > :now))
+            FOR UPDATE
+            """, nativeQuery = true)
     Set<String> findActiveBookedSeatNumbers(@Param("tripId") Long tripId, @Param("now") LocalDateTime now);
 
     @Query(value = "SELECT b.id FROM BookingJpaEntity b WHERE b.userId = :userId ORDER BY b.createdAt DESC, b.id DESC",

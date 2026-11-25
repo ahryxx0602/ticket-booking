@@ -10,8 +10,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class JwtTokenProvider {
@@ -22,47 +20,12 @@ public class JwtTokenProvider {
     @Value("${app.jwt.expiration-ms:86400000}")
     private long jwtExpirationMs;
 
-    /**
-     * BE-SEC-001: Lưu mốc thời gian thu hồi token (epoch millis) cho từng username khi Admin thực hiện
-     * resetPassword, lock tài khoản hoặc thay đổi vai trò, đảm bảo các JWT cấp trước thời điểm này bị thu hồi.
-     */
-    private static final Map<String, Long> USER_TOKEN_REVOCATION_TIMESTAMPS = new ConcurrentHashMap<>();
-
-    public static void revokeTokensIssuedBeforeNow(String username) {
-        if (username != null && !username.isBlank()) {
-            USER_TOKEN_REVOCATION_TIMESTAMPS.put(username.trim().toLowerCase(), System.currentTimeMillis());
-        }
-    }
-
-    public static void clearRevocationForUser(String username) {
-        if (username != null && !username.isBlank()) {
-            USER_TOKEN_REVOCATION_TIMESTAMPS.remove(username.trim().toLowerCase());
-        }
-    }
-
-    public boolean isTokenRevokedForUser(String username, String token) {
-        if (username == null || username.isBlank()) {
-            return true;
-        }
-        Long revokedAtMs = USER_TOKEN_REVOCATION_TIMESTAMPS.get(username.trim().toLowerCase());
-        if (revokedAtMs == null) {
-            return false;
-        }
-        try {
-            Date issuedAt = parseClaims(token).getIssuedAt();
-            // JJWT truncates iat to seconds precision; if issuedAt is null or before/at revocation timestamp, token is revoked
-            return issuedAt == null || issuedAt.getTime() <= revokedAtMs;
-        } catch (Exception e) {
-            return true;
-        }
-    }
-
     private SecretKey getSigningKey() {
         return Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
     }
 
     public String generateToken(String username, String role) {
-        return generateToken(username, role, role, role, Collections.emptyList());
+        return generateToken(username, role, role, role, Collections.emptyList(), 0L);
     }
 
     public String generateToken(String username,
@@ -70,6 +33,15 @@ public class JwtTokenProvider {
                                 String customRole,
                                 String roleName,
                                 List<String> permissions) {
+        return generateToken(username, role, customRole, roleName, permissions, 0L);
+    }
+
+    public String generateToken(String username,
+                                String role,
+                                String customRole,
+                                String roleName,
+                                List<String> permissions,
+                                long tokenVersion) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + jwtExpirationMs);
 
@@ -78,6 +50,7 @@ public class JwtTokenProvider {
                 .claim("role", role)
                 .claim("customRole", customRole != null ? customRole : role)
                 .claim("roleName", roleName != null ? roleName : (customRole != null ? customRole : role))
+                .claim("tv", tokenVersion)
                 .issuedAt(now)
                 .expiration(expiryDate);
 
@@ -86,6 +59,15 @@ public class JwtTokenProvider {
         }
 
         return builder.signWith(getSigningKey()).compact();
+    }
+
+    public long getTokenVersionFromToken(String token) {
+        try {
+            Number tv = parseClaims(token).get("tv", Number.class);
+            return tv != null ? tv.longValue() : 0L;
+        } catch (Exception e) {
+            return 0L;
+        }
     }
 
     public String getUsernameFromToken(String token) {

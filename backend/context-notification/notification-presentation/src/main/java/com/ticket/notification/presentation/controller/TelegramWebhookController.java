@@ -22,6 +22,9 @@ public class TelegramWebhookController {
 
     private final ProcessTelegramUpdateUseCase processTelegramUpdateUseCase;
 
+    @Value("${app.notification.telegram.enabled:false}")
+    private boolean telegramEnabled = true;
+
     @Value("${app.notification.telegram.webhook-secret:telegram_webhook_secret_key}")
     private String configuredSecret;
 
@@ -30,6 +33,13 @@ public class TelegramWebhookController {
             @RequestHeader(name = "X-Telegram-Bot-Api-Secret-Token", required = false) String secretToken,
             @RequestBody Map<String, Object> updatePayload
     ) {
+        // BE-SEC-009: Nếu tích hợp Telegram đang tắt, từ chối xử lý mọi request tới webhook
+        if (!telegramEnabled) {
+            log.debug("[TELEGRAM WEBHOOK] Ignored webhook request because Telegram integration is disabled");
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(ApiResponse.error("TELEGRAM_DISABLED", "Telegram integration is disabled"));
+        }
+
         // Xác thực Secret Token bảo mật chống Timing Attack (ADR-07)
         if (!isValidSecret(secretToken)) {
             log.warn("[TELEGRAM WEBHOOK] Unauthorized webhook request with invalid secret token");
@@ -51,7 +61,7 @@ public class TelegramWebhookController {
     }
 
     private boolean isValidSecret(String provided) {
-        if (provided == null || configuredSecret == null) {
+        if (provided == null || provided.isBlank() || configuredSecret == null || configuredSecret.isBlank()) {
             return false;
         }
         return MessageDigest.isEqual(

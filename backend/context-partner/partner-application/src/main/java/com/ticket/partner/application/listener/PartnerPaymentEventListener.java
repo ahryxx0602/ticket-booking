@@ -53,6 +53,14 @@ public class PartnerPaymentEventListener {
             return;
         }
 
+        // BE-PAY-002: Chốt chặn Idempotency cấp Ví Ký Quỹ — không cộng tiền 2 lần cho cùng một bookingId
+        if (event.bookingId() != null && transactionRepository.existsByBookingIdAndTransactionType(
+                event.bookingId(), WalletTransactionType.TICKET_ESCROW_CREDIT)) {
+            log.warn("Duplicate TICKET_ESCROW_CREDIT ignored for already credited bookingId={}, paymentRef={}",
+                    event.bookingId(), event.paymentReference());
+            return;
+        }
+
         BigDecimal rate = partnerQueryService.getEffectiveCommissionRate(operatorId);
         BigDecimal commissionAmount = grossAmount.multiply(rate)
                 .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP);

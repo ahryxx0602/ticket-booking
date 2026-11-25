@@ -22,9 +22,19 @@ public class User extends BaseEntity {
     private UserRole role;
     private String customRoleCode;
     private UserStatus status;
+    private Long tokenVersion;
+
+    public long getEffectiveTokenVersion() {
+        return this.tokenVersion != null ? this.tokenVersion : 0L;
+    }
+
+    public void incrementTokenVersion() {
+        this.tokenVersion = getEffectiveTokenVersion() + 1L;
+    }
 
     public void lock() {
         this.status = UserStatus.LOCKED;
+        incrementTokenVersion();
     }
 
     public void activate() {
@@ -35,6 +45,7 @@ public class User extends BaseEntity {
         if (newRole != null) {
             this.role = newRole;
             this.customRoleCode = newRole.name();
+            incrementTokenVersion();
         }
     }
 
@@ -42,6 +53,7 @@ public class User extends BaseEntity {
         UserRole parsed = UserRole.fromString(newRole);
         this.role = parsed;
         this.customRoleCode = parsed.name();
+        incrementTokenVersion();
     }
 
     public void assignSystemRole(UserRole baseRole, String customCode) {
@@ -49,6 +61,7 @@ public class User extends BaseEntity {
         this.customRoleCode = (customCode != null && !customCode.isBlank())
                 ? customCode.trim().toUpperCase()
                 : this.role.name();
+        incrementTokenVersion();
     }
 
     public String getEffectiveRoleCode() {
@@ -75,6 +88,7 @@ public class User extends BaseEntity {
 
     public void updatePassword(String newPasswordHash) {
         this.passwordHash = newPasswordHash;
+        incrementTokenVersion();
     }
 
     public void updateProfile(String fullName, String email) {

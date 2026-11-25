@@ -54,7 +54,7 @@ public class AuthServiceImpl implements LoginUseCase, RegisterUseCase, GetCurren
             throw new BusinessException("ACCOUNT_LOCKED", "Your account has been locked. Please contact administrator.");
         }
 
-        return buildAuthResponse(user);
+        return buildAuthResponse(user, true);
     }
 
     @Override
@@ -75,10 +75,11 @@ public class AuthServiceImpl implements LoginUseCase, RegisterUseCase, GetCurren
                 .role(UserRole.ROLE_CUSTOMER)
                 .customRoleCode("ROLE_CUSTOMER")
                 .status(UserStatus.ACTIVE)
+                .tokenVersion(0L)
                 .build();
 
         User saved = userRepository.save(user);
-        return buildAuthResponse(saved);
+        return buildAuthResponse(saved, true);
     }
 
     @Override
@@ -92,10 +93,11 @@ public class AuthServiceImpl implements LoginUseCase, RegisterUseCase, GetCurren
         if (user.isLocked()) {
             throw new BusinessException("ACCOUNT_LOCKED", "Your account has been locked by administrator");
         }
-        return buildAuthResponse(user);
+        // BE-SEC-007: Read-only profile sync (/api/v1/auth/me) does NOT issue or renew JWT access token
+        return buildAuthResponse(user, false);
     }
 
-    private AuthResponse buildAuthResponse(User user) {
+    private AuthResponse buildAuthResponse(User user, boolean issueNewToken) {
         String baseRole = user.getRole() != null ? user.getRole().name() : "ROLE_CUSTOMER";
         String customRole = user.getEffectiveRoleCode();
         String displayRoleName = customRole;
@@ -118,21 +120,29 @@ public class AuthServiceImpl implements LoginUseCase, RegisterUseCase, GetCurren
             displayRoleName = "Khách Hàng Đặt Vé";
         }
 
-        String token;
-        if (baseRole.equalsIgnoreCase(customRole) && permissions.isEmpty()) {
-            token = tokenProvider.generateToken(user.getUsername(), baseRole);
-        } else {
-            token = tokenProvider.generateToken(user.getUsername(), baseRole, customRole, displayRoleName, permissions);
-            if (token == null) {
-                // Tương thích với unit test cũ mock tokenProvider.generateToken(username, role)
+        String token = null;
+        if (issueNewToken) {
+            long tokenVersion = user.getEffectiveTokenVersion();
+            if (baseRole.equalsIgnoreCase(customRole) && permissions.isEmpty() && tokenVersion == 0L) {
                 token = tokenProvider.generateToken(user.getUsername(), baseRole);
+                if (token == null) {
+                    token = tokenProvider.generateToken(user.getUsername(), baseRole, customRole, displayRoleName, permissions, tokenVersion);
+                }
+            } else {
+                token = tokenProvider.generateToken(user.getUsername(), baseRole, customRole, displayRoleName, permissions, tokenVersion);
+                if (token == null) {
+                    token = tokenProvider.generateToken(user.getUsername(), baseRole, customRole, displayRoleName, permissions);
+                }
+                if (token == null) {
+                    token = tokenProvider.generateToken(user.getUsername(), baseRole);
+                }
             }
         }
 
         return AuthResponse.builder()
                 .accessToken(token)
-                .tokenType("Bearer")
-                .expiresIn(86400000L)
+                .tokenType(issueNewToken ? "Bearer" : null)
+                .expiresIn(issueNewToken ? 86400000L : null)
                 .username(user.getUsername())
                 .role(baseRole)
                 .customRole(customRole)

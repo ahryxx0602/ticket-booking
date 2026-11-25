@@ -166,12 +166,16 @@ export const useAuthStore = defineStore('auth', () => {
   }
   const user = ref(initialUser)
 
-  // State phục vụ chế độ "⚡ Xem thử giao diện với Role này (Preview Role)" của Super Admin
+  // State phục vụ chế độ "⚡ Xem thử giao diện với Role này (Preview Role)" của Super Admin (FE-STATE-002: Memory-Only)
   const previewRole = ref(null)
+  setHttpClientPreviewRole(null)
+  safeRemoveStorage('velobus_preview_role')
 
-  // FE-SEC-002 & FE-SEC-003: Quyền thực tế đồng bộ từ GET /api/v1/auth/me và Catalog đồng bộ từ Backend
+  // FE-SEC-002, FE-SEC-003 & FE-STATE-001: Quyền thực tế đồng bộ từ GET /api/v1/auth/me kèm Single-Flight & Session Epoch Guard
   const liveProfile = ref(null)
   const permissionCatalog = ref(ADMIN_PERMISSION_MODULES)
+  let sessionEpoch = 0
+  let inflightRefreshPromise = null
 
   // Single Source of Truth cho JWT payload
   const jwtPayload = computed(() => parseJwt(token.value))
@@ -243,9 +247,8 @@ export const useAuthStore = defineStore('auth', () => {
       name: targetRole.name,
       permissions: Array.isArray(targetRole.permissions) ? [...targetRole.permissions] : []
     }
-    // FE-SEC-005: Ghi dấu trạng thái preview để httpClient khóa các lệnh ghi (POST/PUT/PATCH/DELETE) vào /admin/**
+    // FE-SEC-005 & FE-STATE-002: Memory-Only Preview (không ghi xuống localStorage để tránh lỗi kẹt chặn ghi sau khi F5)
     setHttpClientPreviewRole(targetRole.code)
-    safeSetStorage('velobus_preview_role', targetRole.code)
   }
 
   function stopRolePreview() {
@@ -255,29 +258,45 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /**
-   * FE-SEC-002: Đồng bộ lại thông tin role & permissions mới nhất từ GET /api/v1/auth/me
+   * FE-SEC-002, BE-SEC-007 & FE-STATE-001:
+   * Đồng bộ lại thông tin role & permissions mới nhất từ GET /api/v1/auth/me:
+   * - Single-Flight Deduplication: nhiều sự kiện 403 đồng thời chỉ dùng chung 1 request /auth/me.
+   * - Session Epoch Guard: nếu user logout hoặc đổi tài khoản khi request đang bay, phản hồi cũ sẽ bị bỏ qua.
+   * - Fixed-Expiry Session: không phát hành hay ghi đè accessToken.
    */
   async function refreshProfile() {
     if (!isAuthenticated.value) return null
-    try {
-      const res = await authApi.getMe()
-      if (res?.data) {
-        liveProfile.value = {
-          role: res.data.role,
-          customRole: res.data.customRole,
-          roleName: res.data.roleName,
-          permissions: Array.isArray(res.data.permissions) ? res.data.permissions : []
-        }
-        if (res.data.accessToken) {
-          token.value = res.data.accessToken
-          safeSetStorage('velobus_access_token', token.value)
-        }
-        return liveProfile.value
-      }
-    } catch (_) {
-      // Giữ nguyên state hiện tại nếu mất mạng tạm thời; nếu 401 thì httpClient đã tự động logout
+    if (inflightRefreshPromise) {
+      return inflightRefreshPromise
     }
-    return null
+
+    const capturedEpoch = sessionEpoch
+    const capturedToken = token.value
+
+    inflightRefreshPromise = (async () => {
+      try {
+        const res = await authApi.getMe()
+        if (capturedEpoch !== sessionEpoch || capturedToken !== token.value || !isAuthenticated.value) {
+          return null
+        }
+        if (res?.data) {
+          liveProfile.value = {
+            role: res.data.role,
+            customRole: res.data.customRole,
+            roleName: res.data.roleName,
+            permissions: Array.isArray(res.data.permissions) ? res.data.permissions : []
+          }
+          return liveProfile.value
+        }
+      } catch (_) {
+        // Giữ nguyên state hiện tại nếu mất mạng tạm thời; nếu 401 thì httpClient đã tự động logout
+      } finally {
+        inflightRefreshPromise = null
+      }
+      return null
+    })()
+
+    return inflightRefreshPromise
   }
 
   /**
@@ -318,7 +337,11 @@ export const useAuthStore = defineStore('auth', () => {
       if (!payload) {
         throw new Error('Mã xác thực từ máy chủ không hợp lệ hoặc đã hết hạn')
       }
+      sessionEpoch++
+      inflightRefreshPromise = null
       previewRole.value = null
+      setHttpClientPreviewRole(null)
+      liveProfile.value = null
       token.value = res.data.accessToken
       user.value = {
         username: res.data.username || payload?.sub || username,
@@ -340,7 +363,11 @@ export const useAuthStore = defineStore('auth', () => {
       if (!jwtData) {
         throw new Error('Mã xác thực từ máy chủ không hợp lệ')
       }
+      sessionEpoch++
+      inflightRefreshPromise = null
       previewRole.value = null
+      setHttpClientPreviewRole(null)
+      liveProfile.value = null
       token.value = res.data.accessToken
       user.value = {
         username: res.data.username || jwtData?.sub || payload.username,
@@ -356,6 +383,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function logout() {
+    sessionEpoch++
+    inflightRefreshPromise = null
     token.value = ''
     user.value = null
     previewRole.value = null
@@ -379,6 +408,8 @@ export const useAuthStore = defineStore('auth', () => {
         if (!event.newValue) {
           logout()
         } else if (event.newValue !== token.value) {
+          sessionEpoch++
+          inflightRefreshPromise = null
           token.value = event.newValue
           liveProfile.value = null
         }

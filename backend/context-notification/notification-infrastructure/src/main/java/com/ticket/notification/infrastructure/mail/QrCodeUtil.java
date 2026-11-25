@@ -21,8 +21,12 @@ public class QrCodeUtil {
     private static final int QR_WIDTH = 250;
     private static final int QR_HEIGHT = 250;
 
+    @org.springframework.beans.factory.annotation.Value("${app.notification.qr.secret-key:TICKET_BOOKING_QR_SECRET_KEY_2026}")
+    private String configuredSecretKey = DEFAULT_SECRET;
+
     public String generateHmacSignature(String bookingReference, Long tripId, String secretKey) {
-        String key = secretKey != null && !secretKey.trim().isEmpty() ? secretKey : DEFAULT_SECRET;
+        String fallback = (configuredSecretKey != null && !configuredSecretKey.trim().isEmpty()) ? configuredSecretKey : DEFAULT_SECRET;
+        String key = secretKey != null && !secretKey.trim().isEmpty() ? secretKey : fallback;
         try {
             Mac hmacSha256 = Mac.getInstance("HmacSHA256");
             SecretKeySpec secretKeySpec = new SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), "HmacSHA256");

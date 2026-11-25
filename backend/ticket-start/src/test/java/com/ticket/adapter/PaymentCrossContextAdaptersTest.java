@@ -63,7 +63,8 @@ class PaymentCrossContextAdaptersTest {
 
     @Test
     void paymentBookingConfirmPortAdapter_whenConfirmed_shouldReturnConfirmed() {
-        when(confirmBookingUseCase.execute(eq(101L), any(LocalDateTime.class))).thenReturn(true);
+        when(confirmBookingUseCase.confirmWithOutcome(eq(101L), any(LocalDateTime.class)))
+                .thenReturn(ConfirmBookingUseCase.ConfirmationOutcome.CONFIRMED);
 
         PaymentBookingConfirmPort.BookingConfirmResult result = confirmPortAdapter.confirmBooking(101L, LocalDateTime.now());
 
@@ -77,7 +78,8 @@ class PaymentCrossContextAdaptersTest {
                 .status(BookingStatus.EXPIRED)
                 .build();
 
-        when(confirmBookingUseCase.execute(eq(101L), any(LocalDateTime.class))).thenReturn(false);
+        when(confirmBookingUseCase.confirmWithOutcome(eq(101L), any(LocalDateTime.class)))
+                .thenReturn(ConfirmBookingUseCase.ConfirmationOutcome.EXPIRED_OR_INVALID);
         when(bookingRepository.findById(101L)).thenReturn(Optional.of(booking));
 
         PaymentBookingConfirmPort.BookingConfirmResult result = confirmPortAdapter.confirmBooking(101L, LocalDateTime.now());
@@ -87,13 +89,8 @@ class PaymentCrossContextAdaptersTest {
 
     @Test
     void paymentBookingConfirmPortAdapter_whenAlreadyConfirmed_shouldReturnAlreadyConfirmed() {
-        Booking booking = Booking.builder()
-                .id(102L)
-                .status(BookingStatus.CONFIRMED)
-                .build();
-
-        when(confirmBookingUseCase.execute(eq(102L), any(LocalDateTime.class))).thenReturn(false);
-        when(bookingRepository.findById(102L)).thenReturn(Optional.of(booking));
+        when(confirmBookingUseCase.confirmWithOutcome(eq(102L), any(LocalDateTime.class)))
+                .thenReturn(ConfirmBookingUseCase.ConfirmationOutcome.ALREADY_CONFIRMED);
 
         PaymentBookingConfirmPort.BookingConfirmResult result = confirmPortAdapter.confirmBooking(102L, LocalDateTime.now());
 
@@ -101,24 +98,17 @@ class PaymentCrossContextAdaptersTest {
     }
 
     @Test
-    void paymentBookingConfirmPortAdapter_whenExceptionThrown_shouldReturnExpiredReconciliationRequired() {
-        Booking booking = Booking.builder()
-                .id(103L)
-                .status(BookingStatus.EXPIRED)
-                .build();
-
-        when(confirmBookingUseCase.execute(eq(103L), any(LocalDateTime.class)))
+    void paymentBookingConfirmPortAdapter_whenExceptionThrown_shouldPropagateWithoutSwallowingRollbackOnly() {
+        when(confirmBookingUseCase.confirmWithOutcome(eq(103L), any(LocalDateTime.class)))
                 .thenThrow(new org.springframework.orm.ObjectOptimisticLockingFailureException(Booking.class, 103L));
-        when(bookingRepository.findById(103L)).thenReturn(Optional.of(booking));
 
-        PaymentBookingConfirmPort.BookingConfirmResult result = confirmPortAdapter.confirmBooking(103L, LocalDateTime.now());
-
-        assertThat(result).isEqualTo(PaymentBookingConfirmPort.BookingConfirmResult.EXPIRED_RECONCILIATION_REQUIRED);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> confirmPortAdapter.confirmBooking(103L, LocalDateTime.now()))
+                .isInstanceOf(org.springframework.orm.ObjectOptimisticLockingFailureException.class);
     }
 
     @Test
     void paymentBookingConfirmPortAdapter_whenInfrastructureRuntimeExceptionThrown_shouldPropagateForRollback() {
-        when(confirmBookingUseCase.execute(eq(104L), any(LocalDateTime.class)))
+        when(confirmBookingUseCase.confirmWithOutcome(eq(104L), any(LocalDateTime.class)))
                 .thenThrow(new RuntimeException("Simulated DB connection failure"));
 
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> confirmPortAdapter.confirmBooking(104L, LocalDateTime.now()))

@@ -72,4 +72,28 @@ class TelegramWebhookControllerTest {
 
         verify(processTelegramUpdateUseCase, never()).execute(any());
     }
+
+    @Test
+    @DisplayName("BE-SEC-009: Disabled Telegram integration must reject webhook even if valid secret is provided")
+    void testTelegramWebhook_WhenDisabled_ShouldRejectAndNotProcessUpdate() throws Exception {
+        ReflectionTestUtils.setField(controller, "telegramEnabled", false);
+        String updateJson = """
+                {
+                    "update_id": 10002,
+                    "message": {
+                        "chat": { "id": 998877 },
+                        "text": "/start"
+                    }
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/notifications/telegram/webhook")
+                        .header("X-Telegram-Bot-Api-Secret-Token", "MY_SUPER_SECRET_123")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(updateJson))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("TELEGRAM_DISABLED"));
+
+        verify(processTelegramUpdateUseCase, never()).execute(any());
+    }
 }

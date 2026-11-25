@@ -170,7 +170,8 @@ class AuthServiceImplTest {
                 eq("ROLE_ADMIN"),
                 eq("ROLE_ACCOUNTANT"),
                 eq("Kế Toán & Đối Soát"),
-                eq(java.util.List.of("PAYMENT_REPORT_VIEW", "WITHDRAWAL_VIEW"))
+                eq(java.util.List.of("PAYMENT_REPORT_VIEW", "WITHDRAWAL_VIEW")),
+                eq(0L)
         )).thenReturn("jwt_accountant_token");
 
         AuthRequest req = new AuthRequest();
@@ -184,5 +185,13 @@ class AuthServiceImplTest {
         assertThat(resp.getCustomRole()).isEqualTo("ROLE_ACCOUNTANT");
         assertThat(resp.getRoleName()).isEqualTo("Kế Toán & Đối Soát");
         assertThat(resp.getPermissions()).containsExactly("PAYMENT_REPORT_VIEW", "WITHDRAWAL_VIEW");
+
+        // BE-SEC-007: getCurrentProfile (/api/v1/auth/me) must NOT issue a new JWT token
+        AuthResponse profileResp = authService.getCurrentProfile("ketoan01");
+        assertThat(profileResp.getAccessToken()).isNull();
+        assertThat(profileResp.getTokenType()).isNull();
+        assertThat(profileResp.getExpiresIn()).isNull();
+        assertThat(profileResp.getCustomRole()).isEqualTo("ROLE_ACCOUNTANT");
+        assertThat(profileResp.getPermissions()).containsExactly("PAYMENT_REPORT_VIEW", "WITHDRAWAL_VIEW");
     }
 }

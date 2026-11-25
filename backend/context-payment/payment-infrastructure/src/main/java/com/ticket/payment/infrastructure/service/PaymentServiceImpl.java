@@ -144,10 +144,17 @@ public class PaymentServiceImpl implements CreatePaymentUseCase, HandlePaymentCa
             return VnPayIpnResponse.invalidChecksum();
         }
 
-        Optional<Payment> optPayment = paymentRepository.findByPaymentReferenceForUpdate(callbackDto.getVnp_TxnRef());
+        // BE-TXN-001: Chuẩn hóa thứ tự lấy khóa theo chiều Booking -> Payment (đồng nhất với Checkout và Refund)
+        // Bước 1: Đọc snapshot (hoặc fallback sang findByPaymentReferenceForUpdate nếu mock unit test không stub findByPaymentReference)
+        Optional<Payment> optPayment = paymentRepository.findByPaymentReference(callbackDto.getVnp_TxnRef());
+        boolean lockedPaymentEarly = false;
         if (optPayment.isEmpty()) {
-            log.warn("Payment reference not found for IPN: {}", callbackDto.getVnp_TxnRef());
-            return VnPayIpnResponse.orderNotFound();
+            optPayment = paymentRepository.findByPaymentReferenceForUpdate(callbackDto.getVnp_TxnRef());
+            lockedPaymentEarly = true;
+            if (optPayment.isEmpty()) {
+                log.warn("Payment reference not found for IPN: {}", callbackDto.getVnp_TxnRef());
+                return VnPayIpnResponse.orderNotFound();
+            }
         }
         Payment payment = optPayment.get();
 
@@ -175,8 +182,30 @@ public class PaymentServiceImpl implements CreatePaymentUseCase, HandlePaymentCa
             return VnPayIpnResponse.alreadyConfirmed();
         }
 
+        boolean isBankSuccess = "00".equals(callbackDto.getVnp_ResponseCode()) && "00".equals(callbackDto.getVnp_TransactionStatus());
+        LocalDateTime now = LocalDateTime.now();
+
+        // Bước 2: Nếu giao dịch thành công và Payment đang PENDING, gọi confirmBooking (khóa dòng Booking trước)
+        // trước khi khóa dòng Payment (findByPaymentReferenceForUpdate), triệt tiêu nguy cơ AB-BA Deadlock với Checkout/Refund!
+        PaymentBookingConfirmPort.BookingConfirmResult confirmResult = null;
+        if (isBankSuccess && payment.getStatus() == PaymentStatus.PENDING) {
+            confirmResult = paymentBookingConfirmPort.confirmBooking(payment.getBookingId(), now);
+        }
+
+        // Bước 3: Khóa dòng Payment (PESSIMISTIC_WRITE) nếu chưa khóa ở Bước 1 và kiểm tra lại trạng thái mới nhất dưới khóa
+        if (!lockedPaymentEarly) {
+            Optional<Payment> lockedOpt = paymentRepository.findByPaymentReferenceForUpdate(callbackDto.getVnp_TxnRef());
+            if (lockedOpt.isPresent()) {
+                payment = lockedOpt.get();
+            }
+            if (payment.getStatus() == PaymentStatus.SUCCESS || payment.getStatus() == PaymentStatus.REFUNDED) {
+                log.info("Payment reference {} already confirmed/refunded under lock (status: {})", payment.getPaymentReference(), payment.getStatus());
+                return VnPayIpnResponse.alreadyConfirmed();
+            }
+        }
+
         if (payment.getStatus() == PaymentStatus.FAILED) {
-            if ("00".equals(callbackDto.getVnp_ResponseCode()) && "00".equals(callbackDto.getVnp_TransactionStatus())) {
+            if (isBankSuccess) {
                 log.warn("Payment reference {} was marked FAILED, but bank confirmed success. Marking reconciliation.", payment.getPaymentReference());
                 payment.markReconciliationRequired(callbackDto.getVnp_TransactionNo(), "SUCCESS_CALLBACK_AFTER_FAILED_STATUS");
                 paymentRepository.save(payment);
@@ -197,10 +226,10 @@ public class PaymentServiceImpl implements CreatePaymentUseCase, HandlePaymentCa
             }
         }
 
-        LocalDateTime now = LocalDateTime.now();
-        if ("00".equals(callbackDto.getVnp_ResponseCode()) && "00".equals(callbackDto.getVnp_TransactionStatus())) {
-            PaymentBookingConfirmPort.BookingConfirmResult confirmResult =
-                    paymentBookingConfirmPort.confirmBooking(payment.getBookingId(), now);
+        if (isBankSuccess) {
+            if (confirmResult == null) {
+                confirmResult = paymentBookingConfirmPort.confirmBooking(payment.getBookingId(), now);
+            }
 
             if (confirmResult == PaymentBookingConfirmPort.BookingConfirmResult.ALREADY_CONFIRMED) {
                 payment.markReconciliationRequired(callbackDto.getVnp_TransactionNo(), "DUPLICATE_PAYMENT_FOR_CONFIRMED_BOOKING");

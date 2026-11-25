@@ -55,3 +55,13 @@ springdoc:
     enabled: false
   swagger-ui:
     enabled: false
+
+app:
+  seed:
+    demo-users-enabled: false
+  bootstrap:
+    admin:
+      enabled: ${APP_BOOTSTRAP_ADMIN_ENABLED:false}
+      username: ${APP_BOOTSTRAP_ADMIN_USERNAME:}
+      email: ${APP_BOOTSTRAP_ADMIN_EMAIL:}
+      password: ${APP_BOOTSTRAP_ADMIN_PASSWORD:}

@@ -36,6 +36,14 @@ spring:
           writetimeout: 5000
 
 app:
+  seed:
+    demo-users-enabled: ${APP_SEED_DEMO_USERS_ENABLED:false}
+  bootstrap:
+    admin:
+      enabled: ${APP_BOOTSTRAP_ADMIN_ENABLED:false}
+      username: ${APP_BOOTSTRAP_ADMIN_USERNAME:}
+      email: ${APP_BOOTSTRAP_ADMIN_EMAIL:}
+      password: ${APP_BOOTSTRAP_ADMIN_PASSWORD:}
   jwt:
     secret: ${JWT_SECRET:local-dev-dummy-secret-key-must-be-at-least-32-chars!}
     expiration-ms: ${JWT_EXPIRATION_MS:86400000} # 24 hours
@@ -63,3 +71,8 @@ app:
       enabled: ${MAIL_ENABLED:false}
     qr:
       secret-key: ${QR_SECRET_KEY:default-local-hmac-qr-signing-key-32-chars!}
+
+management:
+  health:
+    mail:
+      enabled: ${MAIL_ENABLED:false}

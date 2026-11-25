@@ -71,8 +71,8 @@ function dispatchUnauthorizedOnce() {
 }
 
 httpClient.interceptors.request.use((config) => {
-  // FE-SEC-005: Chốt chặn Readonly khi Super Admin đang bật chế độ "Xem thử giao diện (Preview Role)"
-  const previewRoleCode = activePreviewRoleCode || safeGetStorage('velobus_preview_role')
+  // FE-SEC-005 & FE-STATE-002: Chốt chặn Readonly dựa trên in-memory activePreviewRoleCode (Memory-Only Preview)
+  const previewRoleCode = activePreviewRoleCode
   const method = (config.method || 'get').toUpperCase()
   const url = config.url || ''
   if (previewRoleCode && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && /\/admin(\/|$)/.test(url)) {
@@ -107,8 +107,11 @@ httpClient.interceptors.response.use(
         dispatchUnauthorizedOnce()
       }
     } else if (error.response?.status === 403 && typeof window !== 'undefined' && window.dispatchEvent) {
-      // FE-SEC-002: Phát sự kiện để store tự động đồng bộ lại quyền mới nhất từ /api/v1/auth/me khi gặp 403
-      window.dispatchEvent(new CustomEvent('velobus:forbidden'))
+      // FE-SEC-002 & FE-STATE-001: Phát sự kiện đồng bộ quyền khi gặp 403, nhưng bỏ qua nếu chính /auth/me trả 403 (chống đệ quy)
+      const isMeUrl = error.config?.url?.includes('/auth/me')
+      if (!isMeUrl) {
+        window.dispatchEvent(new CustomEvent('velobus:forbidden'))
+      }
     }
     const payload = error.response?.data || (error.code ? error : {
       code: 'NETWORK_ERROR',

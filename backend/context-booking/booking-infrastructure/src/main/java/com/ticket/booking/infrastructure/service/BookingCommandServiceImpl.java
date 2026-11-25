@@ -248,28 +248,36 @@ public class BookingCommandServiceImpl implements HoldSeatUseCase, CancelBooking
 
     @Override
     public boolean execute(Long bookingId, LocalDateTime now) {
-        // BE-TXN-001: Sử dụng PROPAGATION_REQUIRED mặc định để tham gia cùng transaction với PaymentServiceImpl (VNPay IPN).
-        // Sử dụng findByIdForUpdate (PESSIMISTIC_WRITE) để tuần tự hóa với Scheduler và KHÔNG ném exception nghiệp vụ ra khỏi callback
-        // nhằm tránh việc TransactionTemplate đánh dấu physical transaction là rollback-only (gây UnexpectedRollbackException).
-        return Boolean.TRUE.equals(transactionTemplate.execute(status -> {
+        ConfirmationOutcome outcome = confirmWithOutcome(bookingId, now);
+        return outcome == ConfirmationOutcome.CONFIRMED || outcome == ConfirmationOutcome.ALREADY_CONFIRMED;
+    }
+
+    @Override
+    public ConfirmationOutcome confirmWithOutcome(Long bookingId, LocalDateTime now) {
+        // BE-TXN-001 & BE-PAY-002: Sử dụng PROPAGATION_REQUIRED mặc định để tham gia cùng transaction với PaymentServiceImpl (VNPay IPN).
+        // Sử dụng findByIdForUpdate (PESSIMISTIC_WRITE) để tuần tự hóa với Scheduler và trả về ConfirmationOutcome tường minh,
+        // phân biệt rõ CONFIRMED lần đầu với ALREADY_CONFIRMED mà không ném exception nghiệp vụ ra khỏi callback.
+        ConfirmationOutcome result = transactionTemplate.execute(status -> {
             Booking booking = bookingRepository.findByIdForUpdate(bookingId)
                     .orElseThrow(() -> new EntityNotFoundException("Booking", bookingId));
             if (booking.getStatus() == BookingStatus.CONFIRMED) {
-                return true;
+                log.info("Booking {} is ALREADY_CONFIRMED when confirming payment", booking.getBookingReference());
+                return ConfirmationOutcome.ALREADY_CONFIRMED;
             }
             if (booking.getStatus() != BookingStatus.HELD) {
                 log.warn("Cannot confirm booking {} because status is {}", bookingId, booking.getStatus());
-                return false;
+                return ConfirmationOutcome.EXPIRED_OR_INVALID;
             }
             if (booking.isExpired(now)) {
                 log.warn("Cannot confirm booking {} because hold time expired at {}", bookingId, booking.getExpiresAt());
-                return false;
+                return ConfirmationOutcome.EXPIRED_OR_INVALID;
             }
             booking.confirm(now);
             bookingRepository.save(booking);
             log.info("Booking {} confirmed successfully", booking.getBookingReference());
-            return true;
-        }));
+            return ConfirmationOutcome.CONFIRMED;
+        });
+        return result != null ? result : ConfirmationOutcome.EXPIRED_OR_INVALID;
     }
 
     @Override

@@ -21,17 +21,14 @@ public class PaymentBookingConfirmPortAdapter implements PaymentBookingConfirmPo
 
     @Override
     public BookingConfirmResult confirmBooking(Long bookingId, LocalDateTime now) {
-        try {
-            boolean confirmed = confirmBookingUseCase.execute(bookingId, now);
-            if (confirmed) {
-                return BookingConfirmResult.CONFIRMED;
-            }
-        } catch (org.springframework.orm.ObjectOptimisticLockingFailureException
-                 | com.ticket.shared.exception.BusinessException
-                 | IllegalStateException ex) {
-            // BE-TXN-001: Chỉ bắt các ngoại lệ xung đột trạng thái nghiệp vụ (Optimistic Lock / Illegal transition).
-            // Các ngoại lệ hạ tầng DB (DataAccessException khác) phải được ném ra để rollback transaction cho VNPay IPN retry.
-            log.warn("Business/Optimistic lock conflict during booking confirmation for bookingId {}: {}", bookingId, ex.getMessage());
+        // BE-PAY-002 & BE-TXN-001: Gọi confirmWithOutcome để phân biệt rõ CONFIRMED vs ALREADY_CONFIRMED vs EXPIRED_OR_INVALID
+        // ngay dưới khóa PESSIMISTIC_WRITE của Booking, và không nuốt ngoại lệ hạ tầng làm hỏng rollback-only state.
+        ConfirmBookingUseCase.ConfirmationOutcome outcome = confirmBookingUseCase.confirmWithOutcome(bookingId, now);
+        if (outcome == ConfirmBookingUseCase.ConfirmationOutcome.CONFIRMED) {
+            return BookingConfirmResult.CONFIRMED;
+        }
+        if (outcome == ConfirmBookingUseCase.ConfirmationOutcome.ALREADY_CONFIRMED) {
+            return BookingConfirmResult.ALREADY_CONFIRMED;
         }
 
         Booking booking = bookingRepository.findById(bookingId).orElse(null);
