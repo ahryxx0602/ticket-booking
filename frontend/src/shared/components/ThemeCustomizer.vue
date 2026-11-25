@@ -122,6 +122,9 @@ function handleReset() {
         @click.self="handleCancel"
       >
         <div
+          role="dialog"
+          aria-label="VeloBus Theme Studio"
+          data-testid="theme-customizer-drawer"
           class="flex flex-col h-full w-full max-w-md bg-background border-l shadow-2xl p-6 overflow-y-auto animate-in slide-in-from-right duration-300"
         >
         <div class="flex items-center justify-between pb-4 border-b">

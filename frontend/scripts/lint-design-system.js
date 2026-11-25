@@ -13,7 +13,8 @@ export const scanTargets = [
   path.join(srcDir, 'showcase'),
   path.join(srcDir, 'shared/components/ThemeCustomizer.vue'),
   path.join(srcDir, 'shared/components/NotificationCenter.vue'),
-  path.join(srcDir, 'shared/components/feedback')
+  path.join(srcDir, 'shared/components/feedback'),
+  path.join(srcDir, 'app/layouts')
 ]
 
 // Documented exceptions for legacy or non-migrated components (REV-08)
