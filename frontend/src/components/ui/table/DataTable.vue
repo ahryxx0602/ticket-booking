@@ -76,6 +76,7 @@ function resolveRowId(row: any, index: number): string {
     if (row.bookingId !== undefined && row.bookingId !== null) return String(row.bookingId)
     if (row._id !== undefined && row._id !== null) return String(row._id)
     if (row.uuid !== undefined && row.uuid !== null) return String(row.uuid)
+    if (row.code !== undefined && row.code !== null) return String(row.code)
   }
   return String(index)
 }

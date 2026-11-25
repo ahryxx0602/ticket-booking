@@ -102,23 +102,23 @@ export function normalizeHex(hex: string): string | null {
 export function getAccessibleTextColor(bgHex: string): string {
   const norm = normalizeHex(bgHex) || bgHex
   if (!hexToRgb(norm)) return '#141413'
-  const contrastWithWhite = getContrastRatio(norm, '#FFFFFF')
-  // WCAG AA for normal text requires minimum 4.5:1
-  if (contrastWithWhite >= 4.5) {
+  const whiteInfo = getContrastInfo(norm, '#FFFFFF')
+  // WCAG AA for normal text requires minimum 4.5:1 (decided via unrounded rawRatio / isAA)
+  if (whiteInfo.isAA) {
     return '#FFFFFF'
   }
-  const contrastWithCharcoal = getContrastRatio(norm, '#141413')
-  if (contrastWithCharcoal >= 4.5) {
+  const charcoalInfo = getContrastInfo(norm, '#141413')
+  if (charcoalInfo.isAA) {
     return '#141413' // Dark charcoal high-contrast text
   }
-  const contrastWithBlack = getContrastRatio(norm, '#000000')
-  if (contrastWithBlack >= 4.5) {
+  const blackInfo = getContrastInfo(norm, '#000000')
+  if (blackInfo.isAA) {
     return '#000000' // True black for midtones like #777777 (contrast 4.69:1)
   }
-  // Fallback to whichever candidate offers highest contrast
-  const highest = Math.max(contrastWithWhite, contrastWithCharcoal, contrastWithBlack)
-  if (highest === contrastWithBlack) return '#000000'
-  if (highest === contrastWithCharcoal) return '#141413'
+  // Fallback to whichever candidate offers highest unrounded contrast ratio
+  const highest = Math.max(whiteInfo.rawRatio, charcoalInfo.rawRatio, blackInfo.rawRatio)
+  if (highest === blackInfo.rawRatio) return '#000000'
+  if (highest === charcoalInfo.rawRatio) return '#141413'
   return '#FFFFFF'
 }
 
