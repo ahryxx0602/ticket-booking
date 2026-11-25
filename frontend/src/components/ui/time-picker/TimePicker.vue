@@ -153,7 +153,7 @@ function setCurrentTime() {
               </SelectTrigger>
               <SelectContent class="max-h-48">
                 <SelectItem v-for="h in hourOptions" :key="h" :value="h" class="text-xs font-mono">
-                  {{ h }} giờ
+                  {{ h }}
                 </SelectItem>
               </SelectContent>
             </Select>
@@ -170,7 +170,7 @@ function setCurrentTime() {
               </SelectTrigger>
               <SelectContent class="max-h-48">
                 <SelectItem v-for="m in minuteOptions" :key="m" :value="m" class="text-xs font-mono">
-                  {{ m }} phút
+                  {{ m }}
                 </SelectItem>
               </SelectContent>
             </Select>
@@ -210,11 +210,10 @@ function setCurrentTime() {
       <!-- Dropdown Giờ (Custom Shadcn Select) -->
       <div class="relative flex-1">
         <Select v-model="currentHours" :disabled="disabled">
-          <SelectTrigger class="h-10 text-xs font-semibold bg-background border-input">
-            <div class="flex items-center gap-1.5">
+          <SelectTrigger class="h-10 text-xs font-semibold bg-background border-input font-mono">
+            <div class="flex items-center gap-2">
               <Clock class="h-4 w-4 text-primary shrink-0" />
-              <SelectValue placeholder="Giờ" />
-              <span class="text-[11px] text-muted-foreground font-normal">giờ</span>
+              <SelectValue placeholder="08" />
             </div>
           </SelectTrigger>
           <SelectContent class="max-h-56">
@@ -224,7 +223,7 @@ function setCurrentTime() {
               :value="h"
               class="font-mono text-xs"
             >
-              {{ h }} giờ
+              {{ h }}
             </SelectItem>
           </SelectContent>
         </Select>
@@ -235,10 +234,9 @@ function setCurrentTime() {
       <!-- Dropdown Phút (Custom Shadcn Select) -->
       <div class="relative flex-1">
         <Select v-model="currentMinutes" :disabled="disabled">
-          <SelectTrigger class="h-10 text-xs font-semibold bg-background border-input">
-            <div class="flex items-center gap-1.5">
-              <SelectValue placeholder="Phút" />
-              <span class="text-[11px] text-muted-foreground font-normal">phút</span>
+          <SelectTrigger class="h-10 text-xs font-semibold bg-background border-input font-mono">
+            <div class="flex items-center gap-2">
+              <SelectValue placeholder="00" />
             </div>
           </SelectTrigger>
           <SelectContent class="max-h-56">
@@ -248,7 +246,7 @@ function setCurrentTime() {
               :value="m"
               class="font-mono text-xs"
             >
-              {{ m }} phút
+              {{ m }}
             </SelectItem>
           </SelectContent>
         </Select>

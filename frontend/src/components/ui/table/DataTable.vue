@@ -44,13 +44,17 @@ const props = withDefaults(
     globalFilter?: string
     statusFilter?: string
     columnVisibility?: ColumnVisibilityState
+    getRowId?: (row: TData, index: number) => string
+    manualPagination?: boolean
+    pageCount?: number
   }>(),
   {
     pageSize: 5,
     loading: false,
     error: null,
     emptyText: 'Không tìm thấy dữ liệu phù hợp.',
-    density: 'default'
+    density: 'default',
+    manualPagination: false
   }
 )
 
@@ -65,6 +69,27 @@ const rowSelection = ref<RowSelectionState>({})
 const columnVisibility = ref<ColumnVisibilityState>(props.columnVisibility || {})
 const globalFilter = ref(props.globalFilter || '')
 
+function resolveRowId(row: any, index: number): string {
+  if (props.getRowId) return props.getRowId(row, index)
+  if (row && typeof row === 'object') {
+    if (row.id !== undefined && row.id !== null) return String(row.id)
+    if (row.bookingId !== undefined && row.bookingId !== null) return String(row.bookingId)
+    if (row._id !== undefined && row._id !== null) return String(row._id)
+    if (row.uuid !== undefined && row.uuid !== null) return String(row.uuid)
+  }
+  return String(index)
+}
+
+function emitSelectedRows() {
+  const selectedMap = rowSelection.value || {}
+  const selectedKeys = Object.keys(selectedMap).filter((k) => selectedMap[k])
+  const selected = props.data.filter((item, idx) => {
+    const id = resolveRowId(item, idx)
+    return selectedKeys.includes(id)
+  })
+  emits('update:selection', selected)
+}
+
 // TanStack Table v9 Instance
 const table = useTable<any, any>({
   features: {
@@ -74,6 +99,9 @@ const table = useTable<any, any>({
     sortedRowModel: createSortedRowModel(),
     paginatedRowModel: createPaginatedRowModel()
   },
+  getRowId: (row: any, index: number) => resolveRowId(row, index),
+  manualPagination: props.manualPagination,
+  pageCount: props.pageCount,
   get data() {
     return props.data
   },
@@ -112,11 +140,7 @@ const table = useTable<any, any>({
   },
   onRowSelectionChange: (updater: any) => {
     rowSelection.value = typeof updater === 'function' ? updater(rowSelection.value) : updater
-    const selected = Object.keys(rowSelection.value)
-      .filter((k) => rowSelection.value[k])
-      .map((idx) => props.data[Number(idx)])
-      .filter(Boolean)
-    emits('update:selection', selected)
+    emitSelectedRows()
   },
   onColumnVisibilityChange: (updater: any) => {
     columnVisibility.value = typeof updater === 'function' ? updater(columnVisibility.value) : updater
@@ -159,10 +183,7 @@ watch(
 watch(
   rowSelection,
   () => {
-    emits(
-      'update:selection',
-      table.getSelectedRowModel().rows.map((r: any) => r.original)
-    )
+    emitSelectedRows()
   },
   { deep: true }
 )
