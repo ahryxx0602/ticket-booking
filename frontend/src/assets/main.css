@@ -133,6 +133,27 @@
   padding-right: var(--table-cell-px);
 }
 
+/* Component Scoped Density Rules (Button, Input, Select, Card) */
+[data-density="compact"] [data-density-target="control"],
+[data-density="compact"] input.density-control,
+[data-density="compact"] button.density-control {
+  height: var(--control-height, 36px) !important;
+}
+
+[data-density="comfortable"] [data-density-target="control"],
+[data-density="comfortable"] input.density-control,
+[data-density="comfortable"] button.density-control {
+  height: var(--control-height, 44px) !important;
+}
+
+[data-density="compact"] [data-density-target="card"] {
+  padding: 0.875rem !important;
+}
+
+[data-density="comfortable"] [data-density-target="card"] {
+  padding: 1.75rem !important;
+}
+
 /* Accessibility: Mobile Touch Target Minimum (44px on coarse pointer devices) */
 @media (pointer: coarse) {
   [data-density="compact"] button:not(.allow-touch-compact),
@@ -180,8 +201,9 @@
   --popover-foreground: oklch(0.9211 0.0040 106.4781);
   
   --primary: oklch(0.6724 0.1308 38.7559);          /* #D97757 */
-  --primary-foreground: oklch(0.1908 0.0020 106.5859); /* #141413 */
-  --primary-effective: oklch(0.6724 0.1308 38.7559);
+  --primary-foreground: oklch(0.1908 0.0020 106.5859); /* #141413 (WCAG AA 5.90:1 contrast with #D97757) */
+  --primary-effective: oklch(0.58 0.1375 39.0427);   /* #BC5937 (Contrast 4.54:1 with white #FFFFFF) */
+  --primary-effective-foreground: oklch(1.0000 0 0);  /* #FFFFFF */
   
   --secondary: oklch(0.3200 0.0050 106.5000);
   --secondary-foreground: oklch(0.9576 0.0027 106.4494);

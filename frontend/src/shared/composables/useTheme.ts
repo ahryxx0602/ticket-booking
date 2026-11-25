@@ -57,15 +57,32 @@ export function getLuminance([r, g, b]: [number, number, number]): number {
   return a[0] * 0.2126 + a[1] * 0.7152 + a[2] * 0.0722
 }
 
-export function getContrastRatio(hex1: string, hex2: string): number {
+export interface ContrastResult {
+  ratio: number
+  rawRatio: number
+  isAA: boolean
+  isAAA: boolean
+}
+
+export function getContrastInfo(hex1: string, hex2: string): ContrastResult {
   const rgb1 = hexToRgb(hex1)
   const rgb2 = hexToRgb(hex2)
-  if (!rgb1 || !rgb2) return 1
+  if (!rgb1 || !rgb2) return { ratio: 1, rawRatio: 1, isAA: false, isAAA: false }
   const l1 = getLuminance(rgb1)
   const l2 = getLuminance(rgb2)
   const lighter = Math.max(l1, l2)
   const darker = Math.min(l1, l2)
-  return parseFloat(((lighter + 0.05) / (darker + 0.05)).toFixed(2))
+  const rawRatio = (lighter + 0.05) / (darker + 0.05)
+  return {
+    ratio: parseFloat(rawRatio.toFixed(2)),
+    rawRatio,
+    isAA: rawRatio >= 4.5,
+    isAAA: rawRatio >= 7.0
+  }
+}
+
+export function getContrastRatio(hex1: string, hex2: string): number {
+  return getContrastInfo(hex1, hex2).ratio
 }
 
 export function normalizeHex(hex: string): string | null {
@@ -167,16 +184,20 @@ function applyTheme(cfg: ThemeConfig) {
   // 3. Density
   root.setAttribute('data-density', cfg.density)
 
-  // 4. Primary color override & Accessible Foreground text
+  // 4. Primary color override & Accessible Foreground text (FINAL-02 Synchronization)
   if (cfg.primaryColor && cfg.primaryColor !== DEFAULT_THEME.primaryColor) {
     root.style.setProperty('--primary', cfg.primaryColor)
     root.style.setProperty('--ring', cfg.primaryColor)
     const accessibleText = getAccessibleTextColor(cfg.primaryColor)
     root.style.setProperty('--primary-foreground', accessibleText)
+    root.style.setProperty('--primary-effective', cfg.primaryColor)
+    root.style.setProperty('--primary-effective-foreground', accessibleText)
   } else {
     root.style.removeProperty('--primary')
     root.style.removeProperty('--ring')
     root.style.removeProperty('--primary-foreground')
+    root.style.removeProperty('--primary-effective')
+    root.style.removeProperty('--primary-effective-foreground')
   }
 }
 
@@ -279,6 +300,7 @@ export function useTheme() {
     contrastVsWhite,
     contrastVsDark,
     effectiveTextColor,
+    getContrastInfo,
     setThemeMode,
     setPrimaryColor,
     setRadius,
