@@ -1,9 +1,24 @@
 <script setup>
 import { ref } from 'vue'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { Badge } from '@/components/ui/badge'
 import StatusBadge from '@/shared/components/StatusBadge.vue'
-import AppButton from '@/shared/components/AppButton.vue'
 import { useAdminPermissions } from '@/modules/admin/composables/useAdminPermissions'
 import { adminApi } from '@/modules/admin/api'
+import { toast } from 'vue-sonner'
+import {
+  TrendingUp,
+  DollarSign,
+  Ticket,
+  Bus,
+  RefreshCw,
+  ShieldCheck,
+  AlertTriangle,
+  CheckCircle2,
+  AlertCircle
+} from 'lucide-vue-next'
 
 const { hasPermission } = useAdminPermissions()
 
@@ -49,6 +64,9 @@ function triggerManualReconciliation() {
   isRunningReconciliation.value = true
   setTimeout(() => {
     isRunningReconciliation.value = false
+    toast.success('Đối soát hoàn tất', {
+      description: 'Đã đối soát xong 2/2 giao dịch VNPay ↔ Ví Escrow sàn.'
+    })
   }, 800)
 }
 
@@ -59,6 +77,9 @@ async function resolveAlert(alertItem) {
   alertItem.issueType = 'RESOLVED_MANUAL'
   const paymentId = alertItem.paymentId || alertItem.id || 1
   adminApi.reconcilePayment(paymentId, 'Resolved manually by admin').catch(() => {})
+  toast.success('Đã xác nhận xử lý', {
+    description: `Mã đối soát ${alertItem.id} đã được điều chỉnh về trạng thái khớp.`
+  })
 }
 </script>
 
@@ -67,153 +88,176 @@ async function resolveAlert(alertItem) {
     <!-- Header -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-bold text-text-primary">Tổng Quan Toàn Sàn & Báo Cáo Đối Soát</h1>
-        <p class="text-xs text-text-muted mt-1">
+        <h1 class="text-2xl font-bold tracking-tight text-foreground">Tổng Quan Toàn Sàn & Báo Cáo Đối Soát</h1>
+        <p class="text-xs text-muted-foreground mt-1">
           Giám sát chỉ số GMV, doanh thu hoa hồng 2 cấp và đối soát tự động dòng tiền VNPay ↔ Ví Ký Quỹ Escrow.
         </p>
       </div>
 
-      <AppButton
+      <Button
         v-if="hasPermission('PAYMENT_RECONCILE_RESOLVE')"
-        variant="primary"
-        class="self-start sm:self-auto px-4 py-2.5 text-xs font-bold"
+        class="self-start sm:self-auto px-4 py-2 text-xs font-semibold gap-2 shadow-xs"
         data-testid="btn-run-reconciliation"
+        :disabled="isRunningReconciliation"
         :loading="isRunningReconciliation"
         @click="triggerManualReconciliation"
       >
-        <span>🔄</span>
+        <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': isRunningReconciliation }" />
         <span>Chạy Đối Soát Ngay</span>
-      </AppButton>
+      </Button>
     </div>
 
     <!-- 4 KPI System Cards (Protected by PAYMENT_REPORT_VIEW) -->
     <div v-if="hasPermission('PAYMENT_REPORT_VIEW')" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-      <div class="bg-surface rounded-xl border border-border-default p-5 shadow-card space-y-2">
-        <div class="flex items-center justify-between">
-          <span class="text-xs font-bold uppercase tracking-wider text-text-secondary">Tổng GMV Toàn Sàn</span>
-          <span class="p-2 rounded-lg bg-blue-50 text-primary-600 text-lg">📊</span>
-        </div>
-        <p class="text-2xl font-extrabold text-primary-600 tabular-nums" data-testid="kpi-gmv">
-          {{ platformMetrics.totalGmv.toLocaleString('vi-VN') }} <span class="text-xs font-bold">đ</span>
-        </p>
-        <p class="text-[11px] text-emerald-600 font-medium">↑ +18.4% so với tháng trước</p>
-      </div>
+      <!-- 1. Total GMV -->
+      <Card class="border-border bg-card shadow-xs space-y-1.5">
+        <CardHeader class="pb-2 flex flex-row items-center justify-between space-y-0">
+          <CardTitle class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Tổng GMV Toàn Sàn</CardTitle>
+          <div class="p-2 rounded-lg bg-primary/10 text-primary">
+            <TrendingUp class="w-4 h-4" />
+          </div>
+        </CardHeader>
+        <CardContent class="space-y-1">
+          <p class="text-2xl font-extrabold text-foreground tabular-nums font-mono" data-testid="kpi-gmv">
+            {{ platformMetrics.totalGmv.toLocaleString('vi-VN') }} <span class="text-xs font-bold text-muted-foreground">đ</span>
+          </p>
+          <p class="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">↑ +18.4% so với tháng trước</p>
+        </CardContent>
+      </Card>
 
-      <div class="bg-surface rounded-xl border-2 border-emerald-500/40 p-5 shadow-card space-y-2">
-        <div class="flex items-center justify-between">
-          <span class="text-xs font-bold uppercase tracking-wider text-text-secondary">Hoa Hồng Thực Thu</span>
-          <span class="p-2 rounded-lg bg-emerald-50 text-emerald-600 text-lg">💎</span>
-        </div>
-        <p class="text-2xl font-extrabold text-emerald-600 tabular-nums" data-testid="kpi-commission">
-          {{ platformMetrics.totalCommission.toLocaleString('vi-VN') }} <span class="text-xs font-bold">đ</span>
-        </p>
-        <p class="text-[11px] text-text-muted">Đã khấu trừ tự động qua Escrow Settlement</p>
-      </div>
+      <!-- 2. Total Commission -->
+      <Card class="border-border bg-card shadow-xs border-primary/30 space-y-1.5">
+        <CardHeader class="pb-2 flex flex-row items-center justify-between space-y-0">
+          <CardTitle class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Hoa Hồng Thực Thu</CardTitle>
+          <div class="p-2 rounded-lg bg-primary/10 text-primary">
+            <DollarSign class="w-4 h-4" />
+          </div>
+        </CardHeader>
+        <CardContent class="space-y-1">
+          <p class="text-2xl font-extrabold text-primary tabular-nums font-mono" data-testid="kpi-commission">
+            {{ platformMetrics.totalCommission.toLocaleString('vi-VN') }} <span class="text-xs font-bold">đ</span>
+          </p>
+          <p class="text-[11px] text-muted-foreground">Đã khấu trừ tự động qua Escrow Settlement</p>
+        </CardContent>
+      </Card>
 
-      <div class="bg-surface rounded-xl border border-border-default p-5 shadow-card space-y-2">
-        <div class="flex items-center justify-between">
-          <span class="text-xs font-bold uppercase tracking-wider text-text-secondary">Đơn Vé Thành Công</span>
-          <span class="p-2 rounded-lg bg-amber-50 text-amber-600 text-lg">🎫</span>
-        </div>
-        <p class="text-2xl font-extrabold text-text-primary tabular-nums" data-testid="kpi-bookings">
-          {{ platformMetrics.totalConfirmedBookings.toLocaleString('vi-VN') }} <span class="text-xs font-bold">đơn</span>
-        </p>
-        <p class="text-[11px] text-text-muted">Tỷ lệ thanh toán thành công 96.2%</p>
-      </div>
+      <!-- 3. Confirmed Bookings -->
+      <Card class="border-border bg-card shadow-xs space-y-1.5">
+        <CardHeader class="pb-2 flex flex-row items-center justify-between space-y-0">
+          <CardTitle class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Đơn Vé Thành Công</CardTitle>
+          <div class="p-2 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
+            <Ticket class="w-4 h-4" />
+          </div>
+        </CardHeader>
+        <CardContent class="space-y-1">
+          <p class="text-2xl font-extrabold text-foreground tabular-nums font-mono" data-testid="kpi-bookings">
+            {{ platformMetrics.totalConfirmedBookings.toLocaleString('vi-VN') }} <span class="text-xs font-bold text-muted-foreground">đơn</span>
+          </p>
+          <p class="text-[11px] text-muted-foreground">Tỷ lệ thanh toán thành công 96.2%</p>
+        </CardContent>
+      </Card>
 
-      <div class="bg-surface rounded-xl border border-border-default p-5 shadow-card space-y-2">
-        <div class="flex items-center justify-between">
-          <span class="text-xs font-bold uppercase tracking-wider text-text-secondary">Nhà Xe Hoạt Động</span>
-          <span class="p-2 rounded-lg bg-slate-100 text-slate-700 text-lg">🚌</span>
-        </div>
-        <p class="text-2xl font-extrabold text-text-primary tabular-nums" data-testid="kpi-operators">
-          {{ platformMetrics.activeOperators }} <span class="text-xs font-bold">đối tác</span>
-        </p>
-        <p class="text-[11px] text-text-muted">100% đã xác thực giấy phép kinh doanh vận tải</p>
-      </div>
+      <!-- 4. Active Operators -->
+      <Card class="border-border bg-card shadow-xs space-y-1.5">
+        <CardHeader class="pb-2 flex flex-row items-center justify-between space-y-0">
+          <CardTitle class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Nhà Xe Hoạt Động</CardTitle>
+          <div class="p-2 rounded-lg bg-muted text-muted-foreground">
+            <Bus class="w-4 h-4" />
+          </div>
+        </CardHeader>
+        <CardContent class="space-y-1">
+          <p class="text-2xl font-extrabold text-foreground tabular-nums font-mono" data-testid="kpi-operators">
+            {{ platformMetrics.activeOperators }} <span class="text-xs font-bold text-muted-foreground">đối tác</span>
+          </p>
+          <p class="text-[11px] text-muted-foreground">100% đã xác thực giấy phép kinh doanh</p>
+        </CardContent>
+      </Card>
     </div>
 
     <!-- Reconciliation Alerts Panel (Protected by PAYMENT_LIST_VIEW) -->
-    <div v-if="hasPermission('PAYMENT_LIST_VIEW')" class="bg-surface rounded-xl border border-border-default shadow-card overflow-hidden">
-      <div class="p-5 border-b border-border-default flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+    <Card v-if="hasPermission('PAYMENT_LIST_VIEW')" class="border-border bg-card shadow-xs overflow-hidden">
+      <CardHeader class="p-5 border-b border-border flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
-          <h2 class="text-base font-bold text-text-primary flex items-center gap-2">
-            <span>🛡️</span>
+          <CardTitle class="text-base font-bold text-foreground flex items-center gap-2">
+            <ShieldCheck class="w-4 h-4 text-primary" />
             <span>Nhật Ký Cảnh Báo Đối Soát Tự Động (VNPay IPN ↔ Ví Ký Quỹ)</span>
-          </h2>
-          <p class="text-xs text-text-muted mt-0.5">
+          </CardTitle>
+          <CardDescription class="text-xs text-muted-foreground mt-0.5">
             Phát hiện tức thời các giao dịch lệch số dư và tự động đẩy cảnh báo sang Telegram Bot Ban Quản Trị.
-          </p>
+          </CardDescription>
         </div>
-        <span class="text-xs font-semibold px-3 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+        <Badge variant="outline" class="border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300 font-semibold text-xs">
           {{ reconciliationAlerts.filter(a => !a.resolved).length }} cảnh báo cần xử lý
-        </span>
-      </div>
+        </Badge>
+      </CardHeader>
 
-      <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse text-xs">
-          <thead>
-            <tr class="bg-slate-50/80 border-b border-border-default text-text-secondary uppercase tracking-wider text-[11px]">
-              <th class="py-3 px-4 font-semibold">Mã Đối Soát</th>
-              <th class="py-3 px-4 font-semibold">Mã Đơn / VNPay Ref</th>
-              <th class="py-3 px-4 font-semibold text-right">Tiền VNPay</th>
-              <th class="py-3 px-4 font-semibold text-right">Tiền Ví Sàn</th>
-              <th class="py-3 px-4 font-semibold text-right">Chênh Lệch</th>
-              <th class="py-3 px-4 font-semibold">Chi Tiết Cảnh Báo</th>
-              <th class="py-3 px-4 font-semibold text-center">Trạng Thái</th>
-              <th class="py-3 px-4 font-semibold text-right">Thao Tác</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-border-default">
-            <tr
-              v-for="item in reconciliationAlerts"
-              :key="item.id"
-              class="hover:bg-slate-50/60 transition-colors"
-            >
-              <td class="py-3.5 px-4 font-bold text-text-primary tabular-nums">{{ item.id }}</td>
-              <td class="py-3.5 px-4 tabular-nums">
-                <span class="font-bold text-primary-600 block">{{ item.bookingId }}</span>
-                <span class="text-[11px] text-text-muted">{{ item.vnpayTxnRef }}</span>
-              </td>
-              <td class="py-3.5 px-4 text-right font-semibold tabular-nums">
-                {{ item.vnpayAmount.toLocaleString('vi-VN') }} đ
-              </td>
-              <td class="py-3.5 px-4 text-right font-semibold tabular-nums">
-                {{ item.internalEscrowAmount.toLocaleString('vi-VN') }} đ
-              </td>
-              <td
-                class="py-3.5 px-4 text-right font-extrabold tabular-nums"
-                :class="item.discrepancy > 0 ? 'text-rose-600' : 'text-emerald-600'"
+      <CardContent class="p-0">
+        <div class="overflow-x-auto">
+          <Table class="min-w-[800px]">
+            <TableHeader>
+              <TableRow class="bg-muted/50 hover:bg-muted/50">
+                <TableHead class="font-semibold text-xs uppercase">Mã Đối Soát</TableHead>
+                <TableHead class="font-semibold text-xs uppercase">Mã Đơn / VNPay Ref</TableHead>
+                <TableHead class="font-semibold text-xs uppercase text-right">Tiền VNPay</TableHead>
+                <TableHead class="font-semibold text-xs uppercase text-right">Tiền Ví Sàn</TableHead>
+                <TableHead class="font-semibold text-xs uppercase text-right">Chênh Lệch</TableHead>
+                <TableHead class="font-semibold text-xs uppercase">Chi Tiết Cảnh Báo</TableHead>
+                <TableHead class="font-semibold text-xs uppercase text-center">Trạng Thái</TableHead>
+                <TableHead class="font-semibold text-xs uppercase text-right">Thao Tác</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow
+                v-for="item in reconciliationAlerts"
+                :key="item.id"
+                class="hover:bg-muted/40 transition-colors"
               >
-                {{ item.discrepancy.toLocaleString('vi-VN') }} đ
-              </td>
-              <td class="py-3.5 px-4 text-text-secondary max-w-xs">{{ item.description }}</td>
-              <td class="py-3.5 px-4 text-center">
-                <span
-                  class="px-2.5 py-0.5 rounded-full text-[11px] font-bold"
-                  :class="item.resolved ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'"
+                <TableCell class="font-bold text-foreground tabular-nums font-mono">{{ item.id }}</TableCell>
+                <TableCell class="tabular-nums font-mono">
+                  <span class="font-bold text-primary block">{{ item.bookingId }}</span>
+                  <span class="text-[11px] text-muted-foreground">{{ item.vnpayTxnRef }}</span>
+                </TableCell>
+                <TableCell class="text-right font-semibold tabular-nums font-mono">
+                  {{ item.vnpayAmount.toLocaleString('vi-VN') }} đ
+                </TableCell>
+                <TableCell class="text-right font-semibold tabular-nums font-mono">
+                  {{ item.internalEscrowAmount.toLocaleString('vi-VN') }} đ
+                </TableCell>
+                <TableCell
+                  class="text-right font-extrabold tabular-nums font-mono"
+                  :class="item.discrepancy > 0 ? 'text-status-danger' : 'text-emerald-600 dark:text-emerald-400'"
                 >
-                  {{ item.resolved ? 'Đã Khớp' : 'Lệch Số Dư' }}
-                </span>
-              </td>
-              <td class="py-3.5 px-4 text-right">
-                <button
-                  v-if="!item.resolved && hasPermission('PAYMENT_RECONCILE_RESOLVE')"
-                  type="button"
-                  @click="resolveAlert(item)"
-                  data-testid="btn-resolve-alert"
-                  class="px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg text-xs transition-all"
-                >
-                  Xác Nhận Đã Xử Lý
-                </button>
-                <span v-else class="text-text-muted text-[11px]">
-                  {{ item.resolved ? 'Hoàn tất' : 'Chỉ xem (Thiếu quyền xử lý)' }}
-                </span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+                  {{ item.discrepancy.toLocaleString('vi-VN') }} đ
+                </TableCell>
+                <TableCell class="text-muted-foreground text-xs max-w-xs">{{ item.description }}</TableCell>
+                <TableCell class="text-center">
+                  <Badge
+                    variant="outline"
+                    class="font-bold text-[11px]"
+                    :class="item.resolved ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30' : 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/30'"
+                  >
+                    {{ item.resolved ? 'Đã Khớp' : 'Lệch Số Dư' }}
+                  </Badge>
+                </TableCell>
+                <TableCell class="text-right">
+                  <Button
+                    v-if="!item.resolved && hasPermission('PAYMENT_RECONCILE_RESOLVE')"
+                    size="sm"
+                    @click="resolveAlert(item)"
+                    data-testid="btn-resolve-alert"
+                    class="h-8 text-xs font-semibold shadow-xs"
+                  >
+                    Xác Nhận Đã Xử Lý
+                  </Button>
+                  <span v-else class="text-muted-foreground text-[11px]">
+                    {{ item.resolved ? 'Hoàn tất' : 'Chỉ xem' }}
+                  </span>
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
   </div>
 </template>

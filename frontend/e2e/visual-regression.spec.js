@@ -29,7 +29,7 @@ test.describe('E2E: Visual Regression & Layout Responsive Check', () => {
     })
 
     test(`FE-VIS-03: Dashboard Admin responsive trên ${vp.name}`, async ({ page }) => {
-      await loginAsRole(page, 'ROLE_ADMIN')
+      await loginAsRole(page, 'ROLE_ADMIN', 'admin')
       await page.setViewportSize({ width: vp.width, height: vp.height })
       await page.goto('/admin')
 

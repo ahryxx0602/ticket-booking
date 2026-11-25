@@ -1,5 +1,23 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
+import { toast } from 'vue-sonner'
+import {
+  Users,
+  Shield,
+  Ticket,
+  Plus,
+  Pencil,
+  KeyRound,
+  Lock,
+  Unlock,
+  Trash2,
+  Banknote,
+  Search,
+  Check,
+  X,
+  AlertTriangle,
+  Zap
+} from 'lucide-vue-next'
 import StatusBadge from '@/shared/components/StatusBadge.vue'
 import FormField from '@/shared/components/FormField.vue'
 import AppButton from '@/shared/components/AppButton.vue'
@@ -43,6 +61,11 @@ const feedbackType = ref('success') // 'success' | 'error'
 function notify(msg, type = 'success') {
   feedbackMessage.value = msg
   feedbackType.value = type
+  if (type === 'error') {
+    toast.error(msg)
+  } else {
+    toast.success(msg)
+  }
   setTimeout(() => {
     if (feedbackMessage.value === msg) {
       feedbackMessage.value = ''
@@ -229,9 +252,9 @@ function getCategoryLabel(category) {
 }
 
 function getCategoryBadgeClass(category) {
-  if (category === 'CUSTOMER') return 'bg-sky-50 text-sky-700 border-sky-200'
-  if (category === 'OPERATOR') return 'bg-emerald-50 text-emerald-700 border-emerald-200'
-  return 'bg-purple-50 text-purple-700 border-purple-200'
+  if (category === 'CUSTOMER') return 'bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30'
+  if (category === 'OPERATOR') return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
+  return 'bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30'
 }
 
 const categoryCounts = computed(() => {
@@ -682,14 +705,14 @@ function handlePreviewRole(roleItem) {
     return
   }
   startRolePreview(roleItem)
-  notify(`⚡ Đang bật chế độ Xem thử giao diện với Role: ${roleItem.name} (${roleItem.permissions.length}/26 quyền API)`)
+  notify(`Đang bật chế độ Xem thử giao diện với Role: ${roleItem.name} (${roleItem.permissions.length}/26 quyền API)`)
 }
 
 function getHttpMethodBadgeClass(method) {
-  if (method.includes('DELETE')) return 'bg-rose-100 text-rose-800 border-rose-300'
-  if (method.includes('POST')) return 'bg-emerald-100 text-emerald-800 border-emerald-300'
-  if (method.includes('PUT') || method.includes('PATCH')) return 'bg-amber-100 text-amber-800 border-amber-300'
-  return 'bg-sky-100 text-sky-800 border-sky-300'
+  if (method.includes('DELETE')) return 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30'
+  if (method.includes('POST')) return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
+  if (method.includes('PUT') || method.includes('PATCH')) return 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30'
+  return 'bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30'
 }
 
 // =========================================================================
@@ -754,10 +777,10 @@ function confirmAdminRefund() {
 <template>
   <div class="space-y-6">
     <!-- Header -->
-    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
       <div>
-        <h1 class="text-2xl font-bold text-text-primary">Quản Trị Người Dùng & Hoàn Tiền Cưỡng Chế (Admin Refund)</h1>
-        <p class="text-xs text-text-muted mt-1">
+        <h1 class="text-xl sm:text-2xl font-bold text-foreground tracking-tight">Quản Trị Người Dùng & Hoàn Tiền Cưỡng Chế (Admin Refund)</h1>
+        <p class="text-xs text-muted-foreground mt-1">
           Quản lý người dùng theo 3 phân mục (1. Khách hàng • 2. Chủ xe • 3. Phía hệ thống), tạo Role tùy chỉnh theo ma trận 7 Modules × 26 APIs và thực thi lệnh hoàn tiền vé.
         </p>
       </div>
@@ -768,9 +791,10 @@ function confirmAdminRefund() {
           type="button"
           data-testid="open-create-role-modal-btn"
           @click="activeTab = 'ROLES'; openCreateRoleModal()"
-          class="px-3.5 py-2 rounded-lg border border-purple-300 bg-purple-50 hover:bg-purple-100 text-purple-800 font-bold text-xs transition-all"
+          class="px-3 py-2 rounded-lg border border-border bg-card hover:bg-muted text-foreground font-semibold text-xs transition-all shadow-xs flex items-center gap-1.5"
         >
-          🛡️ + Tạo Role Hệ Thống Mới
+          <Shield class="w-4 h-4 text-primary" />
+          <span>Tạo Role Mới</span>
         </button>
 
         <button
@@ -778,9 +802,10 @@ function confirmAdminRefund() {
           type="button"
           data-testid="open-create-user-modal-btn"
           @click="activeTab = 'USERS'; openCreateUserModal()"
-          class="px-3.5 py-2 rounded-lg bg-brand-navy hover:bg-slate-800 text-white font-bold text-xs transition-all shadow-sm"
+          class="px-3.5 py-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs transition-all shadow-xs flex items-center gap-1.5"
         >
-          👤 + Tạo Tài Khoản Mới
+          <Users class="w-4 h-4" />
+          <span>Tạo Tài Khoản</span>
         </button>
       </div>
     </div>
@@ -789,25 +814,32 @@ function confirmAdminRefund() {
     <div
       v-if="feedbackMessage"
       data-testid="iam-feedback-banner"
-      class="px-4 py-3 rounded-xl border text-xs font-semibold flex items-center justify-between shadow-sm"
-      :class="feedbackType === 'error' ? 'bg-rose-50 border-rose-200 text-rose-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700'"
+      class="px-4 py-3 rounded-xl border text-xs font-semibold flex items-center justify-between shadow-xs"
+      :class="feedbackType === 'error' ? 'bg-destructive/10 border-destructive/20 text-destructive' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'"
     >
-      <span>{{ feedbackType === 'error' ? '⚠️ ' : '✓ ' }}{{ feedbackMessage }}</span>
-      <button type="button" @click="feedbackMessage = ''" class="text-slate-400 hover:text-slate-700 font-bold">✕</button>
+      <div class="flex items-center gap-2">
+        <AlertTriangle v-if="feedbackType === 'error'" class="w-4 h-4 text-destructive flex-shrink-0" />
+        <Check v-else class="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+        <span>{{ feedbackMessage }}</span>
+      </div>
+      <button type="button" @click="feedbackMessage = ''" class="text-muted-foreground hover:text-foreground">
+        <X class="w-4 h-4" />
+      </button>
     </div>
 
     <!-- Top Main Tabs: USERS | ROLES | BOOKINGS -->
-    <div class="flex flex-wrap gap-2 border-b border-border-default pb-2 text-xs font-semibold">
+    <div class="flex overflow-x-auto gap-2 border-b border-border pb-2 text-xs font-semibold">
       <button
         v-if="hasPermission('USER_VIEW')"
         type="button"
         @click="activeTab = 'USERS'"
         data-testid="tab-admin-users"
-        class="px-4 py-2.5 rounded-lg transition-all flex items-center gap-2"
-        :class="activeTab === 'USERS' ? 'bg-brand-navy text-white shadow-sm' : 'text-text-secondary hover:bg-slate-100'"
+        class="px-4 py-2.5 rounded-lg transition-all flex items-center gap-2 font-medium whitespace-nowrap shrink-0"
+        :class="activeTab === 'USERS' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted/60'"
       >
-        <span>👥 Quản Lý Người Dùng (3 Phân Mục)</span>
-        <span class="px-1.5 py-0.5 rounded-full text-[10px]" :class="activeTab === 'USERS' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'">
+        <Users class="w-4 h-4" />
+        <span>Quản Lý Người Dùng (3 Phân Mục)</span>
+        <span class="px-1.5 py-0.5 rounded-full text-[10px]" :class="activeTab === 'USERS' ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-muted text-muted-foreground'">
           {{ users.length }}
         </span>
       </button>
@@ -817,11 +849,12 @@ function confirmAdminRefund() {
         type="button"
         @click="activeTab = 'ROLES'"
         data-testid="tab-admin-roles"
-        class="px-4 py-2.5 rounded-lg transition-all flex items-center gap-2"
-        :class="activeTab === 'ROLES' ? 'bg-brand-navy text-white shadow-sm' : 'text-text-secondary hover:bg-slate-100'"
+        class="px-4 py-2.5 rounded-lg transition-all flex items-center gap-2 font-medium whitespace-nowrap shrink-0"
+        :class="activeTab === 'ROLES' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted/60'"
       >
-        <span>🛡️ Quản Lý Role & Phân Quyền 26 APIs</span>
-        <span class="px-1.5 py-0.5 rounded-full text-[10px]" :class="activeTab === 'ROLES' ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-800'">
+        <Shield class="w-4 h-4" />
+        <span>Quản Lý Role & Phân Quyền 26 APIs</span>
+        <span class="px-1.5 py-0.5 rounded-full text-[10px]" :class="activeTab === 'ROLES' ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-purple-500/15 text-purple-700 dark:text-purple-300'">
           {{ systemRoles.length }} Roles
         </span>
       </button>
@@ -831,11 +864,12 @@ function confirmAdminRefund() {
         type="button"
         @click="activeTab = 'BOOKINGS'"
         data-testid="tab-admin-bookings"
-        class="px-4 py-2.5 rounded-lg transition-all flex items-center gap-2"
-        :class="activeTab === 'BOOKINGS' ? 'bg-brand-navy text-white shadow-sm' : 'text-text-secondary hover:bg-slate-100'"
+        class="px-4 py-2.5 rounded-lg transition-all flex items-center gap-2 font-medium whitespace-nowrap shrink-0"
+        :class="activeTab === 'BOOKINGS' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted/60'"
       >
-        <span>🎫 Đơn Vé Toàn Sàn & Hoàn Tiền</span>
-        <span class="px-1.5 py-0.5 rounded-full text-[10px]" :class="activeTab === 'BOOKINGS' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'">
+        <Ticket class="w-4 h-4" />
+        <span>Đơn Vé Toàn Sàn & Hoàn Tiền</span>
+        <span class="px-1.5 py-0.5 rounded-full text-[10px]" :class="activeTab === 'BOOKINGS' ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-muted text-muted-foreground'">
           {{ allBookings.length }}
         </span>
       </button>
@@ -846,19 +880,19 @@ function confirmAdminRefund() {
          ========================================================================= -->
     <div v-if="activeTab === 'USERS' && hasPermission('USER_VIEW')" class="space-y-4">
       <!-- 3 Category Cards & Filter Bar -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
         <button
           type="button"
           data-testid="category-tab-ALL"
           @click="activeUserCategory = 'ALL'"
-          class="p-4 rounded-xl border text-left transition-all"
-          :class="activeUserCategory === 'ALL' ? 'bg-brand-navy text-white border-brand-navy shadow-card' : 'bg-surface border-border-default hover:border-primary-400'"
+          class="p-3 sm:p-4 rounded-xl border text-left transition-all"
+          :class="activeUserCategory === 'ALL' ? 'bg-primary/10 text-primary border-primary ring-1 ring-primary/30 shadow-xs' : 'bg-card border-border hover:border-primary/40 text-card-foreground'"
         >
           <div class="flex items-center justify-between">
-            <span class="text-xs font-bold uppercase tracking-wider" :class="activeUserCategory === 'ALL' ? 'text-blue-200' : 'text-text-secondary'">Tất Cả Tài Khoản</span>
-            <span class="text-lg font-black tabular-nums">{{ categoryCounts.ALL }}</span>
+            <span class="text-xs font-bold uppercase tracking-wider" :class="activeUserCategory === 'ALL' ? 'text-primary' : 'text-muted-foreground'">Tất Cả Tài Khoản</span>
+            <span class="text-base sm:text-lg font-black tabular-nums">{{ categoryCounts.ALL }}</span>
           </div>
-          <p class="text-[11px] mt-1" :class="activeUserCategory === 'ALL' ? 'text-slate-200' : 'text-text-muted'">
+          <p class="text-[11px] mt-1 text-muted-foreground line-clamp-1 sm:line-clamp-none">
             Tổng hợp cả 3 phân mục người dùng toàn sàn
           </p>
         </button>
@@ -867,14 +901,14 @@ function confirmAdminRefund() {
           type="button"
           data-testid="category-tab-CUSTOMER"
           @click="activeUserCategory = 'CUSTOMER'"
-          class="p-4 rounded-xl border text-left transition-all"
-          :class="activeUserCategory === 'CUSTOMER' ? 'bg-sky-700 text-white border-sky-700 shadow-card' : 'bg-surface border-border-default hover:border-sky-400'"
+          class="p-3 sm:p-4 rounded-xl border text-left transition-all"
+          :class="activeUserCategory === 'CUSTOMER' ? 'bg-sky-500/15 text-sky-800 dark:text-sky-200 border-sky-500 ring-1 ring-sky-500/30 shadow-xs' : 'bg-card border-border hover:border-sky-400 text-card-foreground'"
         >
           <div class="flex items-center justify-between">
-            <span class="text-xs font-bold uppercase tracking-wider" :class="activeUserCategory === 'CUSTOMER' ? 'text-sky-100' : 'text-sky-700'">1. Khách Hàng (Customer)</span>
-            <span class="text-lg font-black tabular-nums">{{ categoryCounts.CUSTOMER }}</span>
+            <span class="text-xs font-bold uppercase tracking-wider" :class="activeUserCategory === 'CUSTOMER' ? 'text-sky-700 dark:text-sky-300' : 'text-sky-600 dark:text-sky-400'">1. Khách Hàng (Customer)</span>
+            <span class="text-base sm:text-lg font-black tabular-nums">{{ categoryCounts.CUSTOMER }}</span>
           </div>
-          <p class="text-[11px] mt-1" :class="activeUserCategory === 'CUSTOMER' ? 'text-sky-100' : 'text-text-muted'">
+          <p class="text-[11px] mt-1 text-muted-foreground line-clamp-1 sm:line-clamp-none">
             Hành khách đặt vé (`ROLE_CUSTOMER`)
           </p>
         </button>
@@ -883,14 +917,14 @@ function confirmAdminRefund() {
           type="button"
           data-testid="category-tab-OPERATOR"
           @click="activeUserCategory = 'OPERATOR'"
-          class="p-4 rounded-xl border text-left transition-all"
-          :class="activeUserCategory === 'OPERATOR' ? 'bg-emerald-700 text-white border-emerald-700 shadow-card' : 'bg-surface border-border-default hover:border-emerald-400'"
+          class="p-3 sm:p-4 rounded-xl border text-left transition-all"
+          :class="activeUserCategory === 'OPERATOR' ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-200 border-emerald-500 ring-1 ring-emerald-500/30 shadow-xs' : 'bg-card border-border hover:border-emerald-400 text-card-foreground'"
         >
           <div class="flex items-center justify-between">
-            <span class="text-xs font-bold uppercase tracking-wider" :class="activeUserCategory === 'OPERATOR' ? 'text-emerald-100' : 'text-emerald-700'">2. Chủ Xe (Operator)</span>
-            <span class="text-lg font-black tabular-nums">{{ categoryCounts.OPERATOR }}</span>
+            <span class="text-xs font-bold uppercase tracking-wider" :class="activeUserCategory === 'OPERATOR' ? 'text-emerald-700 dark:text-emerald-300' : 'text-emerald-600 dark:text-emerald-400'">2. Chủ Xe (Operator)</span>
+            <span class="text-base sm:text-lg font-black tabular-nums">{{ categoryCounts.OPERATOR }}</span>
           </div>
-          <p class="text-[11px] mt-1" :class="activeUserCategory === 'OPERATOR' ? 'text-emerald-100' : 'text-text-muted'">
+          <p class="text-[11px] mt-1 text-muted-foreground line-clamp-1 sm:line-clamp-none">
             Đối tác vận tải / Nhà xe (`ROLE_OPERATOR`)
           </p>
         </button>
@@ -899,64 +933,65 @@ function confirmAdminRefund() {
           type="button"
           data-testid="category-tab-SYSTEM"
           @click="activeUserCategory = 'SYSTEM'"
-          class="p-4 rounded-xl border text-left transition-all"
-          :class="activeUserCategory === 'SYSTEM' ? 'bg-purple-800 text-white border-purple-800 shadow-card' : 'bg-surface border-border-default hover:border-purple-400'"
+          class="p-3 sm:p-4 rounded-xl border text-left transition-all"
+          :class="activeUserCategory === 'SYSTEM' ? 'bg-purple-500/15 text-purple-800 dark:text-purple-200 border-purple-500 ring-1 ring-purple-500/30 shadow-xs' : 'bg-card border-border hover:border-purple-400 text-card-foreground'"
         >
           <div class="flex items-center justify-between">
-            <span class="text-xs font-bold uppercase tracking-wider" :class="activeUserCategory === 'SYSTEM' ? 'text-purple-100' : 'text-purple-700'">3. Phía Hệ Thống (Admin)</span>
-            <span class="text-lg font-black tabular-nums">{{ categoryCounts.SYSTEM }}</span>
+            <span class="text-xs font-bold uppercase tracking-wider" :class="activeUserCategory === 'SYSTEM' ? 'text-purple-700 dark:text-purple-300' : 'text-purple-600 dark:text-purple-400'">3. Phía Hệ Thống (Admin)</span>
+            <span class="text-base sm:text-lg font-black tabular-nums">{{ categoryCounts.SYSTEM }}</span>
           </div>
-          <p class="text-[11px] mt-1" :class="activeUserCategory === 'SYSTEM' ? 'text-purple-100' : 'text-text-muted'">
+          <p class="text-[11px] mt-1 text-muted-foreground line-clamp-1 sm:line-clamp-none">
             Super Admin & Nhân sự gắn Custom Role
           </p>
         </button>
       </div>
 
       <!-- Search & Action Toolbar -->
-      <div class="bg-surface p-4 rounded-xl border border-border-default flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div class="bg-card p-4 rounded-xl border border-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
         <div class="flex-1 max-w-md">
           <input
             v-model="userSearchKeyword"
             type="text"
             data-testid="input-search-users"
             placeholder="Tìm theo username, họ tên, email hoặc mã Role..."
-            class="w-full h-10 px-3.5 rounded-lg border border-border-strong text-xs text-text-primary focus:ring-2 focus:ring-primary-600"
+            class="w-full h-10 px-3.5 rounded-lg border border-input bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
 
         <div class="flex items-center gap-2 text-xs">
-          <span class="text-text-muted">Đang hiển thị: <strong class="text-text-primary">{{ filteredUsers.length }}</strong> tài khoản</span>
+          <span class="text-muted-foreground">Đang hiển thị: <strong class="text-foreground">{{ filteredUsers.length }}</strong> tài khoản</span>
           <button
             v-if="hasPermission('USER_CREATE_UPDATE_DELETE') && activeUserCategory !== 'ALL'"
             type="button"
             @click="openCreateUserModal(activeUserCategory)"
-            class="px-3 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 text-white font-semibold text-xs transition-all"
+            class="px-3 py-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs transition-all shadow-sm flex items-center gap-1.5"
           >
-            + Thêm vào {{ getCategoryLabel(activeUserCategory) }}
+            <Plus class="w-3.5 h-3.5" />
+            <span>Thêm vào {{ getCategoryLabel(activeUserCategory) }}</span>
           </button>
         </div>
       </div>
 
       <!-- Users Table -->
-      <div class="bg-surface rounded-xl border border-border-default shadow-card overflow-hidden">
+      <div class="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
         <div class="overflow-x-auto">
-          <table class="w-full text-left border-collapse text-xs">
+          <table class="w-full min-w-[850px] text-left border-collapse text-xs">
             <thead>
-              <tr class="bg-slate-50/80 border-b border-border-default text-text-secondary uppercase tracking-wider text-[11px]">
+              <tr class="bg-muted/50 border-b border-border text-muted-foreground uppercase tracking-wider text-[11px]">
                 <th class="py-3 px-4 font-semibold">Mã User</th>
                 <th class="py-3 px-4 font-semibold">Tài Khoản / Họ Tên</th>
                 <th class="py-3 px-4 font-semibold">Phân Mục</th>
-                <th class="py-3 px-4 font-semibold text-center">Vai Trò RBAC (Gán / Đổi Role)</th>
+                <th class="py-3 px-4 font-semibold text-center w-56">Vai Trò RBAC (Gán / Đổi Role)</th>
                 <th class="py-3 px-4 font-semibold text-center">Trạng Thái</th>
                 <th class="py-3 px-4 font-semibold text-right">Thao Tác CRUD</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-border-default">
-              <tr v-for="u in filteredUsers" :key="u.id" class="hover:bg-slate-50/60 transition-colors">
-                <td class="py-3.5 px-4 font-bold text-primary-600 tabular-nums">{{ u.id }}</td>
+            <tbody class="divide-y divide-border">
+              <tr v-for="u in filteredUsers" :key="u.id" class="hover:bg-muted/30 transition-colors">
+                <td class="py-3.5 px-4 font-bold text-primary tabular-nums">{{ u.id }}</td>
                 <td class="py-3.5 px-4">
-                  <span class="font-bold text-text-primary block">{{ u.fullName }}</span>
-                  <span class="text-[11px] text-text-muted">@{{ u.username }} • {{ u.email }}</span>
+                  <span class="font-bold text-foreground block">{{ u.fullName }}</span>
+                  <span class="text-[11px] text-muted-foreground">@{{ u.username }} • {{ u.email }}</span>
                 </td>
                 <td class="py-3.5 px-4">
                   <span
@@ -967,49 +1002,49 @@ function confirmAdminRefund() {
                   </span>
                 </td>
                 <td class="py-3.5 px-4 text-center">
-                  <div class="inline-flex flex-col items-center gap-1">
+                  <div class="inline-flex flex-col items-center gap-1 max-w-[200px]">
                     <select
                       v-if="hasPermission('USER_ROLE_ASSIGN') && !u.isSelf && (isSuperAdmin || u.role !== 'ROLE_ADMIN')"
                       :value="u.role"
                       :data-testid="`select-role-${u.id}`"
                       @change="handleQuickRoleChange(u, $event.target.value)"
-                      class="px-2.5 py-1 rounded-lg border border-border-strong text-xs font-bold bg-white text-slate-800 focus:ring-2 focus:ring-primary-600 cursor-pointer"
+                      class="w-full px-2 py-1 rounded-md border border-input text-xs font-semibold bg-background text-foreground focus:ring-2 focus:ring-ring cursor-pointer truncate"
                     >
-                      <optgroup label="3. Phía hệ thống (Admin & Custom Roles)">
+                      <optgroup label="3. Phía hệ thống">
                         <option
                           v-for="r in systemRoles.filter(sr => sr.category === 'SYSTEM' && (isSuperAdmin || sr.code !== 'ROLE_ADMIN'))"
                           :key="r.code"
                           :value="r.code"
                         >
-                          {{ r.code }} — {{ r.name }} ({{ r.permissions.length }} APIs)
+                          {{ r.name }} ({{ r.code }})
                         </option>
                       </optgroup>
-                      <optgroup label="2. Chủ xe (Operator)">
+                      <optgroup label="2. Chủ xe">
                         <option
                           v-for="r in systemRoles.filter(sr => sr.category === 'OPERATOR')"
                           :key="r.code"
                           :value="r.code"
                         >
-                          {{ r.code }} — {{ r.name }}
+                          {{ r.name }} ({{ r.code }})
                         </option>
                       </optgroup>
-                      <optgroup label="1. Khách hàng (Customer)">
+                      <optgroup label="1. Khách hàng">
                         <option
                           v-for="r in systemRoles.filter(sr => sr.category === 'CUSTOMER')"
                           :key="r.code"
                           :value="r.code"
                         >
-                          {{ r.code }} — {{ r.name }}
+                          {{ r.name }} ({{ r.code }})
                         </option>
                       </optgroup>
                     </select>
                     <span
                       v-else
-                      class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-800"
+                      class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-muted text-muted-foreground"
                     >
                       {{ u.role }}
                     </span>
-                    <span class="text-[10px] text-text-muted">{{ getRoleInfo(u.role).name }}</span>
+                    <span class="text-[10px] text-muted-foreground truncate max-w-[180px]">{{ getRoleInfo(u.role).name }}</span>
                   </div>
                 </td>
                 <td class="py-3.5 px-4 text-center">
@@ -1019,9 +1054,10 @@ function confirmAdminRefund() {
                   <span
                     v-if="u.isSelf"
                     data-testid="self-admin-guard"
-                    class="text-[11px] font-semibold text-amber-700 bg-amber-50 px-2.5 py-1 rounded border border-amber-200 inline-block"
+                    class="text-[11px] font-semibold text-amber-700 bg-amber-50 dark:bg-amber-950/20 dark:text-amber-300 px-2.5 py-1 rounded border border-amber-200 dark:border-amber-800 inline-flex items-center gap-1"
                   >
-                    🛡️ Tài khoản hiện tại (Không thể tự khóa)
+                    <Shield class="w-3.5 h-3.5" />
+                    <span>Tài khoản hiện tại (Không thể tự khóa)</span>
                   </span>
                   <template v-else>
                     <button
@@ -1029,9 +1065,10 @@ function confirmAdminRefund() {
                       type="button"
                       :data-testid="`btn-edit-user-${u.id}`"
                       @click="openEditUserModal(u)"
-                      class="px-2.5 py-1.5 rounded-lg border border-border-strong hover:bg-slate-100 text-text-primary font-semibold text-xs transition-all"
+                      class="px-2.5 py-1 rounded-md border border-border bg-background hover:bg-muted text-foreground font-semibold text-xs transition-all shadow-xs inline-flex items-center gap-1"
                     >
-                      ✏️ Sửa
+                      <Pencil class="w-3.5 h-3.5 text-muted-foreground" />
+                      <span>Sửa</span>
                     </button>
 
                     <button
@@ -1039,9 +1076,10 @@ function confirmAdminRefund() {
                       type="button"
                       :data-testid="`reset-pwd-${u.id}`"
                       @click="openResetPasswordModal(u)"
-                      class="px-2.5 py-1.5 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 font-semibold text-xs transition-all"
+                      class="px-2.5 py-1 rounded-md bg-sky-500/10 text-sky-700 dark:text-sky-300 hover:bg-sky-500/20 font-semibold text-xs transition-all border border-sky-500/30 shadow-xs inline-flex items-center gap-1"
                     >
-                      🔑 Reset MK
+                      <KeyRound class="w-3.5 h-3.5" />
+                      <span>Reset MK</span>
                     </button>
 
                     <button
@@ -1049,10 +1087,12 @@ function confirmAdminRefund() {
                       type="button"
                       @click="toggleUserLock(u)"
                       :data-testid="`btn-lock-${u.id}`"
-                      class="px-2.5 py-1.5 rounded-lg font-semibold text-xs transition-all"
-                      :class="u.status === 'ACTIVE' ? 'bg-rose-50 text-rose-700 hover:bg-rose-100' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'"
+                      class="px-2.5 py-1 rounded-md font-semibold text-xs transition-all border shadow-xs inline-flex items-center gap-1"
+                      :class="u.status === 'ACTIVE' ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30 hover:bg-rose-500/20' : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/20'"
                     >
-                      {{ u.status === 'ACTIVE' ? '🔒 Khóa Tài Khoản' : '🔓 Mở Khóa' }}
+                      <Lock v-if="u.status === 'ACTIVE'" class="w-3.5 h-3.5" />
+                      <Unlock v-else class="w-3.5 h-3.5" />
+                      <span>{{ u.status === 'ACTIVE' ? 'Khóa Tài Khoản' : 'Mở Khóa' }}</span>
                     </button>
 
                     <button
@@ -1060,9 +1100,10 @@ function confirmAdminRefund() {
                       type="button"
                       :data-testid="`btn-delete-user-${u.id}`"
                       @click="handleDeleteUser(u)"
-                      class="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs transition-all"
+                      class="px-2.5 py-1 rounded-md bg-destructive/10 hover:bg-destructive/20 text-destructive font-semibold text-xs transition-all border border-destructive/30 shadow-xs inline-flex items-center gap-1"
                     >
-                      🗑️ Xóa
+                      <Trash2 class="w-3.5 h-3.5" />
+                      <span>Xóa</span>
                     </button>
                   </template>
                 </td>
@@ -1077,14 +1118,14 @@ function confirmAdminRefund() {
          TAB 2: QUẢN LÝ ROLE HỆ THỐNG & MA TRẬN PHÂN QUYỀN 7 MODULES x 26 APIs
          ========================================================================= -->
     <div v-else-if="activeTab === 'ROLES' && hasPermission('ROLE_MANAGE_CRUD')" class="space-y-4">
-      <div class="bg-purple-50/70 border border-purple-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div class="bg-purple-500/10 border border-purple-500/20 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
         <div class="space-y-1">
-          <h2 class="text-sm font-bold text-purple-950 flex items-center gap-2">
-            <span>🛡️</span>
+          <h2 class="text-sm font-bold text-foreground flex items-center gap-2">
+            <Shield class="w-4 h-4 text-purple-600 dark:text-purple-400" />
             <span>Phân Quyền Động Theo Ma Trận 7 Modules × 26 APIs (Dynamic Admin RBAC)</span>
           </h2>
-          <p class="text-xs text-purple-800">
-            Ngoài 3 Role mặc định (`ROLE_CUSTOMER`, `ROLE_OPERATOR`, `ROLE_ADMIN`), bạn có thể tạo thêm các Role tùy chỉnh cho nhân sự hệ thống và bấm <strong>"⚡ Xem thử giao diện với Role này"</strong> để kiểm chứng Sidebar & nút bấm co giãn tức thì.
+          <p class="text-xs text-muted-foreground">
+            Ngoài 3 Role mặc định (`ROLE_CUSTOMER`, `ROLE_OPERATOR`, `ROLE_ADMIN`), bạn có thể tạo thêm các Role tùy chỉnh cho nhân sự hệ thống và bấm <strong>"Xem thử giao diện với Role này"</strong> để kiểm chứng Sidebar & nút bấm co giãn tức thì.
           </p>
         </div>
 
@@ -1092,9 +1133,10 @@ function confirmAdminRefund() {
           type="button"
           data-testid="btn-create-role-in-tab"
           @click="openCreateRoleModal()"
-          class="self-start sm:self-auto px-4 py-2.5 rounded-lg bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs transition-all shadow-sm whitespace-nowrap"
+          class="self-start sm:self-auto px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs transition-all shadow-sm whitespace-nowrap flex items-center gap-1.5"
         >
-          + Tạo Role Hệ Thống Mới
+          <Plus class="w-3.5 h-3.5" />
+          <span>Tạo Role Hệ Thống Mới</span>
         </button>
       </div>
 
@@ -1104,13 +1146,13 @@ function confirmAdminRefund() {
           v-for="roleItem in systemRoles"
           :key="roleItem.code"
           :data-testid="`role-card-${roleItem.code}`"
-          class="bg-surface rounded-xl border p-5 shadow-card flex flex-col justify-between space-y-4 transition-all"
-          :class="previewRole?.code === roleItem.code ? 'border-2 border-amber-500 ring-2 ring-amber-200' : 'border-border-default'"
+          class="bg-card rounded-xl border p-5 shadow-sm flex flex-col justify-between space-y-4 transition-all"
+          :class="previewRole?.code === roleItem.code ? 'border-2 border-amber-500 ring-2 ring-amber-200 dark:ring-amber-900/40' : 'border-border'"
         >
           <div class="space-y-2">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <div class="flex items-center gap-2">
-                <span class="px-2.5 py-1 rounded-md font-mono font-extrabold text-xs bg-slate-900 text-white">
+                <span class="px-2.5 py-1 rounded-md font-mono font-extrabold text-xs bg-foreground text-background">
                   {{ roleItem.code }}
                 </span>
                 <span
@@ -1121,44 +1163,45 @@ function confirmAdminRefund() {
                 </span>
                 <span
                   v-if="roleItem.systemDefault"
-                  class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300"
+                  class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground border border-border"
                 >
                   Mặc định gốc
                 </span>
               </div>
 
-              <span class="text-xs font-bold text-text-secondary">
-                👥 {{ countUsersWithRole(roleItem.code) }} tài khoản
+              <span class="text-xs font-bold text-muted-foreground flex items-center gap-1">
+                <Users class="w-3.5 h-3.5" />
+                <span>{{ countUsersWithRole(roleItem.code) }} tài khoản</span>
               </span>
             </div>
 
-            <h3 class="text-base font-bold text-text-primary">{{ roleItem.name }}</h3>
-            <p class="text-xs text-text-secondary leading-relaxed">{{ roleItem.description }}</p>
+            <h3 class="text-base font-bold text-foreground">{{ roleItem.name }}</h3>
+            <p class="text-xs text-muted-foreground leading-relaxed">{{ roleItem.description }}</p>
 
             <!-- Permissions summary for SYSTEM roles -->
             <div v-if="roleItem.category === 'SYSTEM'" class="pt-2 space-y-2">
               <div class="flex items-center justify-between text-xs">
-                <span class="font-semibold text-text-secondary">Quyền hạn API Hệ thống (/admin):</span>
-                <span class="font-extrabold text-primary-600 tabular-nums">
+                <span class="font-semibold text-muted-foreground">Quyền hạn API Hệ thống (/admin):</span>
+                <span class="font-extrabold text-primary tabular-nums">
                   {{ roleItem.permissions.length }} / 26 APIs
                 </span>
               </div>
 
-              <div class="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-2 rounded-lg bg-slate-50 border border-border-default">
+              <div class="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-2 rounded-lg bg-muted/40 border border-border">
                 <span
                   v-for="perm in roleItem.permissions.slice(0, 10)"
                   :key="perm"
-                  class="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-white border border-slate-200 text-slate-700"
+                  class="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-background border border-border text-foreground"
                 >
                   {{ perm }}
                 </span>
                 <span
                   v-if="roleItem.permissions.length > 10"
-                  class="px-2 py-0.5 rounded text-[10px] font-bold bg-primary-50 text-primary-700"
+                  class="px-2 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary"
                 >
                   +{{ roleItem.permissions.length - 10 }} API khác
                 </span>
-                <span v-if="roleItem.permissions.length === 0" class="text-[11px] text-rose-600 font-semibold">
+                <span v-if="roleItem.permissions.length === 0" class="text-[11px] text-destructive font-semibold">
                   Chưa cấp quyền API nào (0/26)
                 </span>
               </div>
@@ -1166,19 +1209,20 @@ function confirmAdminRefund() {
           </div>
 
           <!-- Role Card Footer Actions -->
-          <div class="pt-3 border-t border-border-default flex flex-wrap items-center justify-between gap-2">
+          <div class="pt-3 border-t border-border flex flex-wrap items-center justify-between gap-2">
             <div>
               <button
                 v-if="roleItem.category === 'SYSTEM'"
                 type="button"
                 :data-testid="`preview-role-${roleItem.code}`"
                 @click="previewRole?.code === roleItem.code ? stopRolePreview() : handlePreviewRole(roleItem)"
-                class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+                class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5"
                 :class="previewRole?.code === roleItem.code
-                  ? 'bg-slate-900 text-amber-300 hover:bg-slate-800'
-                  : 'bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100'"
+                  ? 'bg-foreground text-background hover:bg-foreground/90'
+                  : 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 hover:bg-amber-500/25'"
               >
-                {{ previewRole?.code === roleItem.code ? '✕ Thoát Xem Thử Role Này' : '⚡ Xem Thử Giao Diện Với Role Này' }}
+                <Zap class="w-3.5 h-3.5" />
+                <span>{{ previewRole?.code === roleItem.code ? 'Thoát Xem Thử Role Này' : 'Xem Thử Giao Diện Với Role Này' }}</span>
               </button>
             </div>
 
@@ -1188,18 +1232,20 @@ function confirmAdminRefund() {
                 type="button"
                 :data-testid="`edit-role-${roleItem.code}`"
                 @click="openEditRoleModal(roleItem)"
-                class="px-3 py-1.5 rounded-lg border border-border-strong hover:bg-slate-100 text-text-primary font-semibold text-xs transition-all"
+                class="px-3 py-1.5 rounded-lg border border-border hover:bg-muted text-foreground font-semibold text-xs transition-all flex items-center gap-1"
               >
-                ⚙️ Sửa Phân Quyền API
+                <Pencil class="w-3.5 h-3.5" />
+                <span>Sửa Quyền API</span>
               </button>
               <button
                 v-if="!roleItem.systemDefault && (isSuperAdmin || customRole !== roleItem.code)"
                 type="button"
                 :data-testid="`delete-role-${roleItem.code}`"
                 @click="handleDeleteRole(roleItem)"
-                class="px-3 py-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 font-semibold text-xs transition-all"
+                class="px-3 py-1.5 rounded-lg bg-rose-500/15 text-rose-700 dark:text-rose-300 hover:bg-rose-500/25 font-semibold text-xs transition-all border border-rose-500/30 flex items-center gap-1"
               >
-                🗑️ Xóa Role
+                <Trash2 class="w-3.5 h-3.5" />
+                <span>Xóa Role</span>
               </button>
             </div>
           </div>
@@ -1210,11 +1256,11 @@ function confirmAdminRefund() {
     <!-- =========================================================================
          TAB 3: ĐƠN VÉ TOÀN SÀN & HOÀN TIỀN CƯỠNG CHẾ (ADMIN REFUND)
          ========================================================================= -->
-    <div v-else-if="hasPermission('BOOKING_VIEW')" class="bg-surface rounded-xl border border-border-default shadow-card overflow-hidden">
+    <div v-else-if="hasPermission('BOOKING_VIEW')" class="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
       <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse text-xs">
+        <table class="w-full min-w-[850px] text-left border-collapse text-xs">
           <thead>
-            <tr class="bg-slate-50/80 border-b border-border-default text-text-secondary uppercase tracking-wider text-[11px]">
+            <tr class="bg-muted/50 border-b border-border text-muted-foreground uppercase tracking-wider text-[11px]">
               <th class="py-3 px-4 font-semibold">Mã Đơn Vé</th>
               <th class="py-3 px-4 font-semibold">Hành Khách</th>
               <th class="py-3 px-4 font-semibold">Chuyến Xe / Nhà Xe</th>
@@ -1224,19 +1270,19 @@ function confirmAdminRefund() {
               <th class="py-3 px-4 font-semibold text-right">Can Thiệp Quản Trị</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-border-default">
-            <tr v-for="b in allBookings" :key="b.id" class="hover:bg-slate-50/60 transition-colors">
-              <td class="py-3.5 px-4 font-bold text-primary-600 tabular-nums">{{ b.id }}</td>
+          <tbody class="divide-y divide-border">
+            <tr v-for="b in allBookings" :key="b.id" class="hover:bg-muted/30 transition-colors">
+              <td class="py-3.5 px-4 font-bold text-primary tabular-nums">{{ b.id }}</td>
               <td class="py-3.5 px-4">
-                <span class="font-bold text-text-primary block">{{ b.customerName }}</span>
-                <span class="text-[11px] text-text-muted tabular-nums">{{ b.customerPhone }}</span>
+                <span class="font-bold text-foreground block">{{ b.customerName }}</span>
+                <span class="text-[11px] text-muted-foreground tabular-nums">{{ b.customerPhone }}</span>
               </td>
               <td class="py-3.5 px-4">
-                <span class="font-bold text-text-primary block">{{ b.route }}</span>
-                <span class="text-[11px] text-text-muted">{{ b.operatorName }}</span>
+                <span class="font-bold text-foreground block">{{ b.route }}</span>
+                <span class="text-[11px] text-muted-foreground">{{ b.operatorName }}</span>
               </td>
-              <td class="py-3.5 px-4 text-center font-bold text-primary-600 tabular-nums">{{ b.seats.join(', ') }}</td>
-              <td class="py-3.5 px-4 text-right font-extrabold text-text-primary tabular-nums">
+              <td class="py-3.5 px-4 text-center font-bold text-primary tabular-nums">{{ b.seats.join(', ') }}</td>
+              <td class="py-3.5 px-4 text-right font-extrabold text-foreground tabular-nums">
                 {{ b.totalAmount.toLocaleString('vi-VN') }} đ
               </td>
               <td class="py-3.5 px-4 text-center">
@@ -1248,11 +1294,12 @@ function confirmAdminRefund() {
                   type="button"
                   @click="openRefundModal(b)"
                   :data-testid="`btn-admin-refund-${b.id}`"
-                  class="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-lg text-xs transition-all"
+                  class="px-3 py-1.5 bg-destructive hover:bg-destructive/90 text-destructive-foreground font-semibold rounded-lg text-xs transition-all shadow-sm inline-flex items-center gap-1.5"
                 >
-                  💸 Hoàn Tiền Cưỡng Chế
+                  <Banknote class="w-3.5 h-3.5" />
+                  <span>Hoàn Tiền Cưỡng Chế</span>
                 </button>
-                <span v-else class="text-text-muted text-[11px]">
+                <span v-else class="text-muted-foreground text-[11px]">
                   {{ b.status === 'REFUNDED' ? 'Đã hoàn tiền' : (!hasPermission('BOOKING_FORCE_REFUND') ? 'Chỉ xem (Thiếu quyền hoàn vé)' : 'Không khả dụng') }}
                 </span>
               </td>
@@ -1267,29 +1314,32 @@ function confirmAdminRefund() {
          ========================================================================= -->
     <div
       v-if="isUserModalOpen"
-      class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+      class="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
     >
-      <div class="bg-surface rounded-xl max-w-lg w-full p-6 shadow-dialog border border-border-default space-y-4">
-        <div class="flex items-center justify-between pb-2 border-b border-border-default">
-          <h3 class="text-base font-bold text-text-primary">
+      <div class="bg-card rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-border space-y-4">
+        <div class="flex items-center justify-between pb-2 border-b border-border">
+          <h3 class="text-base font-bold text-foreground">
             {{ editingUser ? `Chỉnh Sửa Tài Khoản — @${editingUser.username}` : 'Tạo Tài Khoản Người Dùng Mới' }}
           </h3>
-          <button type="button" @click="closeUserModal" class="text-slate-400 hover:text-slate-600 text-lg">✕</button>
+          <button type="button" @click="closeUserModal" class="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+            <X class="w-4 h-4" />
+          </button>
         </div>
 
-        <div v-if="userFormError" class="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold">
-          ⚠️ {{ userFormError }}
+        <div v-if="userFormError" class="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs font-semibold flex items-center gap-2">
+          <AlertTriangle class="w-4 h-4 flex-shrink-0" />
+          <span>{{ userFormError }}</span>
         </div>
 
         <!-- Bước 1: Chọn 1 trong 3 Phân mục -->
         <div class="space-y-1.5">
-          <label class="block text-xs font-bold text-text-primary">Phân mục người dùng (3 Nhóm):</label>
+          <label class="block text-xs font-bold text-foreground">Phân mục người dùng (3 Nhóm):</label>
           <div class="grid grid-cols-3 gap-2">
             <button
               type="button"
               @click="userForm.category = 'CUSTOMER'; onUserFormCategoryChange()"
               class="py-2 px-2.5 rounded-lg border text-xs font-bold transition-all"
-              :class="userForm.category === 'CUSTOMER' ? 'bg-sky-700 text-white border-sky-700' : 'bg-slate-50 text-text-secondary border-border-default'"
+              :class="userForm.category === 'CUSTOMER' ? 'bg-sky-700 text-white border-sky-700' : 'bg-muted/50 text-muted-foreground border-border'"
             >
               1. Khách hàng
             </button>
@@ -1297,7 +1347,7 @@ function confirmAdminRefund() {
               type="button"
               @click="userForm.category = 'OPERATOR'; onUserFormCategoryChange()"
               class="py-2 px-2.5 rounded-lg border text-xs font-bold transition-all"
-              :class="userForm.category === 'OPERATOR' ? 'bg-emerald-700 text-white border-emerald-700' : 'bg-slate-50 text-text-secondary border-border-default'"
+              :class="userForm.category === 'OPERATOR' ? 'bg-emerald-700 text-white border-emerald-700' : 'bg-muted/50 text-muted-foreground border-border'"
             >
               2. Chủ xe
             </button>
@@ -1305,7 +1355,7 @@ function confirmAdminRefund() {
               type="button"
               @click="userForm.category = 'SYSTEM'; onUserFormCategoryChange()"
               class="py-2 px-2.5 rounded-lg border text-xs font-bold transition-all"
-              :class="userForm.category === 'SYSTEM' ? 'bg-purple-800 text-white border-purple-800' : 'bg-slate-50 text-text-secondary border-border-default'"
+              :class="userForm.category === 'SYSTEM' ? 'bg-purple-800 text-white border-purple-800' : 'bg-muted/50 text-muted-foreground border-border'"
             >
               3. Phía hệ thống
             </button>
@@ -1317,7 +1367,7 @@ function confirmAdminRefund() {
           <select
             v-model="userForm.role"
             data-testid="modal-select-user-role"
-            class="w-full h-10 px-3 rounded-lg border border-border-strong text-xs font-bold text-text-primary bg-white"
+            class="w-full h-10 px-3 rounded-lg border border-input text-xs font-bold text-foreground bg-background focus:ring-2 focus:ring-ring"
           >
             <option
               v-for="r in availableRolesForSelectedCategory.filter(sr => isSuperAdmin || sr.code !== 'ROLE_ADMIN')"
@@ -1337,7 +1387,7 @@ function confirmAdminRefund() {
               :disabled="Boolean(editingUser)"
               data-testid="input-user-username"
               placeholder="VD: ketoan02"
-              class="w-full h-10 px-3 rounded-lg border border-border-strong text-xs text-text-primary disabled:bg-slate-100"
+              class="w-full h-10 px-3 rounded-lg border border-input text-xs text-foreground bg-background disabled:bg-muted focus:ring-2 focus:ring-ring"
             />
           </FormField>
 
@@ -1347,7 +1397,7 @@ function confirmAdminRefund() {
               type="text"
               data-testid="input-user-fullname"
               placeholder="VD: Nguyễn Văn A"
-              class="w-full h-10 px-3 rounded-lg border border-border-strong text-xs text-text-primary"
+              class="w-full h-10 px-3 rounded-lg border border-input text-xs text-foreground bg-background focus:ring-2 focus:ring-ring"
             />
           </FormField>
         </div>
@@ -1359,7 +1409,7 @@ function confirmAdminRefund() {
               type="email"
               data-testid="input-user-email"
               placeholder="user@velobus.vn"
-              class="w-full h-10 px-3 rounded-lg border border-border-strong text-xs text-text-primary"
+              class="w-full h-10 px-3 rounded-lg border border-input text-xs text-foreground bg-background focus:ring-2 focus:ring-ring"
             />
           </FormField>
 
@@ -1369,7 +1419,7 @@ function confirmAdminRefund() {
               type="text"
               data-testid="input-user-phone"
               placeholder="0901234567"
-              class="w-full h-10 px-3 rounded-lg border border-border-strong text-xs text-text-primary"
+              class="w-full h-10 px-3 rounded-lg border border-input text-xs text-foreground bg-background focus:ring-2 focus:ring-ring"
             />
           </FormField>
         </div>
@@ -1380,15 +1430,15 @@ function confirmAdminRefund() {
             type="password"
             data-testid="input-user-password"
             placeholder="Tối thiểu 6 ký tự..."
-            class="w-full h-10 px-3 rounded-lg border border-border-strong text-xs text-text-primary"
+            class="w-full h-10 px-3 rounded-lg border border-input text-xs text-foreground bg-background focus:ring-2 focus:ring-ring"
           />
         </FormField>
 
-        <div class="flex justify-end gap-3 pt-3 border-t border-border-default">
+        <div class="flex justify-end gap-3 pt-3 border-t border-border">
           <button
             type="button"
             @click="closeUserModal"
-            class="px-4 py-2 border border-border-strong hover:bg-slate-50 text-text-secondary text-xs font-semibold rounded-lg"
+            class="px-4 py-2 border border-border hover:bg-muted text-muted-foreground text-xs font-semibold rounded-lg"
           >
             Hủy Bỏ
           </button>
@@ -1409,11 +1459,12 @@ function confirmAdminRefund() {
          ========================================================================= -->
     <div
       v-if="userForPasswordReset"
-      class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+      class="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
     >
-      <div class="bg-surface rounded-xl max-w-md w-full p-6 shadow-dialog border border-border-default space-y-4">
-        <h3 class="text-base font-bold text-text-primary">
-          🔑 Đặt Lại Mật Khẩu — @{{ userForPasswordReset.username }}
+      <div class="bg-card rounded-2xl max-w-md w-full p-6 shadow-2xl border border-border space-y-4">
+        <h3 class="text-base font-bold text-foreground flex items-center gap-2">
+          <KeyRound class="w-4 h-4 text-primary" />
+          <span>Đặt Lại Mật Khẩu — @{{ userForPasswordReset.username }}</span>
         </h3>
         <FormField label="Mật khẩu mới" :error="passwordResetError" required>
           <input
@@ -1421,14 +1472,14 @@ function confirmAdminRefund() {
             type="password"
             data-testid="input-reset-password"
             placeholder="Nhập mật khẩu mới (tối thiểu 6 ký tự)..."
-            class="w-full h-10 px-3 rounded-lg border border-border-strong text-xs text-text-primary"
+            class="w-full h-10 px-3 rounded-lg border border-input text-xs text-foreground bg-background focus:ring-2 focus:ring-ring"
           />
         </FormField>
-        <div class="flex justify-end gap-3 pt-2 border-t border-border-default">
+        <div class="flex justify-end gap-3 pt-2 border-t border-border">
           <button
             type="button"
             @click="userForPasswordReset = null"
-            class="px-4 py-2 border border-border-strong hover:bg-slate-50 text-text-secondary text-xs font-semibold rounded-lg"
+            class="px-4 py-2 border border-border hover:bg-muted text-muted-foreground text-xs font-semibold rounded-lg"
           >
             Hủy Bỏ
           </button>
@@ -1449,30 +1500,33 @@ function confirmAdminRefund() {
          ========================================================================= -->
     <div
       v-if="isRoleModalOpen"
-      class="fixed inset-0 bg-black/65 z-50 flex items-center justify-center p-4 overflow-y-auto"
+      class="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto"
     >
-      <div class="bg-surface rounded-2xl max-w-5xl w-full max-h-[92vh] flex flex-col shadow-dialog border border-border-default overflow-hidden">
+      <div class="bg-card rounded-2xl max-w-5xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-border overflow-hidden">
         <!-- Modal Header -->
-        <div class="px-6 py-4 bg-brand-navy text-white flex items-center justify-between flex-shrink-0">
+        <div class="px-6 py-4 bg-muted/80 border-b border-border text-foreground flex items-center justify-between flex-shrink-0">
           <div>
             <h3 class="text-base font-bold">
               {{ editingRole ? `Cấu Hình Ma Trận Phân Quyền API — ${editingRole.code}` : 'Tạo Role Hệ Thống Mới & Phân Quyền Ma Trận 7 Modules × 26 APIs' }}
             </h3>
-            <p class="text-[11px] text-blue-200 mt-0.5">
+            <p class="text-[11px] text-muted-foreground mt-0.5">
               Tick chọn từng API endpoint trong từng Module mà bạn muốn cấp quyền cho Role này. Giao diện Sidebar và các nút CRUD sẽ tự động thay đổi theo các API đã chọn.
             </p>
           </div>
-          <button type="button" @click="closeRoleModal" class="text-slate-300 hover:text-white text-lg font-bold">✕</button>
+          <button type="button" @click="closeRoleModal" class="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+            <X class="w-4 h-4" />
+          </button>
         </div>
 
         <!-- Modal Scrollable Body -->
         <div class="p-6 overflow-y-auto space-y-5 flex-1">
-          <div v-if="roleFormError" class="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold">
-            ⚠️ {{ roleFormError }}
+          <div v-if="roleFormError" class="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs font-semibold flex items-center gap-2">
+            <AlertTriangle class="w-4 h-4 flex-shrink-0" />
+            <span>{{ roleFormError }}</span>
           </div>
 
           <!-- Role Basic Info -->
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-xl border border-border-default">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-muted/40 p-4 rounded-xl border border-border">
             <FormField label="Mã Role (Tự động chuẩn hóa ROLE_*)" required>
               <input
                 v-model="roleForm.code"
@@ -1480,7 +1534,7 @@ function confirmAdminRefund() {
                 :disabled="Boolean(editingRole)"
                 data-testid="input-role-code"
                 placeholder="VD: ROLE_CONTENT_MOD"
-                class="w-full h-10 px-3 rounded-lg border border-border-strong text-xs font-mono font-bold uppercase text-text-primary disabled:bg-slate-200"
+                class="w-full h-10 px-3 rounded-lg border border-input text-xs font-mono font-bold uppercase text-foreground bg-background disabled:bg-muted focus:ring-2 focus:ring-ring"
               />
             </FormField>
 
@@ -1490,7 +1544,7 @@ function confirmAdminRefund() {
                 type="text"
                 data-testid="input-role-name"
                 placeholder="VD: Kiểm Duyệt Nội Dung & Banner"
-                class="w-full h-10 px-3 rounded-lg border border-border-strong text-xs font-bold text-text-primary"
+                class="w-full h-10 px-3 rounded-lg border border-input text-xs font-bold text-foreground bg-background focus:ring-2 focus:ring-ring"
               />
             </FormField>
 
@@ -1500,15 +1554,15 @@ function confirmAdminRefund() {
                 type="text"
                 data-testid="input-role-description"
                 placeholder="Mô tả phạm vi công việc của Role..."
-                class="w-full h-10 px-3 rounded-lg border border-border-strong text-xs text-text-primary"
+                class="w-full h-10 px-3 rounded-lg border border-input text-xs text-foreground bg-background focus:ring-2 focus:ring-ring"
               />
             </FormField>
           </div>
 
           <!-- Quick Selection Toolbar -->
-          <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-border-default">
-            <div class="text-xs font-bold text-text-primary">
-              Đã chọn: <span class="text-primary-600 text-sm font-black tabular-nums">{{ roleForm.permissions.length }} / 26</span> quyền API
+          <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-border">
+            <div class="text-xs font-bold text-foreground">
+              Đã chọn: <span class="text-primary text-sm font-black tabular-nums">{{ roleForm.permissions.length }} / 26</span> quyền API
             </div>
 
             <div class="flex flex-wrap items-center gap-2">
@@ -1516,25 +1570,28 @@ function confirmAdminRefund() {
                 type="button"
                 data-testid="btn-role-select-all"
                 @click="selectAll26Permissions"
-                class="px-3 py-1.5 rounded-lg bg-primary-50 hover:bg-primary-100 text-primary-700 font-bold text-xs transition-all"
+                class="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary font-bold text-xs transition-all border border-primary/20 flex items-center gap-1.5"
               >
-                ✓ Chọn Toàn Bộ 26 APIs
+                <Check class="w-3.5 h-3.5" />
+                <span>Chọn Toàn Bộ 26 APIs</span>
               </button>
               <button
                 type="button"
                 data-testid="btn-role-select-readonly"
                 @click="selectReadOnlyPermissions"
-                class="px-3 py-1.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-700 font-bold text-xs transition-all"
+                class="px-3 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-700 dark:text-sky-300 font-bold text-xs transition-all border border-sky-500/30 flex items-center gap-1.5"
               >
-                👁️ Chỉ Chọn Quyền Xem (Read-Only GET)
+                <Shield class="w-3.5 h-3.5" />
+                <span>Chỉ Chọn Quyền Xem (Read-Only GET)</span>
               </button>
               <button
                 type="button"
                 data-testid="btn-role-clear-all"
                 @click="clearAllPermissions"
-                class="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition-all"
+                class="px-3 py-1.5 rounded-lg bg-muted hover:bg-muted/80 text-muted-foreground font-semibold text-xs transition-all border border-border flex items-center gap-1.5"
               >
-                ✕ Bỏ Chọn Tất Cả
+                <X class="w-3.5 h-3.5" />
+                <span>Bỏ Chọn Tất Cả</span>
               </button>
             </div>
           </div>
@@ -1544,13 +1601,13 @@ function confirmAdminRefund() {
             <div
               v-for="mod in permissionCatalog"
               :key="mod.moduleCode"
-              class="rounded-xl border border-border-default overflow-hidden bg-white shadow-sm"
+              class="rounded-xl border border-border overflow-hidden bg-card shadow-sm"
             >
               <!-- Module Header -->
-              <div class="px-4 py-3 bg-slate-100/90 border-b border-border-default flex flex-wrap items-center justify-between gap-2">
+              <div class="px-4 py-3 bg-muted/40 border-b border-border flex flex-wrap items-center justify-between gap-2">
                 <div class="flex items-center gap-2.5">
-                  <span class="font-bold text-xs text-slate-900">{{ mod.moduleName }}</span>
-                  <span class="text-[11px] font-mono text-primary-700 bg-primary-50 px-2 py-0.5 rounded border border-primary-200">
+                  <span class="font-bold text-xs text-foreground">{{ mod.moduleName }}</span>
+                  <span class="text-[11px] font-mono text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20">
                     Route: {{ mod.routePath }}
                   </span>
                 </div>
@@ -1561,19 +1618,19 @@ function confirmAdminRefund() {
                   @click="toggleWholeModule(mod)"
                   class="px-2.5 py-1 rounded text-[11px] font-bold transition-all"
                   :class="isModuleFullySelected(mod)
-                    ? 'bg-slate-800 text-white'
-                    : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'"
+                    ? 'bg-foreground text-background'
+                    : 'bg-background border border-border text-foreground hover:bg-muted'"
                 >
-                  {{ isModuleFullySelected(mod) ? '✓ Bỏ chọn Module này' : '+ Chọn cả Module (' + mod.permissions.length + ' APIs)' }}
+                  {{ isModuleFullySelected(mod) ? 'Bỏ chọn Module này' : '+ Chọn cả Module (' + mod.permissions.length + ' APIs)' }}
                 </button>
               </div>
 
               <!-- Module APIs Table -->
-              <div class="divide-y divide-border-default">
+              <div class="divide-y divide-border">
                 <label
                   v-for="perm in mod.permissions"
                   :key="perm.code"
-                  class="px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-blue-50/30 cursor-pointer transition-colors"
+                  class="px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-muted/30 cursor-pointer transition-colors"
                 >
                   <div class="flex items-start gap-3">
                     <input
@@ -1581,22 +1638,22 @@ function confirmAdminRefund() {
                       :checked="roleForm.permissions.includes(perm.code)"
                       :data-testid="`checkbox-perm-${perm.code}`"
                       @change="togglePermissionInMatrix(mod, perm)"
-                      class="mt-0.5 w-4 h-4 rounded text-primary-600 focus:ring-primary-500"
+                      class="mt-0.5 w-4 h-4 rounded text-primary focus:ring-ring"
                     />
                     <div>
                       <div class="flex flex-wrap items-center gap-2">
-                        <span class="font-bold text-xs text-text-primary">{{ perm.name }}</span>
-                        <span class="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
+                        <span class="font-bold text-xs text-foreground">{{ perm.name }}</span>
+                        <span class="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
                           {{ perm.code }}
                         </span>
                         <span
                           v-if="perm.viewPermission"
-                          class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200"
+                          class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30"
                         >
                           Quyền Mở Menu Sidebar
                         </span>
                       </div>
-                      <p class="text-[11px] text-text-muted mt-0.5">{{ perm.description }}</p>
+                      <p class="text-[11px] text-muted-foreground mt-0.5">{{ perm.description }}</p>
                     </div>
                   </div>
 
@@ -1607,7 +1664,7 @@ function confirmAdminRefund() {
                     >
                       {{ perm.httpMethod }}
                     </span>
-                    <code class="text-[11px] font-mono text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
+                    <code class="text-[11px] font-mono text-foreground bg-muted px-2 py-0.5 rounded">
                       {{ perm.apiPattern }}
                     </code>
                   </div>
@@ -1618,15 +1675,15 @@ function confirmAdminRefund() {
         </div>
 
         <!-- Modal Footer -->
-        <div class="px-6 py-4 bg-slate-50 border-t border-border-default flex items-center justify-between flex-shrink-0">
-          <span class="text-xs text-text-muted">
-            💡 Khi lưu, cả Backend (`AdminApiPermissionFilter`) và Frontend sẽ áp dụng ngay ma trận quyền này.
+        <div class="px-6 py-4 bg-muted/40 border-t border-border flex items-center justify-between flex-shrink-0">
+          <span class="text-xs text-muted-foreground">
+            Khi lưu, cả Backend (`AdminApiPermissionFilter`) và Frontend sẽ áp dụng ngay ma trận quyền này.
           </span>
           <div class="flex items-center gap-3">
             <button
               type="button"
               @click="closeRoleModal"
-              class="px-4 py-2 border border-border-strong hover:bg-white text-text-secondary text-xs font-semibold rounded-lg"
+              class="px-4 py-2 border border-border hover:bg-muted text-muted-foreground text-xs font-semibold rounded-lg"
             >
               Hủy Bỏ
             </button>
@@ -1648,18 +1705,18 @@ function confirmAdminRefund() {
          ========================================================================= -->
     <div
       v-if="selectedBookingForRefund"
-      class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+      class="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
     >
-      <div class="bg-surface rounded-xl max-w-md w-full p-6 shadow-dialog border border-border-default space-y-4">
-        <h3 class="text-base font-bold text-rose-600 flex items-center gap-2">
-          <span>⚠️</span>
+      <div class="bg-card rounded-2xl max-w-md w-full p-6 shadow-2xl border border-border space-y-4">
+        <h3 class="text-base font-bold text-destructive flex items-center gap-2">
+          <AlertTriangle class="w-4 h-4 flex-shrink-0" />
           <span>Lệnh Hoàn Tiền Cưỡng Chế — {{ selectedBookingForRefund.id }}</span>
         </h3>
 
-        <div class="bg-slate-50 p-3 rounded-lg border border-border-default text-xs text-text-secondary space-y-1">
-          <p>Hành khách: <strong class="text-text-primary">{{ selectedBookingForRefund.customerName }}</strong></p>
-          <p>Số tiền hoàn trả 100%: <strong class="text-rose-600 tabular-nums">{{ selectedBookingForRefund.totalAmount.toLocaleString('vi-VN') }} đ</strong></p>
-          <p class="text-[11px] text-text-muted">Hệ thống sẽ khấu trừ lại từ ví ký quỹ của nhà xe {{ selectedBookingForRefund.operatorName }} và giải phóng ghế trên Redis.</p>
+        <div class="bg-muted/40 p-3 rounded-lg border border-border text-xs text-muted-foreground space-y-1">
+          <p>Hành khách: <strong class="text-foreground">{{ selectedBookingForRefund.customerName }}</strong></p>
+          <p>Số tiền hoàn trả 100%: <strong class="text-destructive tabular-nums">{{ selectedBookingForRefund.totalAmount.toLocaleString('vi-VN') }} đ</strong></p>
+          <p class="text-[11px] text-muted-foreground">Hệ thống sẽ khấu trừ lại từ ví ký quỹ của nhà xe {{ selectedBookingForRefund.operatorName }} và giải phóng ghế trên Redis.</p>
         </div>
 
         <FormField
@@ -1672,16 +1729,16 @@ function confirmAdminRefund() {
             rows="3"
             data-testid="input-refund-reason"
             placeholder="Ví dụ: Nhà xe hủy chuyến đột xuất do sự cố kỹ thuật, hoàn 100% cho khách..."
-            class="w-full p-3 rounded-lg border border-border-strong text-xs text-text-primary focus:ring-2 focus:ring-primary-600 resize-none"
-            :class="{ 'border-rose-500': refundError }"
+            class="w-full p-3 rounded-lg border border-input text-xs text-foreground bg-background placeholder:text-muted-foreground focus:ring-2 focus:ring-ring resize-none"
+            :class="{ 'border-destructive': refundError }"
           ></textarea>
         </FormField>
 
-        <div class="flex justify-end gap-3 pt-2 border-t border-border-default">
+        <div class="flex justify-end gap-3 pt-2 border-t border-border">
           <button
             type="button"
             @click="closeRefundModal"
-            class="px-4 py-2 border border-border-strong hover:bg-slate-50 text-text-secondary text-xs font-semibold rounded-lg"
+            class="px-4 py-2 border border-border hover:bg-muted text-muted-foreground text-xs font-semibold rounded-lg"
           >
             Hủy Bỏ
           </button>

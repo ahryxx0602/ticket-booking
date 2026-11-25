@@ -1,5 +1,6 @@
 <template>
   <Toast />
+  <Sonner position="top-right" richColors />
   <router-view />
 </template>
 
@@ -7,6 +8,7 @@
 import { onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import Toast from 'primevue/toast'
+import { Sonner } from '@/components/ui/sonner'
 import { useAuthStore } from '@/modules/auth/store'
 
 const router = useRouter()

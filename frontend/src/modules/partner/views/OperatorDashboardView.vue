@@ -1,8 +1,33 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose
+} from '@/components/ui/dialog'
 import StatusBadge from '@/shared/components/StatusBadge.vue'
-import FormField from '@/shared/components/FormField.vue'
-import AppButton from '@/shared/components/AppButton.vue'
+import { toast } from 'vue-sonner'
+import {
+  Wallet,
+  Lock,
+  Clock,
+  Building,
+  DollarSign,
+  ArrowDownLeft,
+  AlertCircle,
+  CheckCircle2,
+  Receipt
+} from 'lucide-vue-next'
 
 // Operator Wallet State (corresponds to API-PARTNER-05)
 const wallet = ref({
@@ -114,7 +139,10 @@ function handleWithdrawSubmit() {
 
     isSubmittingWithdraw.value = false
     closeWithdrawModal()
-  }, 1000)
+    toast.success('Gửi yêu cầu rút tiền thành công!', {
+      description: `Đã khởi tạo lệnh rút ${withdrawAmount.value.toLocaleString('vi-VN')} đ về ngân hàng.`
+    })
+  }, 800)
 }
 </script>
 
@@ -123,205 +151,227 @@ function handleWithdrawSubmit() {
     <!-- Header -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-bold text-text-primary">Tổng Quan Ví Ký Quỹ Escrow (4 Số Dư)</h1>
-        <p class="text-xs text-text-muted mt-1">
+        <h1 class="text-2xl font-bold tracking-tight text-foreground">Tổng Quan Ví Ký Quỹ Escrow (4 Số Dư)</h1>
+        <p class="text-xs text-muted-foreground mt-1">
           Hệ thống ví Fintech đa số dư: Quyết toán sau chuyến đi +2h • Chống rút trùng bằng cơ chế Khóa số dư (Locked Balance).
         </p>
       </div>
 
-      <button
+      <Button
         type="button"
         @click="openWithdrawModal"
         data-testid="btn-open-withdraw"
-        class="self-start sm:self-auto px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg text-xs shadow-sm flex items-center gap-2 transition-all"
+        class="self-start sm:self-auto px-4 py-2 text-xs font-semibold gap-2 shadow-xs"
       >
-        <span>💸</span>
+        <ArrowDownLeft class="w-4 h-4" />
         <span>Yêu Cầu Rút Tiền</span>
-      </button>
+      </Button>
     </div>
 
     <!-- 4 Fintech Balance Cards Grid -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       <!-- 1. Available Balance -->
-      <div class="bg-surface rounded-xl border-2 border-emerald-500/40 p-5 shadow-card space-y-2">
-        <div class="flex items-center justify-between">
-          <span class="text-xs font-bold uppercase tracking-wider text-text-secondary">Số Dư Khả Dụng</span>
-          <span class="p-2 rounded-lg bg-emerald-50 text-emerald-600 text-lg">💰</span>
-        </div>
-        <p class="text-2xl font-extrabold text-emerald-600 tabular-nums" data-testid="available-balance">
-          {{ wallet.availableBalance.toLocaleString('vi-VN') }} <span class="text-xs font-bold">đ</span>
-        </p>
-        <p class="text-[11px] text-text-muted">Có thể tạo lệnh rút về ngân hàng ngay lập tức</p>
-      </div>
+      <Card class="border-border bg-card shadow-xs border-emerald-500/40 space-y-1.5">
+        <CardHeader class="pb-2 flex flex-row items-center justify-between space-y-0">
+          <CardTitle class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Số Dư Khả Dụng</CardTitle>
+          <div class="p-2 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+            <Wallet class="w-4 h-4" />
+          </div>
+        </CardHeader>
+        <CardContent class="space-y-1">
+          <p class="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums font-mono" data-testid="available-balance">
+            {{ wallet.availableBalance.toLocaleString('vi-VN') }} <span class="text-xs font-bold">đ</span>
+          </p>
+          <p class="text-[11px] text-muted-foreground">Có thể tạo lệnh rút về ngân hàng ngay lập tức</p>
+        </CardContent>
+      </Card>
 
       <!-- 2. Holding Escrow -->
-      <div class="bg-surface rounded-xl border border-border-default p-5 shadow-card space-y-2">
-        <div class="flex items-center justify-between">
-          <span class="text-xs font-bold uppercase tracking-wider text-text-secondary">Đang Ký Quỹ Chuyến</span>
-          <span class="p-2 rounded-lg bg-amber-50 text-amber-600 text-lg">🔒</span>
-        </div>
-        <p class="text-2xl font-extrabold text-amber-600 tabular-nums">
-          {{ wallet.holdingEscrow.toLocaleString('vi-VN') }} <span class="text-xs font-bold">đ</span>
-        </p>
-        <p class="text-[11px] text-text-muted">Tự động quyết toán sau khi xe đến đích +2 giờ</p>
-      </div>
+      <Card class="border-border bg-card shadow-xs space-y-1.5">
+        <CardHeader class="pb-2 flex flex-row items-center justify-between space-y-0">
+          <CardTitle class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Đang Ký Quỹ Chuyến</CardTitle>
+          <div class="p-2 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
+            <Lock class="w-4 h-4" />
+          </div>
+        </CardHeader>
+        <CardContent class="space-y-1">
+          <p class="text-2xl font-extrabold text-amber-600 dark:text-amber-400 tabular-nums font-mono">
+            {{ wallet.holdingEscrow.toLocaleString('vi-VN') }} <span class="text-xs font-bold">đ</span>
+          </p>
+          <p class="text-[11px] text-muted-foreground">Tự động quyết toán sau khi xe đến đích +2 giờ</p>
+        </CardContent>
+      </Card>
 
       <!-- 3. Settling Balance -->
-      <div class="bg-surface rounded-xl border border-border-default p-5 shadow-card space-y-2">
-        <div class="flex items-center justify-between">
-          <span class="text-xs font-bold uppercase tracking-wider text-text-secondary">Đang Xử Lý Rút</span>
-          <span class="p-2 rounded-lg bg-blue-50 text-primary-600 text-lg">⏳</span>
-        </div>
-        <p class="text-2xl font-extrabold text-primary-600 tabular-nums">
-          {{ wallet.settlingBalance.toLocaleString('vi-VN') }} <span class="text-xs font-bold">đ</span>
-        </p>
-        <p class="text-[11px] text-text-muted">Lệnh rút tiền đang chờ Admin phê duyệt chi</p>
-      </div>
+      <Card class="border-border bg-card shadow-xs space-y-1.5">
+        <CardHeader class="pb-2 flex flex-row items-center justify-between space-y-0">
+          <CardTitle class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Đang Xử Lý Rút</CardTitle>
+          <div class="p-2 rounded-lg bg-primary/10 text-primary">
+            <Clock class="w-4 h-4" />
+          </div>
+        </CardHeader>
+        <CardContent class="space-y-1">
+          <p class="text-2xl font-extrabold text-primary tabular-nums font-mono">
+            {{ wallet.settlingBalance.toLocaleString('vi-VN') }} <span class="text-xs font-bold">đ</span>
+          </p>
+          <p class="text-[11px] text-muted-foreground">Lệnh rút tiền đang chờ Admin phê duyệt chi</p>
+        </CardContent>
+      </Card>
 
       <!-- 4. Total Withdrawn -->
-      <div class="bg-surface rounded-xl border border-border-default p-5 shadow-card space-y-2">
-        <div class="flex items-center justify-between">
-          <span class="text-xs font-bold uppercase tracking-wider text-text-secondary">Tổng Tiền Đã Rút</span>
-          <span class="p-2 rounded-lg bg-slate-100 text-slate-700 text-lg">🏦</span>
-        </div>
-        <p class="text-2xl font-extrabold text-text-primary tabular-nums">
-          {{ wallet.totalWithdrawn.toLocaleString('vi-VN') }} <span class="text-xs font-bold">đ</span>
-        </p>
-        <p class="text-[11px] text-text-muted">Lũy kế giải ngân thành công từ khi mở sàn</p>
-      </div>
+      <Card class="border-border bg-card shadow-xs space-y-1.5">
+        <CardHeader class="pb-2 flex flex-row items-center justify-between space-y-0">
+          <CardTitle class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Tổng Tiền Đã Rút</CardTitle>
+          <div class="p-2 rounded-lg bg-muted text-muted-foreground">
+            <Building class="w-4 h-4" />
+          </div>
+        </CardHeader>
+        <CardContent class="space-y-1">
+          <p class="text-2xl font-extrabold text-foreground tabular-nums font-mono">
+            {{ wallet.totalWithdrawn.toLocaleString('vi-VN') }} <span class="text-xs font-bold text-muted-foreground">đ</span>
+          </p>
+          <p class="text-[11px] text-muted-foreground">Lũy kế giải ngân thành công từ khi mở sàn</p>
+        </CardContent>
+      </Card>
     </div>
 
     <!-- Transaction History Table -->
-    <div class="bg-surface rounded-xl border border-border-default shadow-card overflow-hidden space-y-0">
-      <div class="p-5 border-b border-border-default flex items-center justify-between">
+    <Card class="border-border bg-card shadow-xs overflow-hidden">
+      <CardHeader class="p-5 border-b border-border flex flex-row items-center justify-between">
         <div>
-          <h2 class="text-base font-bold text-text-primary">Lịch Sử Biến Động Số Dư & Đối Soát</h2>
-          <p class="text-xs text-text-muted mt-0.5">Mọi giao dịch đều được ký snapshot tỷ lệ hoa hồng ({{ wallet.commissionRate }}%) tại thời điểm giao dịch</p>
+          <CardTitle class="text-base font-bold text-foreground">Lịch Sử Biến Động Số Dư & Đối Soát</CardTitle>
+          <CardDescription class="text-xs text-muted-foreground mt-0.5">
+            Mọi giao dịch đều được ký snapshot tỷ lệ hoa hồng ({{ wallet.commissionRate }}%) tại thời điểm giao dịch
+          </CardDescription>
         </div>
-        <span class="text-xs font-semibold px-2.5 py-1 rounded bg-slate-100 text-text-secondary">
+        <Badge variant="outline" class="text-xs font-semibold">
           Hoa hồng sàn: {{ wallet.commissionRate }}%
-        </span>
-      </div>
+        </Badge>
+      </CardHeader>
 
-      <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse text-xs">
-          <thead>
-            <tr class="bg-slate-50/80 border-b border-border-default text-text-secondary uppercase tracking-wider text-[11px]">
-              <th class="py-3 px-4 font-semibold">Mã GD</th>
-              <th class="py-3 px-4 font-semibold">Loại Giao Dịch</th>
-              <th class="py-3 px-4 font-semibold">Chuyến Xe</th>
-              <th class="py-3 px-4 font-semibold text-right">Biến Động</th>
-              <th class="py-3 px-4 font-semibold text-right">Số Dư Sau GD</th>
-              <th class="py-3 px-4 font-semibold">Thời Gian</th>
-              <th class="py-3 px-4 font-semibold text-center">Trạng Thái</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-border-default">
-            <tr
-              v-for="tx in transactions"
-              :key="tx.id"
-              class="hover:bg-slate-50/60 transition-colors"
-            >
-              <td class="py-3 px-4 font-bold text-text-primary tabular-nums">{{ tx.id }}</td>
-              <td class="py-3 px-4 text-text-secondary">{{ tx.typeName }}</td>
-              <td class="py-3 px-4 text-text-muted tabular-nums">{{ tx.tripId || '—' }}</td>
-              <td
-                class="py-3 px-4 text-right font-bold tabular-nums"
-                :class="tx.amount > 0 ? 'text-emerald-600' : 'text-rose-600'"
+      <CardContent class="p-0">
+        <div class="overflow-x-auto">
+          <Table class="min-w-[700px]">
+            <TableHeader>
+              <TableRow class="bg-muted/50 hover:bg-muted/50">
+                <TableHead class="font-semibold text-xs uppercase">Mã GD</TableHead>
+                <TableHead class="font-semibold text-xs uppercase">Loại Giao Dịch</TableHead>
+                <TableHead class="font-semibold text-xs uppercase">Chuyến Xe</TableHead>
+                <TableHead class="font-semibold text-xs uppercase text-right">Biến Động</TableHead>
+                <TableHead class="font-semibold text-xs uppercase text-right">Số Dư Sau GD</TableHead>
+                <TableHead class="font-semibold text-xs uppercase">Thời Gian</TableHead>
+                <TableHead class="font-semibold text-xs uppercase text-center">Trạng Thái</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow
+                v-for="tx in transactions"
+                :key="tx.id"
+                class="hover:bg-muted/40 transition-colors"
               >
-                {{ tx.amount > 0 ? '+' : '' }}{{ tx.amount.toLocaleString('vi-VN') }} đ
-              </td>
-              <td class="py-3 px-4 text-right font-medium text-text-primary tabular-nums">
-                {{ tx.balanceAfter.toLocaleString('vi-VN') }} đ
-              </td>
-              <td class="py-3 px-4 text-text-muted">{{ tx.createdAt }}</td>
-              <td class="py-3 px-4 text-center">
-                <StatusBadge :status="tx.status" />
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+                <TableCell class="font-bold text-foreground tabular-nums font-mono">{{ tx.id }}</TableCell>
+                <TableCell class="text-muted-foreground text-xs">{{ tx.typeName }}</TableCell>
+                <TableCell class="text-muted-foreground text-xs tabular-nums font-mono">{{ tx.tripId || '—' }}</TableCell>
+                <TableCell
+                  class="text-right font-bold tabular-nums font-mono"
+                  :class="tx.amount > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-status-danger'"
+                >
+                  {{ tx.amount > 0 ? '+' : '' }}{{ tx.amount.toLocaleString('vi-VN') }} đ
+                </TableCell>
+                <TableCell class="text-right font-medium text-foreground tabular-nums font-mono">
+                  {{ tx.balanceAfter.toLocaleString('vi-VN') }} đ
+                </TableCell>
+                <TableCell class="text-muted-foreground text-xs">{{ tx.createdAt }}</TableCell>
+                <TableCell class="text-center">
+                  <StatusBadge :status="tx.status" />
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
 
     <!-- Withdrawal Request Modal Dialog -->
-    <div
-      v-if="showWithdrawDialog"
-      class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
-    >
-      <div class="bg-surface rounded-xl max-w-md w-full p-6 shadow-dialog border border-border-default space-y-4">
-        <div class="flex items-center justify-between pb-2 border-b border-border-default">
-          <h3 class="text-base font-bold text-text-primary flex items-center gap-2">
-            <span>💸</span>
+    <Dialog v-model:open="showWithdrawDialog">
+      <DialogContent class="max-w-md">
+        <DialogHeader>
+          <DialogTitle class="text-base font-bold text-foreground flex items-center gap-2">
+            <ArrowDownLeft class="w-4 h-4 text-primary" />
             <span>Yêu Cầu Rút Tiền Về Ngân Hàng</span>
-          </h3>
-          <button @click="closeWithdrawModal" class="text-slate-400 hover:text-slate-600 text-lg">✕</button>
-        </div>
+          </DialogTitle>
+          <DialogDescription class="text-xs text-muted-foreground">
+            Lập lệnh rút số dư khả dụng về tài khoản ngân hàng thụ hưởng đã xác thực.
+          </DialogDescription>
+        </DialogHeader>
 
-        <div class="bg-blue-50/70 p-3 rounded-lg border border-blue-200 text-xs text-text-secondary space-y-1">
-          <div class="flex justify-between">
-            <span>Số dư khả dụng hiện tại:</span>
-            <strong class="text-primary-700 tabular-nums">{{ wallet.availableBalance.toLocaleString('vi-VN') }} đ</strong>
+        <div class="space-y-4 py-2 text-xs">
+          <div class="p-3 rounded-lg border border-primary/20 bg-primary/10 text-foreground space-y-1">
+            <div class="flex justify-between font-medium">
+              <span>Số dư khả dụng hiện tại:</span>
+              <strong class="text-primary tabular-nums font-mono">{{ wallet.availableBalance.toLocaleString('vi-VN') }} đ</strong>
+            </div>
+            <p class="text-[11px] text-muted-foreground">Khoản tiền rút sẽ được khóa tạm thời (LOCKED) chờ Admin giải ngân.</p>
           </div>
-          <p class="text-[11px] text-text-muted">Khoản tiền rút sẽ được khóa tạm thời (`LOCKED`) chờ Admin giải ngân.</p>
+
+          <div class="space-y-1.5">
+            <label class="font-semibold text-foreground">Số tiền muốn rút (VNĐ) <span class="text-status-danger">*</span></label>
+            <Input
+              v-model.number="withdrawAmount"
+              type="number"
+              min="50000"
+              :max="wallet.availableBalance"
+              step="50000"
+              data-testid="input-withdraw-amount"
+              class="h-10 text-xs font-mono font-bold"
+              :class="{ 'border-status-danger': withdrawError }"
+            />
+            <Alert v-if="withdrawError" variant="destructive" class="py-2 px-3 mt-1.5">
+              <AlertCircle class="h-3.5 w-3.5 text-status-danger" />
+              <AlertDescription class="text-xs text-status-danger font-medium">{{ withdrawError }}</AlertDescription>
+            </Alert>
+          </div>
+
+          <div class="space-y-1.5">
+            <label class="font-semibold text-foreground">Tài khoản ngân hàng thụ hưởng <span class="text-status-danger">*</span></label>
+            <select
+              v-model="withdrawBank"
+              class="w-full h-10 px-3 rounded-lg border border-border text-xs text-foreground bg-background focus:ring-2 focus:ring-primary focus:outline-none"
+            >
+              <option value="VCB-0071001234567">Vietcombank - 0071001234567 (Hoàng Long Ltd)</option>
+              <option value="TCB-1903456789001">Techcombank - 1903456789001 (Hoàng Long Ltd)</option>
+            </select>
+          </div>
+
+          <div class="space-y-1.5">
+            <label class="font-semibold text-foreground">Ghi chú đối soát (Không bắt buộc)</label>
+            <Input
+              v-model="withdrawNote"
+              type="text"
+              placeholder="Ví dụ: Rút doanh thu tuần 3 tháng 11..."
+              class="h-10 text-xs"
+            />
+          </div>
         </div>
 
-        <FormField
-          label="Số tiền muốn rút (VNĐ)"
-          :error="withdrawError"
-          required
-        >
-          <input
-            v-model.number="withdrawAmount"
-            type="number"
-            min="50000"
-            :max="wallet.availableBalance"
-            step="50000"
-            data-testid="input-withdraw-amount"
-            class="w-full h-11 px-3 rounded-lg border border-border-strong text-xs text-text-primary focus:ring-2 focus:ring-primary-600 bg-white tabular-nums font-bold"
-            :class="{ 'border-rose-500': withdrawError }"
-          />
-        </FormField>
-
-        <FormField label="Tài khoản ngân hàng thụ hưởng" required>
-          <select
-            v-model="withdrawBank"
-            class="w-full h-11 px-3 rounded-lg border border-border-strong text-xs text-text-primary focus:ring-2 focus:ring-primary-600 bg-white"
-          >
-            <option value="VCB-0071001234567">Vietcombank - 0071001234567 (Hoàng Long Ltd)</option>
-            <option value="TCB-1903456789001">Techcombank - 1903456789001 (Hoàng Long Ltd)</option>
-          </select>
-        </FormField>
-
-        <FormField label="Ghi chú đối soát (Không bắt buộc)">
-          <input
-            v-model="withdrawNote"
-            type="text"
-            placeholder="Ví dụ: Rút doanh thu tuần 3 tháng 11..."
-            class="w-full h-10 px-3 rounded-lg border border-border-strong text-xs text-text-primary focus:ring-2 focus:ring-primary-600 bg-white"
-          />
-        </FormField>
-
-        <div class="flex justify-end gap-3 pt-3 border-t border-border-default">
-          <button
-            type="button"
-            @click="closeWithdrawModal"
-            class="px-4 py-2 border border-border-strong hover:bg-slate-50 text-text-secondary text-xs font-semibold rounded-lg transition-all"
-          >
-            Hủy Bỏ
-          </button>
-
-          <AppButton
-            variant="primary"
-            class="px-4 py-2 text-xs font-bold"
+        <DialogFooter class="gap-2 sm:gap-0">
+          <DialogClose as-child>
+            <Button variant="outline" size="sm" class="text-xs" @click="closeWithdrawModal">
+              Hủy Bỏ
+            </Button>
+          </DialogClose>
+          <Button
+            size="sm"
             data-testid="btn-submit-withdraw"
             :loading="isSubmittingWithdraw"
+            :disabled="isSubmittingWithdraw"
+            class="text-xs font-semibold shadow-xs"
             @click="handleWithdrawSubmit"
           >
             Gửi Yêu Cầu Rút
-          </AppButton>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

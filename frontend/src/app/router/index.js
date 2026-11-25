@@ -170,6 +170,12 @@ const routes = [
     meta: { requiresAuth: false },
   },
   {
+    path: '/showcase',
+    name: 'showcase-hub',
+    component: () => import('@/showcase/ShowcaseHub.vue'),
+    meta: { requiresAuth: false },
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'not-found',
     component: () => import('@/shared/views/NotFoundView.vue'),
