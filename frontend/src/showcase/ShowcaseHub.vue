@@ -174,26 +174,26 @@ function scrollTo(id: string) {
           </div>
         </div>
 
-        <!-- Global Search in Header -->
+        <!-- Global Search in Header (REV-05: h-9, pl-9, no overlap, dark mode background) -->
         <div class="hidden md:flex items-center flex-1 max-w-xs relative">
-          <Search class="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <Search class="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
           <Input
             v-model="filterKeyword"
             placeholder="Tìm kiếm component..."
-            class="pl-8.5 h-8.5 text-xs bg-muted/30"
+            class="pl-9 h-9 text-xs bg-background border-input text-foreground"
           />
         </div>
 
         <!-- Header Actions: Theme Mode + Theme Customizer Drawer Trigger -->
         <div class="flex items-center gap-2 shrink-0">
-          <!-- Integrated Theme Customizer Trigger Button (UI-10: replaces overlapping floating button) -->
+          <!-- Integrated Theme Customizer Trigger Button -->
           <Button
             variant="outline"
             size="sm"
-            class="h-8.5 px-2.5 text-xs gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
+            class="h-9 px-3 text-xs gap-1.5 border-primary/30 text-primary hover:bg-primary/10 cursor-pointer"
             @click="isCustomizerOpen = true"
           >
-            <Paintbrush class="h-3.5 w-3.5" />
+            <Paintbrush class="h-3.5 w-3.5 shrink-0" />
             <span class="hidden sm:inline">Tùy Biến Theme</span>
           </Button>
 
@@ -201,7 +201,7 @@ function scrollTo(id: string) {
           <Button
             variant="ghost"
             size="icon"
-            class="h-8.5 w-8.5 text-muted-foreground hover:text-foreground hover:bg-muted"
+            class="h-9 w-9 text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
             :title="isDark ? 'Chuyển sang giao diện Sáng' : 'Chuyển sang giao diện Tối'"
             @click="setThemeMode(isDark ? 'light' : 'dark')"
           >
@@ -210,7 +210,7 @@ function scrollTo(id: string) {
           </Button>
 
           <Badge variant="secondary" class="font-mono text-[11px] hidden lg:inline-flex">
-            Gate A Verified
+            Gate A Candidate
           </Badge>
         </div>
       </div>
@@ -295,7 +295,7 @@ function scrollTo(id: string) {
             <div>
               <h2 class="text-lg font-bold flex items-center gap-2">
                 <Palette class="h-4 w-4 text-primary" />
-                <span>Bảng Màu OKLCH Canonical & Effective Tokens (UI-02, UI-13)</span>
+                <span>Bảng Màu OKLCH Canonical & Effective Tokens</span>
               </h2>
               <p class="text-xs text-muted-foreground">
                 Tách biệt rõ ràng giữa Canonical Palette và Semantic/Effective Accessibility Overrides đạt chuẩn WCAG AA.
@@ -304,16 +304,18 @@ function scrollTo(id: string) {
             <Badge variant="outline" class="text-xs font-mono">OKLCH / WCAG AA</Badge>
           </div>
 
-          <!-- Color Swatches Grid -->
+          <!-- Color Swatches Grid (REV-05: Reactive to Dark Mode & Theme) -->
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <!-- Swatch 1: Canonical Primary -->
             <div class="p-3.5 rounded-lg border border-border bg-card space-y-2 shadow-xs">
               <div class="h-14 rounded-md bg-primary flex items-center justify-center text-primary-foreground font-mono text-xs font-bold shadow-inner">
-                Primary #C96442
+                {{ isDark ? 'Primary #D97757' : 'Primary #C96442' }}
               </div>
               <div class="text-xs space-y-0.5">
                 <div class="font-bold text-foreground">Canonical Primary</div>
-                <div class="text-[11px] font-mono text-muted-foreground">oklch(0.6171 0.1375 39.0427)</div>
+                <div class="text-[11px] font-mono text-muted-foreground">
+                  {{ isDark ? 'oklch(0.6724 0.1308 38.7559)' : 'oklch(0.6171 0.1375 39.0427)' }}
+                </div>
                 <div class="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">Text #141413 (Contrast 4.73:1 AA)</div>
               </div>
             </div>
@@ -321,31 +323,37 @@ function scrollTo(id: string) {
             <!-- Swatch 2: Effective Primary -->
             <div class="p-3.5 rounded-lg border border-border bg-card space-y-2 shadow-xs">
               <div class="h-14 rounded-md bg-primary-effective flex items-center justify-center text-white font-mono text-xs font-bold shadow-inner">
-                Effective #BC5937
+                {{ isDark ? 'Effective #D97757' : 'Effective #BC5937' }}
               </div>
               <div class="text-xs space-y-0.5">
                 <div class="font-bold text-foreground">Effective Primary (White Text)</div>
-                <div class="text-[11px] font-mono text-muted-foreground">oklch(0.58 0.1375 39.0427)</div>
+                <div class="text-[11px] font-mono text-muted-foreground">
+                  {{ isDark ? 'oklch(0.6724 0.1308 38.7559)' : 'oklch(0.58 0.1375 39.0427)' }}
+                </div>
                 <div class="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">Text #FFFFFF (Contrast 4.54:1 AA)</div>
               </div>
             </div>
 
-            <!-- Swatch 3: Canonical Destructive (Near-black) -->
+            <!-- Swatch 3: Canonical Destructive -->
             <div class="p-3.5 rounded-lg border border-border bg-card space-y-2 shadow-xs">
               <div class="h-14 rounded-md bg-destructive flex items-center justify-center text-destructive-foreground font-mono text-xs font-bold shadow-inner">
-                Destructive #141413
+                {{ isDark ? 'Destructive #EF4444' : 'Destructive #141413' }}
               </div>
               <div class="text-xs space-y-0.5">
-                <div class="font-bold text-foreground">Canonical Destructive (UI-13)</div>
-                <div class="text-[11px] font-mono text-muted-foreground">oklch(0.1908 0.0020 106.5859)</div>
-                <div class="text-[11px] text-muted-foreground">Màu tối đặc trưng Claude+</div>
+                <div class="font-bold text-foreground">Canonical Destructive</div>
+                <div class="text-[11px] font-mono text-muted-foreground">
+                  {{ isDark ? 'oklch(0.6368 0.2078 25.3313)' : 'oklch(0.1908 0.0020 106.5859)' }}
+                </div>
+                <div class="text-[11px] text-muted-foreground">
+                  {{ isDark ? 'Đỏ nổi bật Dark Mode' : 'Màu tối đặc trưng Claude+' }}
+                </div>
               </div>
             </div>
 
             <!-- Swatch 4: Semantic Error / Action Danger -->
             <div class="p-3.5 rounded-lg border border-border bg-card space-y-2 shadow-xs">
               <div class="h-14 rounded-md bg-status-danger flex items-center justify-center text-white font-mono text-xs font-bold shadow-inner">
-                Danger / Red #D9372F
+                Danger #D9372F
               </div>
               <div class="text-xs space-y-0.5">
                 <div class="font-bold text-foreground">Semantic Destructive Action</div>
@@ -361,7 +369,7 @@ function scrollTo(id: string) {
           <div class="border-b border-border pb-2">
             <h2 class="text-lg font-bold flex items-center gap-2">
               <Type class="h-4 w-4 text-primary" />
-              <span>Quy Chuẩn Typography & Phông Chữ (UI-11)</span>
+              <span>Quy Chuẩn Typography & Phông Chữ</span>
             </h2>
             <p class="text-xs text-muted-foreground">
               Phông Outfit cho sans-serif và Geist Mono cho mã vé/tiền tệ. Trọng số thực tế tải từ Google Fonts (400, 500, 600, 700).
@@ -400,7 +408,7 @@ function scrollTo(id: string) {
           <div class="border-b border-border pb-2">
             <h2 class="text-lg font-bold flex items-center gap-2">
               <SlidersHorizontal class="h-4 w-4 text-primary" />
-              <span>Quy Chuẩn Bo Góc (Radius) & Scoped Density (UI-01, UI-08, UI-12)</span>
+              <span>Quy Chuẩn Bo Góc (Radius) & Scoped Density</span>
             </h2>
             <p class="text-xs text-muted-foreground">
               Base Radius chuẩn 1rem (16px), đi kèm Role-Specific Geometry: Checkbox 4px, Calendar cell 6px, Input/Button 8px, Card 16px.
@@ -419,7 +427,7 @@ function scrollTo(id: string) {
             </div>
 
             <div class="p-4 rounded-lg border border-border bg-card space-y-3 text-xs shadow-xs">
-              <div class="font-bold text-foreground">Scoped Density System (UI-08):</div>
+              <div class="font-bold text-foreground">Scoped Density System:</div>
               <p class="text-muted-foreground leading-relaxed">
                 Đã loại bỏ hoàn toàn các quy tắc ép <code>!important</code> diện rộng làm hỏng ô lịch hoặc dialog. Density chỉ tác động có kiểm soát lên độ cao bảng dữ liệu:
               </p>
@@ -437,7 +445,7 @@ function scrollTo(id: string) {
           <div class="border-b border-border pb-2">
             <h2 class="text-lg font-bold flex items-center gap-2">
               <ShieldCheck class="h-4 w-4 text-primary" />
-              <span>Lucide Icon Registry (UI-11)</span>
+              <span>Lucide Icon Registry</span>
             </h2>
             <p class="text-xs text-muted-foreground">
               Bộ icon duy nhất <code>lucide-vue-next</code> được chuẩn hóa theo kích thước và ngữ nghĩa miền vận tải VeloBus.
@@ -452,7 +460,7 @@ function scrollTo(id: string) {
           <div class="border-b border-border pb-2">
             <h2 class="text-lg font-bold flex items-center gap-2">
               <LayoutGrid class="h-4 w-4 text-primary" />
-              <span>Buttons & Biến Thể (UI-01, UI-02)</span>
+              <span>Buttons & Biến Thể</span>
             </h2>
             <p class="text-xs text-muted-foreground">
               Các biến thể nút bấm chuẩn Shadcn Vue với góc bo 8px (<code>rounded-md</code>) và màu chữ đạt tương phản WCAG AA.
@@ -483,7 +491,7 @@ function scrollTo(id: string) {
           <div class="border-b border-border pb-2">
             <h2 class="text-lg font-bold flex items-center gap-2">
               <Code2 class="h-4 w-4 text-primary" />
-              <span>Inputs & Textarea (UI-01)</span>
+              <span>Inputs & Textarea</span>
             </h2>
             <p class="text-xs text-muted-foreground">
               Ô nhập liệu tiêu chuẩn với chiều cao h-10, bo góc 8px (<code>rounded-md</code>), hỗ trợ Password toggle và placeholder.
@@ -511,7 +519,7 @@ function scrollTo(id: string) {
           <div class="border-b border-border pb-2">
             <h2 class="text-lg font-bold flex items-center gap-2">
               <CheckCheck class="h-4 w-4 text-primary" />
-              <span>Checkbox, Radio & Switch (UI-01: Geometry Preservation)</span>
+              <span>Checkbox, Radio & Switch</span>
             </h2>
             <p class="text-xs text-muted-foreground">
               Phân biệt rõ ràng giữa Checkbox vuông bo 4px (<code>rounded-[4px]</code>) và Radio tròn tuyệt đối (<code>rounded-full</code>).
@@ -567,7 +575,7 @@ function scrollTo(id: string) {
           <div class="border-b border-border pb-2">
             <h2 class="text-lg font-bold flex items-center gap-2">
               <CalendarDays class="h-4 w-4 text-primary" />
-              <span>Calendar Inline Primitive (UI-03: Locale vi-VN, Monday-first)</span>
+              <span>Calendar Inline Primitive (Locale vi-VN, Monday-first)</span>
             </h2>
             <p class="text-xs text-muted-foreground">
               Định dạng tiếng Việt chuẩn: Tuần bắt đầu từ <strong>Thứ Hai</strong> (T2), tiêu đề tháng tiếng Việt, bo góc ô ngày 6px (<code>rounded-[6px]</code>).
@@ -590,7 +598,7 @@ function scrollTo(id: string) {
           <div class="border-b border-border pb-2">
             <h2 class="text-lg font-bold flex items-center gap-2">
               <Clock class="h-4 w-4 text-primary" />
-              <span>DatePicker Popover & Reusable TimePicker 24H (UI-04)</span>
+              <span>DatePicker Popover & Reusable TimePicker 24H</span>
             </h2>
             <p class="text-xs text-muted-foreground">
               TimePicker tái sử dụng chuẩn hóa: 1 icon Clock duy nhất (không lặp icon), định dạng 24H với quick presets xuất bến.
@@ -607,7 +615,7 @@ function scrollTo(id: string) {
           <div class="border-b border-border pb-2">
             <h2 class="text-lg font-bold flex items-center gap-2">
               <CalendarDays class="h-4 w-4 text-primary" />
-              <span>DateRangePicker & Quick Presets (UI-14: Interactive Range)</span>
+              <span>DateRangePicker & Quick Presets</span>
             </h2>
             <p class="text-xs text-muted-foreground">
               Lọc theo khoảng ngày (Hôm nay, 7 ngày tới, 30 ngày tới, Tháng này) với popover tương tác thực tế.
@@ -624,7 +632,7 @@ function scrollTo(id: string) {
           <div class="border-b border-border pb-2">
             <h2 class="text-lg font-bold flex items-center gap-2">
               <Layers class="h-4 w-4 text-primary" />
-              <span>TanStack Responsive DataTable & Row Density (UI-05, UI-06, UI-08)</span>
+              <span>TanStack Responsive DataTable & Row Density</span>
             </h2>
             <p class="text-xs text-muted-foreground">
               Bảng dữ liệu một đường viền chính (no nested cards), căn phải cột tiền tệ, số liệu tabular numbers và 3 mức mật độ (Compact 44px, Default 52px, Comfortable 60px).
@@ -682,7 +690,7 @@ function scrollTo(id: string) {
           <div class="border-b border-border pb-2">
             <h2 class="text-lg font-bold flex items-center gap-2">
               <LayoutGrid class="h-4 w-4 text-primary" />
-              <span>Dropdown Menu System (UI-14: Interactive Menu States)</span>
+              <span>Dropdown Menu System</span>
             </h2>
             <p class="text-xs text-muted-foreground">
               Menu hồ sơ cá nhân, thao tác bản ghi và menu chọn cột bảng dữ liệu.
@@ -729,7 +737,7 @@ function scrollTo(id: string) {
           <div class="border-b border-border pb-2">
             <h2 class="text-lg font-bold flex items-center gap-2">
               <BellRing class="h-4 w-4 text-primary" />
-              <span>Feedback Modals, Alerts & Drawer (UI-14: Open Dialog States)</span>
+              <span>Feedback Modals, Alerts & Drawer</span>
             </h2>
             <p class="text-xs text-muted-foreground">
               Vue Sonner Toasts, Dialog xác nhận, AlertDialog thu hồi vé và Sheet Drawer 520px tương tác thực tế.

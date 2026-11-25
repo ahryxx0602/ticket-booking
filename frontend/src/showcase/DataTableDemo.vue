@@ -1,13 +1,7 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell
-} from '@/components/ui/table'
+import { ref, h, computed } from 'vue'
+import type { ColumnDef } from '@tanstack/vue-table'
+import DataTable from '@/components/ui/table/DataTable.vue'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge, StatusBadge } from '@/components/ui/badge'
@@ -20,20 +14,24 @@ import {
   SelectItem
 } from '@/components/ui/select'
 import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator
+} from '@/components/ui/dropdown-menu'
+import {
   Search,
   ArrowUpDown,
-  Filter,
   Eye,
   Pencil,
   Trash2,
-  Download,
-  AlertCircle,
   SlidersHorizontal,
-  ChevronLeft,
-  ChevronRight
+  ArrowRight
 } from 'lucide-vue-next'
 
-interface BookingRecord {
+export interface BookingRecord {
   id: string
   customer: string
   phone: string
@@ -117,63 +115,199 @@ const bookings = ref<BookingRecord[]>([
   }
 ])
 
+const dataTableRef = ref<any>(null)
 const searchQuery = ref('')
 const selectedStatus = ref<string>('ALL')
-const selectedRows = ref<string[]>([])
-const sortAsc = ref(true)
 const tableDensity = ref<'compact' | 'default' | 'comfortable'>('default')
+const selectedRecords = ref<BookingRecord[]>([])
+const sortAsc = ref(true)
 
-// Pagination state
-const currentPage = ref(1)
-const pageSize = ref(4)
-
-const filteredBookings = computed(() => {
-  return bookings.value.filter(b => {
-    const matchesSearch = b.id.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-                          b.customer.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-                          b.route.toLowerCase().includes(searchQuery.value.toLowerCase())
-    const matchesStatus = selectedStatus.value === 'ALL' || b.status === selectedStatus.value
-    return matchesSearch && matchesStatus
-  }).sort((a, b) => {
-    return sortAsc.value ? a.amount - b.amount : b.amount - a.amount
-  })
+// Column Visibility State
+const columnVisibility = ref<Record<string, boolean>>({
+  phone: true,
+  createdAt: true
 })
 
-const totalPages = computed(() => Math.max(1, Math.ceil(filteredBookings.value.length / pageSize.value)))
+function formatCurrency(amount: number) {
+  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount)
+}
 
-const paginatedBookings = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-  return filteredBookings.value.slice(start, start + pageSize.value)
-})
-
-const isAllSelected = computed(() => {
-  return paginatedBookings.value.length > 0 &&
-    paginatedBookings.value.every(b => selectedRows.value.includes(b.id))
-})
-
-function toggleSelectAll(checked: boolean) {
-  if (checked) {
-    const pageIds = paginatedBookings.value.map(b => b.id)
-    selectedRows.value = Array.from(new Set([...selectedRows.value, ...pageIds]))
-  } else {
-    const pageIds = new Set(paginatedBookings.value.map(b => b.id))
-    selectedRows.value = selectedRows.value.filter(id => !pageIds.has(id))
+function handleSortToggle() {
+  sortAsc.value = !sortAsc.value
+  if (dataTableRef.value?.table) {
+    dataTableRef.value.table.setSorting([{ id: 'amount', desc: !sortAsc.value }])
   }
 }
 
-function toggleSelectRow(id: string) {
-  const idx = selectedRows.value.indexOf(id)
-  if (idx >= 0) {
-    selectedRows.value.splice(idx, 1)
-  } else {
-    selectedRows.value.push(id)
+// Columns definition for TanStack Table (REV-03 & REV-04)
+const columns: ColumnDef<any, BookingRecord, any>[] = [
+  // 1. Select Checkbox Column
+  {
+    id: 'select',
+    header: ({ table }: { table: any }) =>
+      h(
+        'div',
+        { class: 'flex justify-center items-center w-10' },
+        h(Checkbox, {
+          modelValue: table.getIsAllPageRowsSelected(),
+          'onUpdate:modelValue': (val: boolean | 'indeterminate') => table.toggleAllPageRowsSelected(!!val),
+          'aria-label': 'Chọn tất cả dòng'
+        })
+      ),
+    cell: ({ row }: { row: any }) =>
+      h(
+        'div',
+        { class: 'flex justify-center items-center w-10' },
+        h(Checkbox, {
+          modelValue: row.getIsSelected(),
+          'onUpdate:modelValue': (val: boolean | 'indeterminate') => row.toggleSelected(!!val),
+          'aria-label': `Chọn dòng ${row.original.id}`
+        })
+      ),
+    enableSorting: false,
+    enableHiding: false
+  },
+
+  // 2. Booking ID Column (whitespace-nowrap, font-mono, min-w 150px)
+  {
+    accessorKey: 'id',
+    header: 'Mã Đặt Vé',
+    cell: ({ row }) =>
+      h(
+        'span',
+        { class: 'font-mono font-bold text-primary whitespace-nowrap min-w-[140px] inline-block' },
+        row.original.id
+      )
+  },
+
+  // 3. Customer Info Column
+  {
+    accessorKey: 'customer',
+    header: 'Hành Khách',
+    cell: ({ row }) =>
+      h('div', { class: 'min-w-[150px]' }, [
+        h('div', { class: 'font-semibold text-foreground' }, row.original.customer),
+        columnVisibility.value.phone !== false
+          ? h('div', { class: 'text-[11px] font-mono text-muted-foreground' }, row.original.phone)
+          : null
+      ])
+  },
+
+  // 4. Route Column
+  {
+    accessorKey: 'route',
+    header: 'Tuyến Đường',
+    cell: ({ row }) => {
+      const parts = row.original.route.split('→')
+      return h('div', { class: 'flex items-center gap-1.5 min-w-[160px] text-foreground' }, [
+        h('span', { class: 'font-medium' }, parts[0]?.trim()),
+        h(ArrowRight, { class: 'h-3 w-3 text-muted-foreground shrink-0' }),
+        h('span', { class: 'font-medium' }, parts[1]?.trim())
+      ])
+    }
+  },
+
+  // 5. Seats Column
+  {
+    accessorKey: 'seats',
+    header: 'Ghế',
+    cell: ({ row }) =>
+      h(
+        'div',
+        { class: 'flex flex-wrap gap-1 min-w-[90px]' },
+        row.original.seats.map((seat: string) =>
+          h(
+            Badge,
+            { variant: 'secondary', class: 'font-mono text-[10px] py-0 px-1.5 h-4.5 font-bold' },
+            () => seat
+          )
+        )
+      )
+  },
+
+  // 6. Monetary Value Column (Right-aligned, Tabular Numbers, whitespace-nowrap, REV-04)
+  {
+    accessorKey: 'amount',
+    header: () => h('div', { class: 'text-right min-w-[120px]' }, 'Tổng Tiền'),
+    cell: ({ row }) =>
+      h(
+        'div',
+        {
+          class:
+            'text-right font-mono font-bold text-foreground tabular-nums whitespace-nowrap min-w-[120px]'
+        },
+        formatCurrency(row.original.amount)
+      )
+  },
+
+  // 7. Status Badge Column (shrink-0, no distortion, REV-04)
+  {
+    accessorKey: 'status',
+    header: 'Trạng Thái',
+    cell: ({ row }) =>
+      h(
+        'div',
+        { class: 'min-w-[120px] whitespace-nowrap' },
+        h(StatusBadge, { status: row.original.status })
+      )
+  },
+
+  // 8. Created Date Column
+  {
+    accessorKey: 'createdAt',
+    header: 'Ngày Đặt',
+    cell: ({ row }) =>
+      h(
+        'span',
+        { class: 'font-mono text-muted-foreground tabular-nums whitespace-nowrap min-w-[120px]' },
+        row.original.createdAt
+      )
+  },
+
+  // 9. Actions Column (16px icon, proper hit area)
+  {
+    id: 'actions',
+    header: () => h('div', { class: 'text-right min-w-[100px]' }, 'Thao Tác'),
+    cell: ({ row }) =>
+      h('div', { class: 'flex items-center justify-end gap-1 min-w-[100px]' }, [
+        h(
+          Button,
+          {
+            variant: 'ghost',
+            size: 'sm',
+            class: 'h-8 w-8 p-0 text-muted-foreground hover:text-foreground cursor-pointer',
+            title: `Xem chi tiết ${row.original.id}`
+          },
+          () => h(Eye, { class: 'h-4 w-4' })
+        ),
+        h(
+          Button,
+          {
+            variant: 'ghost',
+            size: 'sm',
+            class: 'h-8 w-8 p-0 text-muted-foreground hover:text-foreground cursor-pointer',
+            title: `Chỉnh sửa ${row.original.id}`
+          },
+          () => h(Pencil, { class: 'h-4 w-4' })
+        ),
+        h(
+          Button,
+          {
+            variant: 'ghost',
+            size: 'sm',
+            class: 'h-8 w-8 p-0 text-destructive hover:bg-destructive/10 cursor-pointer',
+            title: `Hủy vé ${row.original.id}`
+          },
+          () => h(Trash2, { class: 'h-4 w-4' })
+        )
+      ])
   }
-}
+]
 </script>
 
 <template>
-  <div class="space-y-4" :data-density="tableDensity">
-    <!-- Toolbar -->
+  <div class="space-y-4">
+    <!-- Toolbar: Search, Filters, Sorting, Density, Column Visibility (REV-03, REV-04) -->
     <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
       <div class="flex items-center gap-2 flex-1 max-w-md">
         <div class="relative w-full">
@@ -201,12 +335,13 @@ function toggleSelectRow(id: string) {
           </SelectContent>
         </Select>
 
-        <Button variant="outline" size="sm" class="h-9 text-xs gap-1.5" @click="sortAsc = !sortAsc">
+        <!-- Sort Button: Triggers TanStack sorting -->
+        <Button variant="outline" size="sm" class="h-9 text-xs gap-1.5 cursor-pointer" @click="handleSortToggle">
           <ArrowUpDown class="h-3.5 w-3.5" />
           <span>{{ sortAsc ? 'Giá: Tăng dần' : 'Giá: Giảm dần' }}</span>
         </Button>
 
-        <!-- Density Selector: Tối ưu nhỏ gọn, hiển thị rõ độ cao -->
+        <!-- Density Selector: Tối ưu nhỏ gọn, hiển thị rõ độ cao 44/52/60px -->
         <div class="inline-flex items-center rounded-md border border-input p-0.5 bg-muted/40 text-[11px]">
           <button
             type="button"
@@ -236,120 +371,60 @@ function toggleSelectRow(id: string) {
             Rộng (60px)
           </button>
         </div>
+
+        <!-- Column Visibility Dropdown Menu -->
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
+            <Button variant="outline" size="sm" class="h-9 text-xs gap-1.5 cursor-pointer">
+              <SlidersHorizontal class="h-3.5 w-3.5" />
+              <span>Cột</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent class="w-48" align="end">
+            <DropdownMenuLabel class="text-xs">Hiển thị cột bổ sung</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem v-model:checked="columnVisibility.phone">
+              Số điện thoại
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem v-model:checked="columnVisibility.createdAt">
+              Ngày đặt vé
+            </DropdownMenuCheckboxItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
 
     <!-- Selection Bar -->
-    <div v-if="selectedRows.length > 0" class="p-2.5 bg-primary/10 border border-primary/20 rounded-md flex items-center justify-between text-xs animate-in fade-in duration-200">
+    <div
+      v-if="selectedRecords.length > 0"
+      class="p-2.5 bg-primary/10 border border-primary/20 rounded-md flex items-center justify-between text-xs animate-in fade-in duration-200"
+    >
       <span class="font-semibold text-primary">
-        Đã chọn <strong>{{ selectedRows.length }}</strong> đơn vé trên toàn bộ bảng
+        Đã chọn <strong>{{ selectedRecords.length }}</strong> đơn vé trên bảng dữ liệu
       </span>
       <div class="flex items-center gap-2">
-        <Button variant="outline" size="sm" class="h-7 text-xs bg-background">Xuất PDF</Button>
-        <Button variant="destructive" size="sm" class="h-7 text-xs" @click="selectedRows = []">Bỏ chọn tất cả</Button>
+        <Button variant="outline" size="sm" class="h-7 text-xs bg-background cursor-pointer">Xuất PDF</Button>
+        <Button
+          variant="destructive"
+          size="sm"
+          class="h-7 text-xs cursor-pointer"
+          @click="dataTableRef?.clearSelection()"
+        >
+          Bỏ chọn tất cả
+        </Button>
       </div>
     </div>
 
-    <!-- Single Main Table Surface (UI-06: No nested boxed frames) -->
-    <div class="rounded-lg border border-border bg-card shadow-xs overflow-hidden">
-      <div class="overflow-x-auto">
-        <Table data-table class="w-full min-w-[760px] text-xs">
-          <TableHeader>
-            <TableRow class="bg-muted/50 border-b border-border">
-              <TableHead class="w-10 text-center">
-                <Checkbox
-                  :checked="isAllSelected"
-                  @update:checked="toggleSelectAll"
-                />
-              </TableHead>
-              <TableHead class="font-bold">Mã Đơn Vé</TableHead>
-              <TableHead class="font-bold">Hành Khách</TableHead>
-              <TableHead class="font-bold">Tuyến Đường</TableHead>
-              <TableHead class="font-bold text-center">Ghế</TableHead>
-              <TableHead class="font-bold text-right">Tổng Tiền</TableHead>
-              <TableHead class="font-bold text-center">Trạng Thái</TableHead>
-              <TableHead class="font-bold text-right pr-4">Thao Tác</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            <TableRow
-              v-for="b in paginatedBookings"
-              :key="b.id"
-              class="hover:bg-muted/30 transition-colors border-b border-border/60 last:border-0"
-              :class="{ 'bg-primary/5': selectedRows.includes(b.id) }"
-            >
-              <TableCell class="text-center">
-                <Checkbox
-                  :checked="selectedRows.includes(b.id)"
-                  @update:checked="toggleSelectRow(b.id)"
-                />
-              </TableCell>
-              <TableCell class="font-mono font-bold text-primary">{{ b.id }}</TableCell>
-              <TableCell>
-                <div class="font-semibold text-foreground">{{ b.customer }}</div>
-                <div class="text-[11px] text-muted-foreground tabular-nums font-mono">{{ b.phone }}</div>
-              </TableCell>
-              <TableCell class="font-medium text-foreground">{{ b.route }}</TableCell>
-              <TableCell class="text-center font-bold text-primary">{{ b.seats.join(', ') }}</TableCell>
-              <TableCell class="text-right font-bold text-foreground font-mono tabular-nums">
-                {{ b.amount.toLocaleString('vi-VN') }} đ
-              </TableCell>
-              <TableCell class="text-center">
-                <StatusBadge :status="b.status" />
-              </TableCell>
-              <TableCell class="text-right pr-4">
-                <div class="inline-flex items-center gap-1">
-                  <Button variant="ghost" size="icon" class="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted" title="Xem chi tiết">
-                    <Eye class="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" class="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted" title="Chỉnh sửa">
-                    <Pencil class="h-4 w-4" />
-                  </Button>
-                </div>
-              </TableCell>
-            </TableRow>
-
-            <TableRow v-if="filteredBookings.length === 0">
-              <TableCell colspan="8" class="text-center py-10 text-muted-foreground">
-                <div class="flex flex-col items-center justify-center space-y-1">
-                  <AlertCircle class="h-8 w-8 text-muted-foreground/60 mb-1" />
-                  <div class="font-medium">Không tìm thấy đơn vé nào phù hợp.</div>
-                  <div class="text-[11px]">Thử điều chỉnh từ khóa tìm kiếm hoặc bỏ chọn bộ lọc trạng thái.</div>
-                </div>
-              </TableCell>
-            </TableRow>
-          </TableBody>
-        </Table>
-      </div>
-
-      <!-- Pagination Footer -->
-      <div class="flex items-center justify-between px-4 py-3 bg-muted/20 border-t border-border text-xs text-muted-foreground">
-        <div>
-          Hiển thị trang <strong class="text-foreground">{{ currentPage }}</strong> / {{ totalPages }} (Tổng {{ filteredBookings.length }} bản ghi)
-        </div>
-        <div class="flex items-center space-x-2">
-          <Button
-            variant="outline"
-            size="sm"
-            class="h-8 px-2.5 text-xs gap-1"
-            :disabled="currentPage <= 1"
-            @click="currentPage--"
-          >
-            <ChevronLeft class="h-3.5 w-3.5" />
-            <span>Trước</span>
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            class="h-8 px-2.5 text-xs gap-1"
-            :disabled="currentPage >= totalPages"
-            @click="currentPage++"
-          >
-            <span>Sau</span>
-            <ChevronRight class="h-3.5 w-3.5" />
-          </Button>
-        </div>
-      </div>
-    </div>
+    <!-- Reusable TanStack DataTable Component (REV-03, REV-04) -->
+    <DataTable
+      ref="dataTableRef"
+      :columns="columns"
+      :data="bookings"
+      :page-size="4"
+      :density="tableDensity"
+      :global-filter="searchQuery"
+      :status-filter="selectedStatus"
+      @update:selection="selectedRecords = $event"
+    />
   </div>
 </template>
