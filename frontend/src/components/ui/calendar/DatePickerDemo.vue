@@ -1,0 +1,71 @@
+<script setup lang="ts">
+import { ref } from 'vue'
+import { Calendar } from '@/components/ui/calendar'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Button } from '@/components/ui/button'
+import { Calendar as CalendarIcon, Clock } from 'lucide-vue-next'
+import { today, getLocalTimeZone } from '@internationalized/date'
+
+// Use any to prevent TypeScript private field conflicts with transitive @internationalized/date
+const selectedDate = ref<any>(today(getLocalTimeZone()))
+const isPopoverOpen = ref(false)
+const selectedTime = ref('08:30')
+
+function formatDate(date: any) {
+  if (!date) return 'Chọn ngày khởi hành'
+  const day = String(date.day).padStart(2, '0')
+  const month = String(date.month).padStart(2, '0')
+  const year = date.year
+  return `${day}/${month}/${year}`
+}
+</script>
+
+<template>
+  <div class="space-y-4">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <!-- Popover Date Picker -->
+      <div class="space-y-2">
+        <label class="text-xs font-semibold text-foreground">Date Picker (Popover Mode):</label>
+        <Popover v-model:open="isPopoverOpen">
+          <PopoverTrigger as-child>
+            <Button
+              variant="outline"
+              class="w-full justify-start text-left font-normal h-10 border-border bg-background"
+            >
+              <CalendarIcon class="mr-2 h-4 w-4 text-primary" />
+              <span class="text-xs font-medium">{{ formatDate(selectedDate) }}</span>
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent class="w-auto p-0" align="start">
+            <Calendar
+              v-model="selectedDate"
+              :min-value="(today(getLocalTimeZone()) as any)"
+              @update:model-value="isPopoverOpen = false"
+            />
+          </PopoverContent>
+        </Popover>
+      </div>
+
+      <!-- Time Picker Composition -->
+      <div class="space-y-2">
+        <label class="text-xs font-semibold text-foreground">Time Picker (24H Format):</label>
+        <div class="relative flex items-center">
+          <Clock class="absolute left-3 h-4 w-4 text-primary pointer-events-none" />
+          <input
+            v-model="selectedTime"
+            type="time"
+            class="w-full h-10 pl-9 pr-3 rounded-lg border border-input text-xs font-medium text-foreground bg-background focus:ring-2 focus:ring-ring focus:outline-hidden"
+          />
+        </div>
+      </div>
+    </div>
+
+    <!-- Selected Summary -->
+    <div class="p-3 bg-muted/40 rounded-lg border border-border flex items-center justify-between text-xs">
+      <span class="text-muted-foreground">Giá trị đã chọn (ISO format):</span>
+      <span class="font-mono font-bold text-primary">
+        {{ selectedDate ? `${selectedDate.toString()}T${selectedTime}:00` : 'Chưa chọn' }}
+      </span>
+    </div>
+  </div>
+</template>
