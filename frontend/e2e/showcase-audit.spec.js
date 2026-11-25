@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-const screenshotDir = path.resolve(__dirname, '../../docs/frontend-v2/screenshots-showcase-hub')
+const screenshotDir = path.resolve(__dirname, '../../docs/frontend-v2/screenshots-gate-a-final')
 
 test.describe('Showcase UI Fidelity & Interactive Audit (REV-01 through REV-08)', () => {
   test('Audit 01: Desktop Showcase Hub Overview & Semantic Geometry Verification', async ({ page }) => {
