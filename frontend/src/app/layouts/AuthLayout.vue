@@ -1,10 +1,14 @@
 <script setup>
+import { ref } from 'vue'
 import ThemeCustomizer from '@/shared/components/ThemeCustomizer.vue'
-import { ShieldCheck, Bus, CheckCircle2 } from 'lucide-vue-next'
+import { Button } from '@/components/ui/button'
+import { ShieldCheck, Bus, CheckCircle2, Paintbrush } from 'lucide-vue-next'
+
+const isThemeCustomizerOpen = ref(false)
 </script>
 
 <template>
-  <div class="min-h-screen flex bg-background text-foreground transition-colors duration-200">
+  <div class="min-h-screen flex bg-background text-foreground transition-colors duration-200 relative">
     <!-- Left Brand Panel (Desktop: 45% width, Claude+ Warm Minimalist Architecture) -->
     <div class="hidden lg:flex lg:w-[45%] bg-card border-r border-border text-foreground flex-col justify-between p-12 relative select-none">
       <!-- Top Brand Identity -->
@@ -65,7 +69,21 @@ import { ShieldCheck, Bus, CheckCircle2 } from 'lucide-vue-next'
     </div>
 
     <!-- Right Form Container (Desktop: 55% width, Form container max-width 420px, vertically centered) -->
-    <div class="flex-1 flex flex-col justify-center items-center p-6 sm:p-12">
+    <div class="flex-1 flex flex-col justify-center items-center p-6 sm:p-12 relative">
+      <!-- Top Right Theme Customizer Toggle -->
+      <div class="absolute top-4 right-4 sm:top-6 sm:right-6">
+        <Button
+          variant="ghost"
+          size="sm"
+          class="h-9 w-9 p-0 text-muted-foreground hover:text-foreground"
+          @click="isThemeCustomizerOpen = true"
+          title="Tùy biến giao diện (Theme Customizer)"
+        >
+          <Paintbrush class="w-4 h-4" />
+          <span class="sr-only">Tùy biến giao diện</span>
+        </Button>
+      </div>
+
       <div class="w-full max-w-[420px]">
         <!-- Mobile Logo Header -->
         <div class="lg:hidden flex items-center justify-center gap-2.5 mb-8">
@@ -87,7 +105,7 @@ import { ShieldCheck, Bus, CheckCircle2 } from 'lucide-vue-next'
       </div>
     </div>
 
-    <!-- Runtime Theme Customizer -->
-    <ThemeCustomizer />
+    <!-- Runtime Theme Customizer Modal/Drawer -->
+    <ThemeCustomizer v-model="isThemeCustomizerOpen" :show-floating-trigger="false" />
   </div>
 </template>

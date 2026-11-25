@@ -32,13 +32,15 @@ import {
   Menu,
   Sparkles,
   PhoneCall,
-  ShieldCheck
+  ShieldCheck,
+  Paintbrush
 } from 'lucide-vue-next'
 
 const router = useRouter()
 const auth = useAuthStore()
 const { containerClass } = useLayoutWidth()
 const isMobileOpen = ref(false)
+const isThemeCustomizerOpen = ref(false)
 
 function handleLogout() {
   auth.logout()
@@ -91,6 +93,18 @@ function handleLogout() {
           <div class="hidden sm:block">
             <LayoutWidthSwitcher />
           </div>
+
+          <!-- Theme Customizer Trigger Button -->
+          <Button
+            variant="ghost"
+            size="sm"
+            class="h-9 w-9 p-0 text-muted-foreground hover:text-foreground"
+            @click="isThemeCustomizerOpen = true"
+            title="Tùy biến giao diện (Theme Customizer)"
+          >
+            <Paintbrush class="w-4 h-4" />
+            <span class="sr-only">Tùy biến giao diện</span>
+          </Button>
 
           <!-- Role-based Portal Quick Links -->
           <router-link
@@ -162,7 +176,7 @@ function handleLogout() {
             <SheetTrigger as-child>
               <Button variant="ghost" size="sm" class="md:hidden p-1.5 h-9 w-9">
                 <Menu class="h-5 w-5" />
-                <span class="sr-only">Mở menu</span>
+                <span class="sr-only">Mở menu điều hướng</span>
               </Button>
             </SheetTrigger>
             <SheetContent side="right" class="w-72 p-0 flex flex-col bg-card">
@@ -280,7 +294,7 @@ function handleLogout() {
       </div>
     </footer>
 
-    <!-- Runtime Theme Customizer -->
-    <ThemeCustomizer />
+    <!-- Runtime Theme Customizer Modal/Drawer -->
+    <ThemeCustomizer v-model="isThemeCustomizerOpen" :show-floating-trigger="false" />
   </div>
 </template>
