@@ -25,7 +25,7 @@ import DataTableDemo from './DataTableDemo.vue'
 import FeedbackDemo from './FeedbackDemo.vue'
 import DropdownDemo from './DropdownDemo.vue'
 import ThemeCustomizer from '@/shared/components/ThemeCustomizer.vue'
-import { useTheme } from '@/shared/composables/useTheme'
+import { useTheme, getContrastInfo, getAccessibleTextColor } from '@/shared/composables/useTheme'
 import {
   Bus,
   Layers,
@@ -50,11 +50,87 @@ import {
 } from 'lucide-vue-next'
 import { today, getLocalTimeZone } from '@internationalized/date'
 
-const { isDark, setThemeMode } = useTheme()
+const { isDark, setThemeMode, currentTheme } = useTheme()
 const isCustomizerOpen = ref(false)
 const isMobileMenuOpen = ref(false)
 const filterKeyword = ref('')
 const activeSection = ref('foundations-colors')
+
+// Color Swatches with dynamically computed contrast ratios (FINAL-01)
+const colorSwatches = computed(() => {
+  const isDarkMode = isDark.value
+
+  // 1. Canonical Primary
+  const canPrimaryHex = isDarkMode ? '#D97757' : '#C96442'
+  const canPrimaryOklch = isDarkMode ? 'oklch(0.6724 0.1308 38.7559)' : 'oklch(0.6171 0.1375 39.0427)'
+  const canPrimaryFg = '#141413'
+  const canPrimaryContrast = getContrastInfo(canPrimaryHex, canPrimaryFg)
+
+  // 2. Effective Primary (White text pair)
+  const effPrimaryHex = '#BC5937'
+  const effPrimaryOklch = 'oklch(0.58 0.1375 39.0427)'
+  const effPrimaryFg = '#FFFFFF'
+  const effPrimaryContrast = getContrastInfo(effPrimaryHex, effPrimaryFg)
+
+  // 3. Canonical Destructive
+  const canDestructHex = isDarkMode ? '#EF4444' : '#141413'
+  const canDestructOklch = isDarkMode ? 'oklch(0.6368 0.2078 25.3313)' : 'oklch(0.1908 0.0020 106.5859)'
+  const canDestructFg = isDarkMode ? '#141413' : '#FAF9F5'
+  const canDestructContrast = getContrastInfo(canDestructHex, canDestructFg)
+
+  // 4. Semantic Destructive / Danger
+  const semDangerHex = '#D9372F'
+  const semDangerOklch = 'oklch(0.585 0.20 28.0)'
+  const semDangerFg = '#FFFFFF'
+  const semDangerContrast = getContrastInfo(semDangerHex, semDangerFg)
+
+  return [
+    {
+      title: 'Canonical Primary',
+      badge: 'Canonical',
+      name: isDarkMode ? 'Primary #D97757' : 'Primary #C96442',
+      bgClass: 'bg-primary',
+      bgHex: canPrimaryHex,
+      fgHex: canPrimaryFg,
+      oklch: canPrimaryOklch,
+      contrast: canPrimaryContrast,
+      note: `Text ${canPrimaryFg}`
+    },
+    {
+      title: 'Effective Primary (White Text)',
+      badge: 'Effective Token',
+      name: `Effective ${effPrimaryHex}`,
+      bgClass: 'bg-primary-effective',
+      bgHex: effPrimaryHex,
+      fgHex: effPrimaryFg,
+      oklch: effPrimaryOklch,
+      contrast: effPrimaryContrast,
+      note: `Text ${effPrimaryFg}`
+    },
+    {
+      title: 'Canonical Destructive',
+      badge: 'Canonical',
+      name: isDarkMode ? 'Destructive #EF4444' : 'Destructive #141413',
+      bgClass: 'bg-destructive',
+      bgHex: canDestructHex,
+      fgHex: canDestructFg,
+      oklch: canDestructOklch,
+      contrast: canDestructContrast,
+      note: isDarkMode ? 'Đỏ nổi bật Dark Mode' : 'Màu tối đặc trưng Claude+'
+    },
+    {
+      title: 'Semantic Destructive Action',
+      badge: 'Semantic Action',
+      name: 'Danger #D9372F',
+      bgClass: 'bg-status-danger',
+      bgHex: semDangerHex,
+      fgHex: semDangerFg,
+      oklch: semDangerOklch,
+      contrast: semDangerContrast,
+      note: `Nút xóa/hủy (Text ${semDangerFg})`
+    }
+  ]
+})
 
 // Form sample states
 const sampleText = ref('')
@@ -304,61 +380,69 @@ function scrollTo(id: string) {
             <Badge variant="outline" class="text-xs font-mono">OKLCH / WCAG AA</Badge>
           </div>
 
-          <!-- Color Swatches Grid (REV-05: Reactive to Dark Mode & Theme) -->
+          <!-- Color Swatches Grid (FINAL-01: Dynamic Contrast Accuracy & Token Categorization) -->
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <!-- Swatch 1: Canonical Primary -->
-            <div class="p-3.5 rounded-lg border border-border bg-card space-y-2 shadow-xs">
-              <div class="h-14 rounded-md bg-primary flex items-center justify-center text-primary-foreground font-mono text-xs font-bold shadow-inner">
-                {{ isDark ? 'Primary #D97757' : 'Primary #C96442' }}
+            <div
+              v-for="swatch in colorSwatches"
+              :key="swatch.title"
+              class="p-3.5 rounded-lg border border-border bg-card space-y-2 shadow-xs"
+            >
+              <div
+                class="h-14 rounded-md flex items-center justify-center font-mono text-xs font-bold shadow-inner"
+                :class="swatch.bgClass"
+                :style="{ color: swatch.fgHex }"
+              >
+                {{ swatch.name }}
               </div>
-              <div class="text-xs space-y-0.5">
-                <div class="font-bold text-foreground">Canonical Primary</div>
-                <div class="text-[11px] font-mono text-muted-foreground">
-                  {{ isDark ? 'oklch(0.6724 0.1308 38.7559)' : 'oklch(0.6171 0.1375 39.0427)' }}
+              <div class="text-xs space-y-1">
+                <div class="flex items-center justify-between">
+                  <span class="font-bold text-foreground">{{ swatch.title }}</span>
+                  <span
+                    class="text-[10px] font-mono px-1 rounded font-semibold"
+                    :class="swatch.contrast.isAA ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-destructive/10 text-destructive'"
+                  >
+                    {{ swatch.contrast.isAA ? 'AA PASS' : 'AA FAIL' }}
+                  </span>
                 </div>
-                <div class="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">Text #141413 (Contrast 4.73:1 AA)</div>
-              </div>
-            </div>
-
-            <!-- Swatch 2: Effective Primary -->
-            <div class="p-3.5 rounded-lg border border-border bg-card space-y-2 shadow-xs">
-              <div class="h-14 rounded-md bg-primary-effective flex items-center justify-center text-white font-mono text-xs font-bold shadow-inner">
-                {{ isDark ? 'Effective #D97757' : 'Effective #BC5937' }}
-              </div>
-              <div class="text-xs space-y-0.5">
-                <div class="font-bold text-foreground">Effective Primary (White Text)</div>
-                <div class="text-[11px] font-mono text-muted-foreground">
-                  {{ isDark ? 'oklch(0.6724 0.1308 38.7559)' : 'oklch(0.58 0.1375 39.0427)' }}
+                <div class="text-[11px] font-mono text-muted-foreground truncate">
+                  {{ swatch.oklch }}
                 </div>
-                <div class="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">Text #FFFFFF (Contrast 4.54:1 AA)</div>
-              </div>
-            </div>
-
-            <!-- Swatch 3: Canonical Destructive -->
-            <div class="p-3.5 rounded-lg border border-border bg-card space-y-2 shadow-xs">
-              <div class="h-14 rounded-md bg-destructive flex items-center justify-center text-destructive-foreground font-mono text-xs font-bold shadow-inner">
-                {{ isDark ? 'Destructive #EF4444' : 'Destructive #141413' }}
-              </div>
-              <div class="text-xs space-y-0.5">
-                <div class="font-bold text-foreground">Canonical Destructive</div>
-                <div class="text-[11px] font-mono text-muted-foreground">
-                  {{ isDark ? 'oklch(0.6368 0.2078 25.3313)' : 'oklch(0.1908 0.0020 106.5859)' }}
-                </div>
-                <div class="text-[11px] text-muted-foreground">
-                  {{ isDark ? 'Đỏ nổi bật Dark Mode' : 'Màu tối đặc trưng Claude+' }}
+                <div
+                  class="text-[11px] font-medium"
+                  :class="swatch.contrast.isAA ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'"
+                >
+                  {{ swatch.note }} (Contrast {{ swatch.contrast.ratio }}:1)
                 </div>
               </div>
             </div>
+          </div>
 
-            <!-- Swatch 4: Semantic Error / Action Danger -->
-            <div class="p-3.5 rounded-lg border border-border bg-card space-y-2 shadow-xs">
-              <div class="h-14 rounded-md bg-status-danger flex items-center justify-center text-white font-mono text-xs font-bold shadow-inner">
-                Danger #D9372F
+          <!-- Runtime Theme Override Status Card (FINAL-01 & FINAL-02) -->
+          <div
+            v-if="currentTheme.primaryColor && currentTheme.primaryColor !== '#C96442'"
+            class="p-3.5 rounded-lg border border-primary/30 bg-primary/5 space-y-2 shadow-xs"
+          >
+            <div class="flex items-center justify-between text-xs font-semibold">
+              <span class="text-foreground flex items-center gap-1.5">
+                <Sparkles class="h-3.5 w-3.5 text-primary" />
+                <span>Runtime Custom Primary Override (Đồng bộ toàn hệ thống)</span>
+              </span>
+              <Badge variant="outline" class="font-mono text-[10px]">{{ currentTheme.primaryColor }}</Badge>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs pt-1 border-t border-border/50">
+              <div>
+                <span class="text-muted-foreground">Màu Primary đang dùng: </span>
+                <strong class="font-mono text-primary">{{ currentTheme.primaryColor }}</strong>
               </div>
-              <div class="text-xs space-y-0.5">
-                <div class="font-bold text-foreground">Semantic Destructive Action</div>
-                <div class="text-[11px] font-mono text-muted-foreground">oklch(0.585 0.20 28.0)</div>
-                <div class="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">Nút xóa/hủy (Contrast 4.63:1 AA)</div>
+              <div>
+                <span class="text-muted-foreground">Chữ tự động tương phản: </span>
+                <strong class="font-mono">{{ getAccessibleTextColor(currentTheme.primaryColor) }}</strong>
+              </div>
+              <div>
+                <span class="text-muted-foreground">Tỷ lệ tương phản thực tế: </span>
+                <strong :class="getContrastInfo(currentTheme.primaryColor, getAccessibleTextColor(currentTheme.primaryColor)).isAA ? 'text-emerald-600 dark:text-emerald-400 font-mono' : 'text-destructive font-mono'">
+                  {{ getContrastInfo(currentTheme.primaryColor, getAccessibleTextColor(currentTheme.primaryColor)).ratio }}:1 ({{ getContrastInfo(currentTheme.primaryColor, getAccessibleTextColor(currentTheme.primaryColor)).isAA ? 'PASS AA' : 'FAIL AA' }})
+                </strong>
               </div>
             </div>
           </div>
@@ -751,9 +835,10 @@ function scrollTo(id: string) {
       </main>
     </div>
 
-    <!-- Theme Customizer Drawer với Floating Trigger tròn kinh điển góc dưới phải -->
+    <!-- Theme Customizer Drawer (Chỉ mở từ nút Header duy nhất - FINAL-04) -->
     <ThemeCustomizer
       v-model="isCustomizerOpen"
+      :show-floating-trigger="false"
     />
   </div>
 </template>
