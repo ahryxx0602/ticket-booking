@@ -192,17 +192,29 @@ public class AdminRoleServiceImpl implements AdminRoleManagementUseCase {
                         .map(a -> a.substring(5))
                         .collect(java.util.stream.Collectors.toSet());
             }
+            boolean hasBaseAdmin = auth.getAuthorities().stream()
+                    .map(org.springframework.security.core.GrantedAuthority::getAuthority)
+                    .anyMatch("ROLE_ADMIN"::equals);
+            if (hasBaseAdmin) {
+                return null;
+            }
         }
         if (currentAdminUsername != null && !currentAdminUsername.isBlank()) {
             Optional<User> callerOpt = userRepository.findByUsername(currentAdminUsername);
-            if (callerOpt.isPresent() && !callerOpt.get().isSuperAdmin()) {
+            if (callerOpt.isPresent()) {
+                if (callerOpt.get().isSuperAdmin()) {
+                    return null;
+                }
                 String callerRoleCode = callerOpt.get().getEffectiveRoleCode();
                 return systemRoleRepository.findByCode(callerRoleCode)
                         .map(sr -> new java.util.HashSet<>(sr.getPermissions()))
                         .orElseGet(java.util.HashSet::new);
             }
+            if ("admin".equalsIgnoreCase(currentAdminUsername.trim())) {
+                return null;
+            }
         }
-        return null;
+        return java.util.Collections.emptySet(); // Fail-Closed
     }
 
     private SystemRoleResponse toResponse(SystemRole role) {

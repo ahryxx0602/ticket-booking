@@ -52,12 +52,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String token = resolveToken(request);
         if (StringUtils.hasText(token) && jwtTokenProvider.validateToken(token)) {
             String username = jwtTokenProvider.getUsernameFromToken(token);
+            if (!StringUtils.hasText(username) || jwtTokenProvider.isTokenRevokedForUser(username, token)) {
+                SecurityContextHolder.clearContext();
+                filterChain.doFilter(request, response);
+                return;
+            }
             String role = jwtTokenProvider.getRoleFromToken(token);
             String customRole = jwtTokenProvider.getCustomRoleFromToken(token);
 
             // BE-SEC-001: Đối chiếu trạng thái thực tế của User trong DB (nếu có UserRepository)
             // Thu hồi quyền ngay lập tức nếu tài khoản bị LOCKED, bị xóa hoặc bị thay đổi Role sau khi cấp JWT
-            if (userRepository != null && StringUtils.hasText(username)) {
+            if (userRepository != null) {
                 Optional<User> liveUserOpt = userRepository.findByUsername(username);
                 if (liveUserOpt.isEmpty() || liveUserOpt.get().getStatus() == UserStatus.LOCKED) {
                     SecurityContextHolder.clearContext();

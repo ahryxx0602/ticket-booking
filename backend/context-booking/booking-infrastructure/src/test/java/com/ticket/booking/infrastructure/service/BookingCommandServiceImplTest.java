@@ -65,6 +65,10 @@ class BookingCommandServiceImplTest {
             TransactionCallback<?> callback = invocation.getArgument(0);
             return callback.doInTransaction(mock(TransactionStatus.class));
         });
+        lenient().when(catalogTripPort.lockSeatsForBooking(any(), anyList())).thenAnswer(invocation -> {
+            List<?> seats = invocation.getArgument(1);
+            return seats != null ? seats.size() : 0;
+        });
     }
 
     @Test
@@ -305,7 +309,7 @@ class BookingCommandServiceImplTest {
                 .expiresAt(now.plusMinutes(5))
                 .build();
 
-        when(bookingRepository.findById(10L)).thenReturn(Optional.of(booking));
+        when(bookingRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(booking));
         when(bookingRepository.save(any(Booking.class))).thenReturn(booking);
 
         boolean result = commandService.execute(10L, now);
@@ -325,7 +329,7 @@ class BookingCommandServiceImplTest {
                 .expiresAt(now.plusMinutes(5))
                 .build();
 
-        when(bookingRepository.findById(10L)).thenReturn(Optional.of(booking));
+        when(bookingRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(booking));
 
         boolean result = commandService.execute(10L, now);
 
@@ -343,7 +347,7 @@ class BookingCommandServiceImplTest {
                 .expiresAt(now.minusSeconds(10))
                 .build();
 
-        when(bookingRepository.findById(10L)).thenReturn(Optional.of(booking));
+        when(bookingRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(booking));
 
         boolean result = commandService.execute(10L, now);
 
@@ -372,8 +376,8 @@ class BookingCommandServiceImplTest {
                 .build();
 
         when(bookingRepository.findExpiredHeldBookings(eq(now), eq(100))).thenReturn(List.of(b1, b2));
-        when(bookingRepository.findById(1L)).thenReturn(Optional.of(b1));
-        when(bookingRepository.findById(2L)).thenReturn(Optional.of(b2));
+        when(bookingRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(b1));
+        when(bookingRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(b2));
         when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
 
         int expiredCount = commandService.execute(now);
@@ -404,13 +408,40 @@ class BookingCommandServiceImplTest {
                 .build();
 
         when(bookingRepository.findExpiredHeldBookings(eq(now), eq(100))).thenReturn(List.of(b1, b2));
-        when(bookingRepository.findById(1L)).thenThrow(new org.springframework.orm.ObjectOptimisticLockingFailureException(Booking.class, 1L));
-        when(bookingRepository.findById(2L)).thenReturn(Optional.of(b2));
+        when(bookingRepository.findByIdForUpdate(1L)).thenThrow(new org.springframework.orm.ObjectOptimisticLockingFailureException(Booking.class, 1L));
+        when(bookingRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(b2));
         when(bookingRepository.save(b2)).thenReturn(b2);
 
         int expiredCount = commandService.execute(now);
 
         assertThat(expiredCount).isEqualTo(1);
         assertThat(b2.getStatus()).isEqualTo(BookingStatus.EXPIRED);
+    }
+
+    @Test
+    void holdSeats_whenDbSeatLockCountMismatch_shouldThrowSeatNotFoundAndReleaseRedisLocks() {
+        HoldSeatCommand cmd = new HoldSeatCommand();
+        cmd.setTripId(1L);
+        cmd.setSeatNumbers(List.of("01A", "02B"));
+
+        when(seatLockRepository.acquireLocks(eq(1L), eq(List.of("01A", "02B")), anyString(), any())).thenReturn(true);
+        when(identityUserPort.findByUsername("customer1"))
+                .thenReturn(Optional.of(new IdentityUserPort.AuthenticatedUserInfo(2L, false)));
+        when(catalogTripPort.findTripWithSeats(1L)).thenReturn(Optional.of(new CatalogTripPort.TripSnapshot(
+                1L,
+                true,
+                Map.of(
+                        "01A", new CatalogTripPort.TripSeatInfo(101L, "01A", BigDecimal.valueOf(1000000)),
+                        "02B", new CatalogTripPort.TripSeatInfo(102L, "02B", BigDecimal.valueOf(1000000))
+                )
+        )));
+        // Simulate DB seat row missing when locking
+        when(catalogTripPort.lockSeatsForBooking(1L, List.of("01A", "02B"))).thenReturn(1);
+
+        assertThatThrownBy(() -> commandService.execute(cmd, "customer1"))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("SEAT_NOT_FOUND");
+
+        verify(seatLockRepository).releaseOwnedLocks(eq(1L), eq(List.of("01A", "02B")), anyString());
     }
 }

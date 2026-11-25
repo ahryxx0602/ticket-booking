@@ -25,8 +25,8 @@ public class CatalogTripPortAdapter implements CatalogTripPort {
     }
 
     @Override
-    public void lockSeatsForBooking(Long tripId, List<String> sortedSeatNumbers) {
-        tripRepository.lockSeatsByTripIdAndNumbers(tripId, sortedSeatNumbers);
+    public int lockSeatsForBooking(Long tripId, List<String> sortedSeatNumbers) {
+        return tripRepository.lockSeatsByTripIdAndNumbers(tripId, sortedSeatNumbers).size();
     }
 
     private TripSnapshot toSnapshot(Trip trip, List<Seat> seats) {

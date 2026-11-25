@@ -119,6 +119,7 @@ public class AdminApiPermissionFilter extends OncePerRequestFilter {
             new EndpointRule(Set.of("GET"), "/api/v1/admin/partners/banners/*", List.of("BANNER_VIEW")),
             new EndpointRule(Set.of("POST"), "/api/v1/admin/partners/banners", List.of("BANNER_CREATE_DELETE")),
             new EndpointRule(Set.of("POST"), "/api/v1/admin/partners/banners/platform", List.of("BANNER_CREATE_DELETE")),
+            new EndpointRule(Set.of("PUT", "DELETE"), "/api/v1/admin/partners/banners/platform/*", List.of("BANNER_CREATE_DELETE")),
             new EndpointRule(Set.of("PUT", "DELETE"), "/api/v1/admin/partners/banners/*", List.of("BANNER_CREATE_DELETE")),
 
             // 6. MODULE 5: IAM - USERS

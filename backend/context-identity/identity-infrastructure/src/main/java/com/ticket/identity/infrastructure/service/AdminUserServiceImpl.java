@@ -199,6 +199,7 @@ public class AdminUserServiceImpl implements
 
         if (request.getStatus() == UserStatus.LOCKED) {
             user.lock();
+            com.ticket.identity.infrastructure.security.JwtTokenProvider.revokeTokensIssuedBeforeNow(user.getUsername());
             log.info("[ADMIN USER] User {} has been LOCKED by admin {}", user.getUsername(), currentAdminUsername);
         } else if (request.getStatus() == UserStatus.ACTIVE) {
             user.activate();
@@ -244,12 +245,14 @@ public class AdminUserServiceImpl implements
     @Transactional
     public void execute(Long id, AdminResetPasswordRequest request, String currentAdminUsername) {
         User user = findUserOrThrow(id);
-        // FND-001 & BE-SEC-002: Chốt chặn bảo vệ tài khoản Super Admin và tài khoản có quyền cao hơn trước thao tác Reset Password
+        // FND-001 & BE-SEC-002: Chốt chặn bảo vệ tài khoản Super Admin và tài khoản hệ thống trước thao tác Reset Password
         enforceTargetSuperAdminProtection(user, currentAdminUsername);
         enforceTargetUserPermissionSubset(user, currentAdminUsername);
 
         user.updatePassword(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
+        // BE-SEC-001: Vô hiệu hóa toàn bộ các JWT cũ đã cấp cho user trước thời điểm reset mật khẩu
+        com.ticket.identity.infrastructure.security.JwtTokenProvider.revokeTokensIssuedBeforeNow(user.getUsername());
         log.info("[ADMIN USER] Password of user {} reset successfully by admin {}", user.getUsername(), currentAdminUsername);
     }
 
@@ -351,7 +354,8 @@ public class AdminUserServiceImpl implements
     }
 
     /**
-     * BE-SEC-002: Ngăn nhân sự Custom Role sửa/khóa/xóa/reset mật khẩu của một nhân sự hệ thống khác có quyền mà caller không sở hữu.
+     * BE-SEC-002: Ngăn nhân sự Custom Role sửa/khóa/xóa/reset mật khẩu của một nhân sự hệ thống khác (chống Lateral Movement / Impersonation).
+     * Chỉ Super Admin (ROLE_ADMIN) mới được phép thao tác quản trị lên các tài khoản thuộc phân mục SYSTEM khác.
      */
     private void enforceTargetUserPermissionSubset(User targetUser, String currentAdminUsername) {
         if (targetUser == null || !"SYSTEM".equalsIgnoreCase(targetUser.getCategory())) {
@@ -360,7 +364,10 @@ public class AdminUserServiceImpl implements
         if (targetUser.getUsername() != null && targetUser.getUsername().equalsIgnoreCase(currentAdminUsername)) {
             return;
         }
-        enforceTargetRolePermissionSubset(targetUser.getEffectiveRoleCode(), currentAdminUsername);
+        if (!isCallerSuperAdmin(currentAdminUsername)) {
+            throw new ForbiddenException("SYSTEM_STAFF_PROTECTED",
+                    "Chỉ Super Admin (ROLE_ADMIN) mới được phép sửa, khóa, xóa, đổi vai trò hoặc đặt lại mật khẩu của nhân sự quản trị hệ thống khác");
+        }
     }
 
     private java.util.Set<String> resolveCallerPermissionsIfCustomAdmin(String currentAdminUsername) {
@@ -376,10 +383,19 @@ public class AdminUserServiceImpl implements
                         .map(a -> a.substring(5))
                         .collect(java.util.stream.Collectors.toSet());
             }
+            boolean hasBaseAdmin = auth.getAuthorities().stream()
+                    .map(GrantedAuthority::getAuthority)
+                    .anyMatch("ROLE_ADMIN"::equals);
+            if (hasBaseAdmin) {
+                return null; // Super Admin
+            }
         }
         if (currentAdminUsername != null && !currentAdminUsername.isBlank()) {
             Optional<User> callerOpt = userRepository.findByUsername(currentAdminUsername);
-            if (callerOpt.isPresent() && !callerOpt.get().isSuperAdmin()) {
+            if (callerOpt.isPresent()) {
+                if (callerOpt.get().isSuperAdmin()) {
+                    return null;
+                }
                 if (systemRoleRepository != null) {
                     return systemRoleRepository.findByCode(callerOpt.get().getEffectiveRoleCode())
                             .map(sr -> new java.util.HashSet<>(sr.getPermissions()))
@@ -387,30 +403,40 @@ public class AdminUserServiceImpl implements
                 }
                 return new java.util.HashSet<>();
             }
+            if ("admin".equalsIgnoreCase(currentAdminUsername.trim())) {
+                return null;
+            }
         }
-        return null;
+        return java.util.Collections.emptySet(); // Fail-Closed
     }
 
     private boolean isCallerSuperAdmin(String currentAdminUsername) {
         // 1. Kiểm tra SecurityContextHolder trước: nếu Authentication có CUSTOM_ROLE_*, chắc chắn KHÔNG phải Super Admin
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getAuthorities() != null) {
+        if (auth != null && auth.getAuthorities() != null && !auth.getAuthorities().isEmpty()) {
             boolean hasCustomRoleAuthority = auth.getAuthorities().stream()
                     .map(GrantedAuthority::getAuthority)
                     .anyMatch(a -> a != null && a.startsWith("CUSTOM_ROLE_"));
             if (hasCustomRoleAuthority) {
                 return false;
             }
+            boolean hasBaseAdmin = auth.getAuthorities().stream()
+                    .map(GrantedAuthority::getAuthority)
+                    .anyMatch("ROLE_ADMIN"::equals);
+            if (hasBaseAdmin) {
+                return true;
+            }
         }
 
-        // 2. Đối chiếu DB theo currentAdminUsername
+        // 2. Đối chiếu DB theo currentAdminUsername (Fail-Closed nếu không xác định được caller)
         if (currentAdminUsername != null && !currentAdminUsername.isBlank()) {
             Optional<User> callerOpt = userRepository.findByUsername(currentAdminUsername);
             if (callerOpt.isPresent()) {
                 return callerOpt.get().isSuperAdmin();
             }
+            return "admin".equalsIgnoreCase(currentAdminUsername.trim());
         }
-        return true;
+        return false;
     }
 
     private User findUserOrThrow(Long id) {

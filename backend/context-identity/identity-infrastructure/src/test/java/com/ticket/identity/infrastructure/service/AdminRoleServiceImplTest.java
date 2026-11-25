@@ -219,6 +219,10 @@ class AdminRoleServiceImplTest {
                 .containsExactly("BANNER_VIEW");
         assertThat(AdminApiPermissionFilter.resolveRequiredPermissions("POST", "/api/v1/admin/partners/banners/platform"))
                 .containsExactly("BANNER_CREATE_DELETE");
+        assertThat(AdminApiPermissionFilter.resolveRequiredPermissions("PUT", "/api/v1/admin/partners/banners/platform/10"))
+                .containsExactly("BANNER_CREATE_DELETE");
+        assertThat(AdminApiPermissionFilter.resolveRequiredPermissions("DELETE", "/api/v1/admin/partners/banners/platform/10"))
+                .containsExactly("BANNER_CREATE_DELETE");
         assertThat(AdminApiPermissionFilter.resolveRequiredPermissions("PUT", "/api/v1/admin/partners/banners/1/approve"))
                 .containsExactly("BANNER_APPROVE_REJECT");
 

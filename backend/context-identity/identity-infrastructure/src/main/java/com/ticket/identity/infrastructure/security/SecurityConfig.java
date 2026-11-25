@@ -46,8 +46,11 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/payments/webhook/**").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/notifications/telegram/webhook").permitAll()
 
-                // Health probes: Allow minimal probe endpoint for container healthchecks
-                .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info", "/internal/actuator/health/**").permitAll()
+                // Health probes: Allow minimal probe endpoint for container healthchecks (both dev /actuator/health and prod /internal/actuator/health)
+                .requestMatchers(
+                    "/actuator/health", "/actuator/health/**", "/actuator/info",
+                    "/internal/actuator/health", "/internal/actuator/health/**", "/internal/actuator/info"
+                ).permitAll()
                 // BE-SEC-004: All other Actuator operational metrics require Super Admin (or explicit PERM_SYSTEM_SETTINGS_MANAGE)
                 .requestMatchers("/actuator/**", "/internal/actuator/**").access((authentication, context) ->
                     new org.springframework.security.authorization.AuthorizationDecision(hasSuperAdminOrPermission(authentication.get(), "PERM_SYSTEM_SETTINGS_MANAGE"))
@@ -66,11 +69,12 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/bookings/**").hasRole("CUSTOMER")
                 .requestMatchers("/api/v1/payments/checkout").hasRole("CUSTOMER")
 
-                // 5. Partner Role APIs (BE-SEC-004: Custom Admin without PERM_OPERATOR_VIEW cannot access /api/v1/partners/**)
-                .requestMatchers("/api/v1/partners/register").authenticated()
-                .requestMatchers("/api/v1/partners/**").access((authentication, context) ->
+                // 5. Partner Role APIs (BE-SEC-004: Strictly scope /register to CUSTOMER/OPERATOR and /me GET to OPERATOR or ADMIN with PERM_OPERATOR_VIEW)
+                .requestMatchers(HttpMethod.POST, "/api/v1/partners/register").hasAnyRole("CUSTOMER", "OPERATOR")
+                .requestMatchers(HttpMethod.GET, "/api/v1/partners/me").access((authentication, context) ->
                     new org.springframework.security.authorization.AuthorizationDecision(hasOperatorOrSuperAdminOrPermission(authentication.get(), "PERM_OPERATOR_VIEW"))
                 )
+                .requestMatchers("/api/v1/partners/**").hasRole("OPERATOR")
 
                 // 6. Any other requests require authentication
                 .anyRequest().authenticated()

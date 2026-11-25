@@ -37,6 +37,11 @@ public class BookingRepositoryImpl implements BookingRepository {
     }
 
     @Override
+    public Optional<Booking> findByIdForUpdate(Long id) {
+        return springDataBookingRepository.findByIdForUpdate(id).map(this::toDomain);
+    }
+
+    @Override
     public Optional<Booking> findByReference(String bookingReference) {
         return springDataBookingRepository.findByBookingReferenceWithItems(bookingReference).map(this::toDomain);
     }

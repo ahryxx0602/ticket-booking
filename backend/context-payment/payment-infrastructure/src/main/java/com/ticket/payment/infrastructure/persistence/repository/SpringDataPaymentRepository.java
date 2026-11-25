@@ -24,8 +24,10 @@ public interface SpringDataPaymentRepository extends JpaRepository<PaymentJpaEnt
     @Query("SELECT p FROM PaymentJpaEntity p WHERE p.paymentReference = :paymentReference")
     Optional<PaymentJpaEntity> findByPaymentReferenceForUpdate(@Param("paymentReference") String paymentReference);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<PaymentJpaEntity> findFirstByBookingIdAndStatusOrderByIdDesc(Long bookingId, PaymentStatus status);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<PaymentJpaEntity> findFirstByBookingIdAndStatus(Long bookingId, PaymentStatus status);
 
     @Query("SELECT COALESCE(SUM(CASE WHEN p.status IN (com.ticket.payment.domain.model.PaymentStatus.SUCCESS, com.ticket.payment.domain.model.PaymentStatus.REFUNDED) THEN p.amount ELSE 0 END), 0) " +

@@ -181,4 +181,21 @@ class JwtAuthenticationFilterTest {
                 "PERM_BANNER_APPROVE_REJECT"
         );
     }
+
+    @Test
+    @DisplayName("BE-SEC-001: JWT issued before password reset must be immediately rejected")
+    void doFilterInternal_WhenTokenRevokedByPasswordReset_ShouldNotSetAuthentication() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Bearer pre.reset.token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        when(jwtTokenProvider.validateToken("pre.reset.token")).thenReturn(true);
+        when(jwtTokenProvider.getUsernameFromToken("pre.reset.token")).thenReturn("compromised_user");
+        when(jwtTokenProvider.isTokenRevokedForUser("compromised_user", "pre.reset.token")).thenReturn(true);
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+        verify(filterChain).doFilter(request, response);
+    }
 }

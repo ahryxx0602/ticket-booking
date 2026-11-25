@@ -126,9 +126,13 @@ public class BookingCommandServiceImpl implements HoldSeatUseCase, CancelBooking
         }
 
         // BE-CON-001: Khóa bi quan (SELECT ... FOR UPDATE ORDER BY seat_number ASC) trên các dòng Seat vật lý trong MySQL
-        // Đảm bảo tuần tự hóa 100% ở tầng DB chống Double-Booking ngay cả khi Redis gặp sự cố mất lock
-        catalogTripPort.lockSeatsForBooking(command.getTripId(), normalizedSeats);
+        // Kiểm tra số lượng dòng ghế thực tế khóa được phải khớp tuyệt đối với số ghế yêu cầu
+        int lockedSeatCount = catalogTripPort.lockSeatsForBooking(command.getTripId(), normalizedSeats);
+        if (lockedSeatCount != normalizedSeats.size()) {
+            throw new BusinessException("SEAT_NOT_FOUND", "Could not lock all requested seats on trip: " + command.getTripId());
+        }
 
+        // findActiveBookedSeatNumbers cũng được gắn @Lock(PESSIMISTIC_WRITE) để ép MySQL REPEATABLE READ thực hiện Current Read
         Set<String> activeBookedSeats = bookingRepository.findActiveBookedSeatNumbers(command.getTripId(), LocalDateTime.now());
         for (String seatNumber : normalizedSeats) {
             if (activeBookedSeats.contains(seatNumber)) {
@@ -244,32 +248,28 @@ public class BookingCommandServiceImpl implements HoldSeatUseCase, CancelBooking
 
     @Override
     public boolean execute(Long bookingId, LocalDateTime now) {
-        // BE-TXN-001: Sử dụng PROPAGATION_REQUIRED mặc định để tham gia cùng transaction với PaymentServiceImpl (VNPay IPN),
-        // tránh mở connection thứ 2 gây Split-Brain giữa Booking và Payment hoặc HikariCP Pool Deadlock.
-        try {
-            return Boolean.TRUE.equals(transactionTemplate.execute(status -> {
-                Booking booking = bookingRepository.findById(bookingId)
-                        .orElseThrow(() -> new EntityNotFoundException("Booking", bookingId));
-                if (booking.getStatus() == BookingStatus.CONFIRMED) {
-                    return true;
-                }
-                if (booking.getStatus() != BookingStatus.HELD) {
-                    log.warn("Cannot confirm booking {} because status is {}", bookingId, booking.getStatus());
-                    return false;
-                }
-                if (booking.isExpired(now)) {
-                    log.warn("Cannot confirm booking {} because hold time expired at {}", bookingId, booking.getExpiresAt());
-                    return false;
-                }
-                booking.confirm(now);
-                bookingRepository.save(booking);
-                log.info("Booking {} confirmed successfully", booking.getBookingReference());
+        // BE-TXN-001: Sử dụng PROPAGATION_REQUIRED mặc định để tham gia cùng transaction với PaymentServiceImpl (VNPay IPN).
+        // Sử dụng findByIdForUpdate (PESSIMISTIC_WRITE) để tuần tự hóa với Scheduler và KHÔNG ném exception nghiệp vụ ra khỏi callback
+        // nhằm tránh việc TransactionTemplate đánh dấu physical transaction là rollback-only (gây UnexpectedRollbackException).
+        return Boolean.TRUE.equals(transactionTemplate.execute(status -> {
+            Booking booking = bookingRepository.findByIdForUpdate(bookingId)
+                    .orElseThrow(() -> new EntityNotFoundException("Booking", bookingId));
+            if (booking.getStatus() == BookingStatus.CONFIRMED) {
                 return true;
-            }));
-        } catch (org.springframework.orm.ObjectOptimisticLockingFailureException ex) {
-            log.warn("Optimistic locking conflict confirming booking {}: {}", bookingId, ex.getMessage());
-            return false;
-        }
+            }
+            if (booking.getStatus() != BookingStatus.HELD) {
+                log.warn("Cannot confirm booking {} because status is {}", bookingId, booking.getStatus());
+                return false;
+            }
+            if (booking.isExpired(now)) {
+                log.warn("Cannot confirm booking {} because hold time expired at {}", bookingId, booking.getExpiresAt());
+                return false;
+            }
+            booking.confirm(now);
+            bookingRepository.save(booking);
+            log.info("Booking {} confirmed successfully", booking.getBookingReference());
+            return true;
+        }));
     }
 
     @Override
@@ -291,7 +291,7 @@ public class BookingCommandServiceImpl implements HoldSeatUseCase, CancelBooking
     public boolean expireSingleBooking(Long bookingId, LocalDateTime now) {
         try {
             return Boolean.TRUE.equals(transactionTemplate.execute(status -> {
-                Booking booking = bookingRepository.findById(bookingId).orElse(null);
+                Booking booking = bookingRepository.findByIdForUpdate(bookingId).orElse(null);
                 if (booking == null || booking.getStatus() != BookingStatus.HELD || !booking.isExpired(now)) {
                     return false;
                 }

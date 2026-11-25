@@ -334,5 +334,22 @@ class AdminUserServiceImplTest {
         assertThatThrownBy(() -> adminUserService.execute(1L, escalateRoleReq, "staff_crud_only"))
                 .isInstanceOf(ForbiddenException.class)
                 .extracting("code").isEqualTo("PRIVILEGE_ESCALATION_DETECTED");
+
+        // 3. BE-SEC-002 (Lateral Movement Prevention): Custom Admin cannot reset password or lock another SYSTEM staff account
+        User peerSystemStaff = User.builder()
+                .id(12L)
+                .username("peer_staff")
+                .role(UserRole.ROLE_ADMIN)
+                .customRoleCode("ROLE_USER_EDITOR")
+                .status(UserStatus.ACTIVE)
+                .build();
+        when(userRepository.findById(12L)).thenReturn(Optional.of(peerSystemStaff));
+
+        AdminResetPasswordRequest peerResetReq = new AdminResetPasswordRequest();
+        peerResetReq.setNewPassword("takeover_password");
+
+        assertThatThrownBy(() -> adminUserService.execute(12L, peerResetReq, "staff_crud_only"))
+                .isInstanceOf(ForbiddenException.class)
+                .extracting("code").isEqualTo("SYSTEM_STAFF_PROTECTED");
     }
 }

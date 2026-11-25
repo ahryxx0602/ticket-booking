@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/modules/auth/store'
 import { useLayoutWidth } from '@/shared/composables/useLayoutWidth'
@@ -116,8 +116,19 @@ const adminMenuItems = [
 
 const menuItems = computed(() => {
   if (!isAdmin.value) return operatorMenuItems
-  if (!auth.isAuthenticated) return adminMenuItems
+  // FE-SEC-001: Fail-Closed sidebar menu when unauthenticated
+  if (!auth.isAuthenticated) return []
   return adminMenuItems.filter(item => auth.hasAnyPermission(item.permissions))
+})
+
+// FE-SEC-002: Tự động đồng bộ lại role & permissions từ GET /api/v1/auth/me khi khởi tạo/reload trang quản trị
+onMounted(async () => {
+  if (isAdmin.value && auth.isAuthenticated) {
+    const updated = await auth.refreshProfile()
+    if (updated && !auth.isAdmin) {
+      router.replace(auth.getHomeRoute())
+    }
+  }
 })
 
 function handleExitPreview() {

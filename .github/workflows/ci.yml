@@ -117,6 +117,15 @@ jobs:
         working-directory: frontend
         run: npm audit --omit=dev --audit-level=high
 
+      - name: Trivy Filesystem Dependency Vulnerability Scan (Maven & NPM)
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0 # v0.28.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          scanners: 'vuln'
+          severity: 'HIGH,CRITICAL'
+          ignore-unfixed: true
+
       - name: TruffleHog Secret Scan
         uses: trufflesecurity/trufflehog@4ef51f69ca6347aaa76a5e64a87eac9c0c909f71 # pinned immutable SHA for security
         with:

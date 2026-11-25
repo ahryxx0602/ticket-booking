@@ -188,9 +188,14 @@ class SecurityIntegrationTest {
     }
 
     @Test
-    @DisplayName("PUB-02: Health check probe should allow anonymous access (200 OK)")
+    @DisplayName("PUB-02: Health check probe should allow anonymous access (200 OK) for both dev /actuator/health and prod /internal/actuator/health")
     void anonymous_whenCallingHealthCheck_shouldSucceed() throws Exception {
         mockMvc.perform(get("/actuator/health")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("UP"));
+
+        mockMvc.perform(get("/internal/actuator/health")
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("UP"));
@@ -316,7 +321,7 @@ class SecurityIntegrationTest {
                 return ResponseEntity.ok(ApiResponse.ok("Public trip catalog"));
             }
 
-            @GetMapping("/actuator/health")
+            @GetMapping({"/actuator/health", "/internal/actuator/health"})
             public ResponseEntity<String> getHealth() {
                 return ResponseEntity.ok("{\"status\":\"UP\"}");
             }

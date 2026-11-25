@@ -11,10 +11,10 @@ public interface CatalogTripPort {
 
     /**
      * BE-CON-001: Khóa bi quan (PESSIMISTIC_WRITE) các dòng ghế theo thứ tự tăng dần trong MySQL
-     * nhằm chống Double-Booking 100% ở tầng Database ngay cả khi Redis bị evict hoặc failover.
+     * nhằm chống Double-Booking ở tầng Database ngay cả khi Redis bị evict hoặc failover.
+     * Trả về số lượng dòng ghế thực tế đã được khóa.
      */
-    default void lockSeatsForBooking(Long tripId, List<String> sortedSeatNumbers) {
-    }
+    int lockSeatsForBooking(Long tripId, List<String> sortedSeatNumbers);
 
     record TripSeatInfo(Long seatId, String seatNumber, BigDecimal price) {}
 

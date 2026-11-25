@@ -11,6 +11,9 @@ import java.util.Set;
 
 public interface BookingRepository {
     Optional<Booking> findById(Long id);
+    default Optional<Booking> findByIdForUpdate(Long id) {
+        return findById(id);
+    }
     Optional<Booking> findByReference(String bookingReference);
     Optional<Booking> findByReferenceForUpdate(String bookingReference);
     Set<String> findActiveBookedSeatNumbers(Long tripId, LocalDateTime now);

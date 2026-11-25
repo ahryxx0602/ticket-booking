@@ -75,7 +75,7 @@ httpClient.interceptors.request.use((config) => {
   const previewRoleCode = activePreviewRoleCode || safeGetStorage('velobus_preview_role')
   const method = (config.method || 'get').toUpperCase()
   const url = config.url || ''
-  if (previewRoleCode && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && url.includes('/admin/')) {
+  if (previewRoleCode && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && /\/admin(\/|$)/.test(url)) {
     return Promise.reject({
       code: 'PREVIEW_MODE_READONLY',
       message: `Đang ở chế độ Xem thử giao diện (${previewRoleCode}). Vui lòng tắt chế độ Xem thử trước khi thực hiện thao tác thay đổi dữ liệu.`

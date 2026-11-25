@@ -49,7 +49,7 @@ public class PartnerController {
 
     // --- 1. Operator Profile ---
     @PostMapping("/register")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'OPERATOR')")
     public ResponseEntity<ApiResponse<OperatorResponse>> register(
             Principal principal,
             @RequestBody RegisterOperatorCommand cmd

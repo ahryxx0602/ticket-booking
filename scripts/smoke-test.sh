@@ -44,8 +44,13 @@ echo "==========================================================================
 # 1. Infrastructure check
 "$ROOT_DIR/scripts/healthcheck.sh" --infra-only
 
-# 2. Backend Actuator Health
+# 2. Backend Actuator Health (supports both dev /actuator/health and prod /internal/actuator/health)
 BACKEND_HEALTH_URL="http://127.0.0.1:${BACKEND_PORT}/actuator/health"
+if ! curl -fsS --max-time 3 "$BACKEND_HEALTH_URL" >/dev/null 2>&1; then
+  if curl -fsS --max-time 3 "http://127.0.0.1:${BACKEND_PORT}/internal/actuator/health" >/dev/null 2>&1; then
+    BACKEND_HEALTH_URL="http://127.0.0.1:${BACKEND_PORT}/internal/actuator/health"
+  fi
+fi
 wait_for_url "Backend Actuator" "$BACKEND_HEALTH_URL"
 health_json="$(curl -fsS "$BACKEND_HEALTH_URL")"
 if echo "$health_json" | grep -q '"status":"UP"'; then

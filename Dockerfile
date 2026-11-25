@@ -73,6 +73,6 @@ ENV JAVA_OPTS="-XX:+UseG1GC -XX:MaxRAMPercentage=75.0 -Djava.security.egd=file:/
 EXPOSE 8080
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:8080/actuator/health || exit 1
+  CMD wget -qO- http://127.0.0.1:8080/actuator/health || wget -qO- http://127.0.0.1:8080/internal/actuator/health || exit 1
 
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]

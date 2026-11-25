@@ -22,6 +22,10 @@ public interface SpringDataBookingRepository extends JpaRepository<BookingJpaEnt
     @Query("SELECT DISTINCT b FROM BookingJpaEntity b LEFT JOIN FETCH b.items WHERE b.id = :id")
     Optional<BookingJpaEntity> findByIdWithItems(@Param("id") Long id);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT DISTINCT b FROM BookingJpaEntity b LEFT JOIN FETCH b.items WHERE b.id = :id")
+    Optional<BookingJpaEntity> findByIdForUpdate(@Param("id") Long id);
+
     @Query("SELECT DISTINCT b FROM BookingJpaEntity b LEFT JOIN FETCH b.items WHERE b.bookingReference = :bookingReference")
     Optional<BookingJpaEntity> findByBookingReferenceWithItems(@Param("bookingReference") String bookingReference);
 
@@ -29,6 +33,7 @@ public interface SpringDataBookingRepository extends JpaRepository<BookingJpaEnt
     @Query("SELECT DISTINCT b FROM BookingJpaEntity b LEFT JOIN FETCH b.items WHERE b.bookingReference = :bookingReference")
     Optional<BookingJpaEntity> findByBookingReferenceForUpdate(@Param("bookingReference") String bookingReference);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             SELECT DISTINCT i.seatNumber
             FROM BookingItemJpaEntity i

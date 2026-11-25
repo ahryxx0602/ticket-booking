@@ -74,15 +74,18 @@ check_redis() {
 }
 
 check_backend() {
-  local url="http://127.0.0.1:${BACKEND_PORT}/actuator/health"
+  local dev_url="http://127.0.0.1:${BACKEND_PORT}/actuator/health"
+  local prod_url="http://127.0.0.1:${BACKEND_PORT}/internal/actuator/health"
   local resp
-  if resp="$(curl -fsS --max-time 3 "$url" 2>/dev/null)"; then
-    if echo "$resp" | grep -q '"status":"UP"'; then
-      log_ok "Backend Spring Boot is UP ($url)"
-      return 0
+  for url in "$dev_url" "$prod_url"; do
+    if resp="$(curl -fsS --max-time 3 "$url" 2>/dev/null)"; then
+      if echo "$resp" | grep -q '"status":"UP"'; then
+        log_ok "Backend Spring Boot is UP ($url)"
+        return 0
+      fi
     fi
-  fi
-  log_warn "Backend is not ready ($url)"
+  done
+  log_warn "Backend is not ready ($dev_url or $prod_url)"
   return 1
 }
 

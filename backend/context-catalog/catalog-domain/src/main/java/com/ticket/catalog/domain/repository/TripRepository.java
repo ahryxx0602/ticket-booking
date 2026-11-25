@@ -14,9 +14,7 @@ public interface TripRepository {
     List<Trip> findAll();
     List<Trip> searchTrips(String departureCity, String arrivalCity, LocalDateTime fromTime, LocalDateTime toTime);
     List<Seat> findSeatsByTripId(Long tripId);
-    default List<Seat> lockSeatsByTripIdAndNumbers(Long tripId, List<String> seatNumbers) {
-        return List.of();
-    }
+    List<Seat> lockSeatsByTripIdAndNumbers(Long tripId, List<String> seatNumbers);
     Trip save(Trip trip);
     void deleteById(Long id);
 }
