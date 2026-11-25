@@ -68,13 +68,41 @@ export function getContrastRatio(hex1: string, hex2: string): number {
   return parseFloat(((lighter + 0.05) / (darker + 0.05)).toFixed(2))
 }
 
+export function normalizeHex(hex: string): string | null {
+  if (!hex || typeof hex !== 'string') return null
+  const clean = hex.replace('#', '').trim()
+  if (/^[0-9a-fA-F]{3}$/.test(clean)) {
+    return '#' + clean[0].toUpperCase() + clean[0].toUpperCase() +
+                 clean[1].toUpperCase() + clean[1].toUpperCase() +
+                 clean[2].toUpperCase() + clean[2].toUpperCase()
+  }
+  if (/^[0-9a-fA-F]{6}$/.test(clean)) {
+    return '#' + clean.toUpperCase()
+  }
+  return null
+}
+
 export function getAccessibleTextColor(bgHex: string): string {
-  const contrastWithWhite = getContrastRatio(bgHex, '#FFFFFF')
+  const norm = normalizeHex(bgHex) || bgHex
+  if (!hexToRgb(norm)) return '#141413'
+  const contrastWithWhite = getContrastRatio(norm, '#FFFFFF')
   // WCAG AA for normal text requires minimum 4.5:1
   if (contrastWithWhite >= 4.5) {
     return '#FFFFFF'
   }
-  return '#141413' // Dark charcoal high-contrast text
+  const contrastWithCharcoal = getContrastRatio(norm, '#141413')
+  if (contrastWithCharcoal >= 4.5) {
+    return '#141413' // Dark charcoal high-contrast text
+  }
+  const contrastWithBlack = getContrastRatio(norm, '#000000')
+  if (contrastWithBlack >= 4.5) {
+    return '#000000' // True black for midtones like #777777 (contrast 4.69:1)
+  }
+  // Fallback to whichever candidate offers highest contrast
+  const highest = Math.max(contrastWithWhite, contrastWithCharcoal, contrastWithBlack)
+  if (highest === contrastWithBlack) return '#000000'
+  if (highest === contrastWithCharcoal) return '#141413'
+  return '#FFFFFF'
 }
 
 // Global singleton reactive state
@@ -91,8 +119,8 @@ function loadFromStorage(): ThemeConfig {
       const parsed = JSON.parse(raw)
       return {
         mode: ['light', 'dark', 'system'].includes(parsed.mode) ? parsed.mode : DEFAULT_THEME.mode,
-        primaryColor: typeof parsed.primaryColor === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(parsed.primaryColor)
-          ? parsed.primaryColor
+        primaryColor: typeof parsed.primaryColor === 'string' && normalizeHex(parsed.primaryColor)
+          ? normalizeHex(parsed.primaryColor)!
           : DEFAULT_THEME.primaryColor,
         radius: ['0.375rem', '0.5rem', '0.75rem', '1rem'].includes(parsed.radius) ? parsed.radius : DEFAULT_THEME.radius,
         density: ['compact', 'default', 'comfortable'].includes(parsed.density) ? parsed.density : DEFAULT_THEME.density

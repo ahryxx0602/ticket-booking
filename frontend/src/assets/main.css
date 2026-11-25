@@ -20,7 +20,9 @@
   --popover-foreground: oklch(0.2671 0.0196 98.9390);/* #282721 */
   
   --primary: oklch(0.6171 0.1375 39.0427);          /* #C96442 Canonical Terracotta */
-  --primary-foreground: oklch(1.0000 0 0);           /* #FFFFFF */
+  --primary-foreground: oklch(0.1908 0.0020 106.5859); /* #141413 (WCAG AA 4.73:1 contrast with #C96442) */
+  --primary-effective: oklch(0.58 0.1375 39.0427);   /* #BC5937 (Contrast 4.54:1 with white) */
+  --primary-effective-foreground: oklch(1.0000 0 0);  /* #FFFFFF */
   
   --secondary: oklch(0.9245 0.0138 92.9892);        /* #E9E6DC */
   --secondary-foreground: oklch(0.4334 0.0177 98.6048); /* #595547 */
@@ -70,77 +72,48 @@
      ========================================================================== */
   /* Effective Primary: for white text buttons to hit >= 4.54:1 contrast */
   --primary-effective: oklch(0.58 0.1375 39.0427);   /* #BC5937 (Contrast 4.54:1 with white) */
+  --primary-effective-foreground: oklch(1.0000 0 0);  /* #FFFFFF */
   --destructive-effective: oklch(0.585 0.20 28.0);   /* #D9372F (Contrast 4.63:1 with white) */
+  --destructive-effective-foreground: oklch(1.0000 0 0); /* #FFFFFF */
 
-  /* Density & Dimensions */
+  /* Density & Dimensions (Scoped via CSS Variables) */
   --spacing-density: 1;
-  --table-row-height-default: 52px;
-  --table-row-height-compact: 40px;
-  --table-row-height-comfortable: 60px;
+  --table-cell-py: 0.75rem;
+  --table-cell-px: 1rem;
+  --table-row-min-h: 52px;
 }
 
 /* ==========================================================================
    COMPONENT DENSITY RULES (Compact / Default / Comfortable)
-   Controls spacing across: Table rows, Buttons, Form inputs, and Cards
+   Scoped to data tables without breaking calendar day cells or dialogs
    ========================================================================== */
 [data-density="compact"] {
   --spacing-density: 0.85;
-}
-
-[data-density="compact"] table th,
-[data-density="compact"] table td {
-  padding-top: 0.5rem !important;
-  padding-bottom: 0.5rem !important;
-  padding-left: 0.75rem !important;
-  padding-right: 0.75rem !important;
-}
-
-[data-density="compact"] button.h-9 {
-  height: 2rem !important;
-  padding-left: 0.625rem !important;
-  padding-right: 0.625rem !important;
-  font-size: 0.8125rem !important;
-}
-
-[data-density="compact"] input.h-9 {
-  height: 2rem !important;
-  padding-top: 0.25rem !important;
-  padding-bottom: 0.25rem !important;
-  font-size: 0.8125rem !important;
-}
-
-[data-density="compact"] .p-6 {
-  padding: 1rem !important;
+  --table-cell-py: 0.5rem;
+  --table-cell-px: 0.75rem;
+  --table-row-min-h: 44px;
 }
 
 [data-density="comfortable"] {
   --spacing-density: 1.15;
+  --table-cell-py: 1rem;
+  --table-cell-px: 1.25rem;
+  --table-row-min-h: 60px;
 }
 
-[data-density="comfortable"] table th,
-[data-density="comfortable"] table td {
-  padding-top: 1.25rem !important;
-  padding-bottom: 1.25rem !important;
-  padding-left: 1.25rem !important;
-  padding-right: 1.25rem !important;
+/* Scoped exclusively to table elements with data-table or inside .data-table */
+[data-table] td,
+.data-table td {
+  padding-top: var(--table-cell-py);
+  padding-bottom: var(--table-cell-py);
+  padding-left: var(--table-cell-px);
+  padding-right: var(--table-cell-px);
 }
 
-[data-density="comfortable"] button.h-9 {
-  height: 2.75rem !important;
-  padding-left: 1.25rem !important;
-  padding-right: 1.25rem !important;
-  font-size: 0.9375rem !important;
-}
-
-[data-density="comfortable"] input.h-9 {
-  height: 2.75rem !important;
-  padding-top: 0.5rem !important;
-  padding-bottom: 0.5rem !important;
-  font-size: 0.9375rem !important;
-}
-
-[data-density="comfortable"] .p-6 {
-  padding: 2rem !important;
+[data-table] th,
+.data-table th {
+  padding-left: var(--table-cell-px);
+  padding-right: var(--table-cell-px);
 }
 
 /* Accessibility: Mobile Touch Target Minimum (44px on coarse pointer devices) */

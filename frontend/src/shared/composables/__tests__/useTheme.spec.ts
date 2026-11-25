@@ -81,6 +81,9 @@ describe('useTheme Composable & Claude+ Theme Hardening', () => {
       // For deep blue / navy, selects white #FFFFFF
       expect(getAccessibleTextColor('#1E40AF')).toBe('#FFFFFF')
       expect(getAccessibleTextColor('#0F172A')).toBe('#FFFFFF')
+
+      // For midtone gray #777777, both white (4.48) and charcoal (4.12) fail AA, selects true black #000000 (4.69 AA pass)
+      expect(getAccessibleTextColor('#777777')).toBe('#000000')
     })
 
     it('gracefully handles malformed hex codes in contrast functions', () => {

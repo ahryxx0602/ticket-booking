@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import {
   useTheme,
   type ThemeMode,
@@ -22,7 +22,29 @@ import {
 } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 
-const isOpen = ref(false)
+const props = withDefaults(
+  defineProps<{
+    modelValue?: boolean
+    showFloatingTrigger?: boolean
+  }>(),
+  {
+    modelValue: undefined,
+    showFloatingTrigger: true
+  }
+)
+
+const emits = defineEmits<{
+  (e: 'update:modelValue', val: boolean): void
+}>()
+
+const localIsOpen = ref(false)
+const isOpen = computed({
+  get: () => (props.modelValue !== undefined ? props.modelValue : localIsOpen.value),
+  set: (val: boolean) => {
+    localIsOpen.value = val
+    emits('update:modelValue', val)
+  }
+})
 const {
   draftTheme,
   currentTheme,
@@ -73,11 +95,12 @@ function handleReset() {
 
 <template>
   <div>
-    <!-- Trigger Floating Button -->
+    <!-- Trigger Floating Button (Hidden on mobile if controlled from header) -->
     <Button
+      v-if="showFloatingTrigger"
       variant="outline"
       size="sm"
-      class="fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-full shadow-lg border-primary/30 bg-background/95 backdrop-blur hover:bg-accent"
+      class="hidden md:flex fixed bottom-5 right-5 z-40 items-center gap-2 rounded-full shadow-lg border-primary/30 bg-background/95 backdrop-blur hover:bg-accent"
       @click="isOpen = !isOpen"
     >
       <Paintbrush class="h-4 w-4 text-primary" />
