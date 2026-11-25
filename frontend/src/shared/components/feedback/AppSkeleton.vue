@@ -20,7 +20,7 @@ withDefaults(
     <div
       v-for="i in count"
       :key="i"
-      :class="['skeleton-pulse bg-slate-200 dark:bg-slate-700', rounded]"
+      :class="['skeleton-pulse bg-muted', rounded]"
       :style="{ width, height }"
     />
   </div>

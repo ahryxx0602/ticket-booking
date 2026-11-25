@@ -56,8 +56,8 @@ defineExpose({ start, finish, fail })
         class="h-full transition-all duration-200 ease-out"
         :class="[
           status === 'error'
-            ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]'
-            : 'bg-primary-600 shadow-[0_0_8px_rgba(37,99,235,0.8)]'
+            ? 'bg-destructive shadow-[0_0_8px_rgba(217,55,47,0.8)]'
+            : 'bg-primary shadow-[0_0_8px_rgba(201,100,66,0.8)]'
         ]"
         :style="{ width: `${Math.min(progress, 100)}%` }"
       />
