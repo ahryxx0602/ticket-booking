@@ -6,9 +6,34 @@
     <title>VeloBus — Sàn Đặt Vé Xe Khách Liên Tỉnh & Quản Trị Đội Xe</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FIX-03 & Scope A: Chống chớp nháy giao diện FOUC (Flash of Unstyled Content) -->
+    <script>
+      (function() {
+        try {
+          var raw = localStorage.getItem('velobus_theme_config_v2');
+          if (raw) {
+            var cfg = JSON.parse(raw);
+            var mode = cfg.mode || 'system';
+            var isDark = mode === 'dark' || (mode === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+            if (isDark) {
+              document.documentElement.classList.add('dark');
+            } else {
+              document.documentElement.classList.remove('dark');
+            }
+            if (cfg.radius) {
+              document.documentElement.style.setProperty('--radius', cfg.radius);
+            }
+            if (cfg.primaryColor) {
+              document.documentElement.style.setProperty('--primary', cfg.primaryColor);
+              document.documentElement.style.setProperty('--ring', cfg.primaryColor);
+            }
+          }
+        } catch (_) {}
+      })();
+    </script>
   </head>
-  <body class="bg-slate-50 text-slate-900 antialiased">
+  <body class="bg-background text-foreground antialiased selection:bg-primary/20">
     <div id="app"></div>
     <script type="module" src="/src/main.js"></script>
   </body>
