@@ -34,7 +34,7 @@ function formatDate(date: any) {
           <PopoverTrigger as-child>
             <Button
               variant="outline"
-              class="w-full justify-start text-left font-normal h-10 border-border bg-background"
+              class="w-full justify-start text-left font-normal h-10 border-border bg-background cursor-pointer"
             >
               <CalendarIcon class="mr-2 h-4 w-4 text-primary" />
               <span class="text-xs font-medium">{{ formatDate(selectedDate) }}</span>
@@ -50,19 +50,28 @@ function formatDate(date: any) {
         </Popover>
       </div>
 
-      <!-- Time Picker Reusable Component -->
+      <!-- Time Picker Reusable Component (Direct Custom Select Dropdowns) -->
       <TimePicker
         v-model="selectedTime"
         label="Time Picker (24H Format):"
       />
     </div>
 
-    <!-- Selected Summary -->
-    <div class="p-3 bg-muted/40 rounded-lg border border-border flex items-center justify-between text-xs">
-      <span class="text-muted-foreground">Giá trị đã chọn (ISO format):</span>
-      <span class="font-mono font-bold text-primary">
-        {{ selectedDate ? `${selectedDate.toString()}T${selectedTime}:00` : 'Chưa chọn' }}
-      </span>
+    <!-- Selected Summary & Popover Variant -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-center pt-3 border-t border-border/60">
+      <div class="p-3 bg-muted/40 rounded-lg border border-border flex items-center justify-between text-xs">
+        <span class="text-muted-foreground">Giá trị đã chọn (ISO format):</span>
+        <span class="font-mono font-bold text-primary">
+          {{ selectedDate ? `${selectedDate.toString()}T${selectedTime}:00` : 'Chưa chọn' }}
+        </span>
+      </div>
+
+      <!-- Popover Mode Variant -->
+      <TimePicker
+        v-model="selectedTime"
+        variant="popover"
+        label="Time Picker (Popover Variant):"
+      />
     </div>
   </div>
 </template>

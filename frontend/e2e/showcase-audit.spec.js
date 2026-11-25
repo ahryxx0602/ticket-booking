@@ -75,6 +75,27 @@ test.describe('Showcase UI Fidelity & Interactive Audit (UI-01 through UI-14)', 
     })
   })
 
+  test('Audit 04b: Custom TimePicker 24H Dropdown Open State', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.goto('/showcase')
+    await page.waitForLoadState('networkidle')
+
+    const datepickerSection = page.locator('#calendar-datepicker')
+    await datepickerSection.scrollIntoViewIfNeeded()
+
+    // Click TimePicker SelectTrigger for hour
+    const hourTrigger = datepickerSection.locator('[role="combobox"]').first()
+    if (await hourTrigger.isVisible()) {
+      await hourTrigger.click()
+      await page.waitForTimeout(400)
+    }
+
+    await page.screenshot({
+      path: path.join(screenshotDir, 'showcase-timepicker-dropdown-open.png'),
+      fullPage: false
+    })
+  })
+
   test('Audit 05: DateRangePicker with Month Crossing & Presets Popover Open State', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.goto('/showcase')
