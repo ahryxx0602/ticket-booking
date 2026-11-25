@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, watch } from 'vue'
 import {
   useTheme,
   type ThemeMode,
@@ -37,13 +37,20 @@ const emits = defineEmits<{
   (e: 'update:modelValue', val: boolean): void
 }>()
 
-const localIsOpen = ref(false)
-const isOpen = computed({
-  get: () => (props.modelValue !== undefined ? props.modelValue : localIsOpen.value),
-  set: (val: boolean) => {
-    localIsOpen.value = val
-    emits('update:modelValue', val)
-  }
+const isOpen = ref(false)
+
+watch(
+  () => props.modelValue,
+  (val) => {
+    if (val !== undefined) {
+      isOpen.value = val
+    }
+  },
+  { immediate: true }
+)
+
+watch(isOpen, (val) => {
+  emits('update:modelValue', val)
 })
 const {
   draftTheme,
@@ -95,27 +102,28 @@ function handleReset() {
 
 <template>
   <div>
-    <!-- Trigger Floating Button (Hidden on mobile if controlled from header) -->
+    <!-- Trigger Floating Button (Nút nổi tròn kinh điển ở góc dưới phải z-40) -->
     <Button
       v-if="showFloatingTrigger"
       variant="outline"
       size="sm"
-      class="hidden md:flex fixed bottom-5 right-5 z-40 items-center gap-2 rounded-full shadow-lg border-primary/30 bg-background/95 backdrop-blur hover:bg-accent"
+      class="fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-full shadow-lg border-primary/30 bg-background/95 backdrop-blur hover:bg-accent cursor-pointer transition-transform duration-150 hover:scale-105 active:scale-95"
       @click="isOpen = !isOpen"
     >
       <Paintbrush class="h-4 w-4 text-primary" />
       <span class="font-medium text-xs">Tùy biến Theme</span>
     </Button>
 
-    <!-- Slide-over Drawer / Panel -->
-    <div
-      v-if="isOpen"
-      class="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-xs transition-opacity"
-      @click.self="handleCancel"
-    >
+    <!-- Slide-over Drawer / Panel (Teleport thẳng ra body z-50, không bị che khuất hay ảnh hưởng bởi layout) -->
+    <Teleport to="body">
       <div
-        class="flex flex-col h-full w-full max-w-md bg-background border-l shadow-2xl p-6 overflow-y-auto animate-in slide-in-from-right duration-300"
+        v-if="isOpen"
+        class="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-xs transition-opacity duration-300"
+        @click.self="handleCancel"
       >
+        <div
+          class="flex flex-col h-full w-full max-w-md bg-background border-l shadow-2xl p-6 overflow-y-auto animate-in slide-in-from-right duration-300"
+        >
         <div class="flex items-center justify-between pb-4 border-b">
           <div class="flex items-center gap-2">
             <div class="p-2 rounded-lg bg-primary/10 text-primary">
@@ -327,5 +335,6 @@ function handleReset() {
         </div>
       </div>
     </div>
-  </div>
+  </Teleport>
+</div>
 </template>

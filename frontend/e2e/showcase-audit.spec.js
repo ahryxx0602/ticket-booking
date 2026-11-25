@@ -119,7 +119,7 @@ test.describe('Showcase UI Fidelity & Interactive Audit (UI-01 through UI-14)', 
     })
 
     // 2. Switch to Compact density
-    const compactBtn = tableSection.locator('button:has-text("Compact")')
+    const compactBtn = tableSection.locator('button:has-text("Compact"), button:has-text("Gọn")')
     if (await compactBtn.isVisible()) {
       await compactBtn.click()
       await page.waitForTimeout(200)

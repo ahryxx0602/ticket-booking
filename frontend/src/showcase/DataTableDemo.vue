@@ -13,6 +13,13 @@ import { Button } from '@/components/ui/button'
 import { Badge, StatusBadge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem
+} from '@/components/ui/select'
+import {
   Search,
   ArrowUpDown,
   Filter,
@@ -180,47 +187,53 @@ function toggleSelectRow(id: string) {
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
-        <select
-          v-model="selectedStatus"
-          class="h-9 px-3 rounded-md border border-input text-xs font-semibold text-foreground bg-background focus:ring-2 focus:ring-ring"
-        >
-          <option value="ALL">Tất cả trạng thái</option>
-          <option value="CONFIRMED">Đã xác nhận</option>
-          <option value="PENDING">Chờ thanh toán</option>
-          <option value="REFUNDED">Đã hoàn tiền</option>
-          <option value="CANCELLED">Đã hủy</option>
-        </select>
+        <!-- Status Filter Custom Select (Shadcn Vue) -->
+        <Select v-model="selectedStatus">
+          <SelectTrigger class="h-9 w-[150px] text-xs font-semibold bg-background border-input">
+            <SelectValue placeholder="Tất cả trạng thái" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">Tất cả trạng thái</SelectItem>
+            <SelectItem value="CONFIRMED">Đã xác nhận</SelectItem>
+            <SelectItem value="PENDING">Chờ thanh toán</SelectItem>
+            <SelectItem value="REFUNDED">Đã hoàn tiền</SelectItem>
+            <SelectItem value="CANCELLED">Đã hủy</SelectItem>
+          </SelectContent>
+        </Select>
 
         <Button variant="outline" size="sm" class="h-9 text-xs gap-1.5" @click="sortAsc = !sortAsc">
           <ArrowUpDown class="h-3.5 w-3.5" />
           <span>{{ sortAsc ? 'Giá: Tăng dần' : 'Giá: Giảm dần' }}</span>
         </Button>
 
-        <!-- Density Selector (UI-05 & UI-08) -->
-        <div class="inline-flex rounded-md border border-input p-0.5 bg-muted/40">
+        <!-- Density Selector: Tối ưu nhỏ gọn, hiển thị rõ độ cao -->
+        <div class="inline-flex items-center rounded-md border border-input p-0.5 bg-muted/40 text-[11px]">
           <button
             type="button"
-            class="px-2 py-1 text-[11px] rounded transition-colors font-medium cursor-pointer"
+            class="px-2 py-1 rounded transition-colors font-medium cursor-pointer"
             :class="tableDensity === 'compact' ? 'bg-background font-bold shadow-xs text-foreground' : 'text-muted-foreground hover:text-foreground'"
+            title="Độ cao dòng Compact (44px)"
             @click="tableDensity = 'compact'"
           >
-            Compact (44px)
+            Gọn (44px)
           </button>
           <button
             type="button"
-            class="px-2 py-1 text-[11px] rounded transition-colors font-medium cursor-pointer"
+            class="px-2 py-1 rounded transition-colors font-medium cursor-pointer"
             :class="tableDensity === 'default' ? 'bg-background font-bold shadow-xs text-foreground' : 'text-muted-foreground hover:text-foreground'"
+            title="Độ cao dòng Default (52px)"
             @click="tableDensity = 'default'"
           >
-            Default (52px)
+            Chuẩn (52px)
           </button>
           <button
             type="button"
-            class="px-2 py-1 text-[11px] rounded transition-colors font-medium cursor-pointer"
+            class="px-2 py-1 rounded transition-colors font-medium cursor-pointer"
             :class="tableDensity === 'comfortable' ? 'bg-background font-bold shadow-xs text-foreground' : 'text-muted-foreground hover:text-foreground'"
+            title="Độ cao dòng Comfortable (60px)"
             @click="tableDensity = 'comfortable'"
           >
-            Comfortable (60px)
+            Rộng (60px)
           </button>
         </div>
       </div>

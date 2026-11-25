@@ -743,10 +743,9 @@ function scrollTo(id: string) {
       </main>
     </div>
 
-    <!-- Theme Customizer Drawer (Controlled from Header or custom trigger) -->
+    <!-- Theme Customizer Drawer với Floating Trigger tròn kinh điển góc dưới phải -->
     <ThemeCustomizer
       v-model="isCustomizerOpen"
-      :show-floating-trigger="false"
     />
   </div>
 </template>
