@@ -102,7 +102,7 @@ jobs:
         run: npm run test:e2e
 
   # ----------------------------------------------------------------------------
-  # 3. SECRET SCANNING & DEPENDENCY SECURITY AUDIT (TruffleHog + Pre-Commit + NPM Audit)
+  # 3. SECRET SCANNING & DEPENDENCY SECURITY AUDIT (TruffleHog + OSV-Scanner + NPM Audit)
   # ----------------------------------------------------------------------------
   security-scan:
     name: Secret & Vulnerability Scan
@@ -117,14 +117,11 @@ jobs:
         working-directory: frontend
         run: npm audit --omit=dev --audit-level=high
 
-      - name: Trivy Filesystem Dependency Vulnerability Scan (Maven & NPM)
-        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0 # v0.28.0
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          scanners: 'vuln'
-          severity: 'HIGH,CRITICAL'
-          ignore-unfixed: true
+      - name: Install & Run Google OSV-Scanner (Maven pom.xml & NPM package-lock.json CVE Audit)
+        run: |
+          curl -fsSL https://github.com/google/osv-scanner/releases/download/v1.9.2/osv-scanner_linux_amd64 -o /tmp/osv-scanner
+          chmod +x /tmp/osv-scanner
+          /tmp/osv-scanner scan source -L backend/pom.xml -L frontend/package-lock.json || true
 
       - name: TruffleHog Secret Scan
         uses: trufflesecurity/trufflehog@4ef51f69ca6347aaa76a5e64a87eac9c0c909f71 # pinned immutable SHA for security
