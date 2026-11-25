@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import QRCode from 'qrcode'
+import { Send, X, ShieldCheck } from 'lucide-vue-next'
 import { useNotificationStore } from '@/shared/stores/notificationStore'
 import AppButton from '@/shared/components/AppButton.vue'
 
@@ -18,7 +19,7 @@ onMounted(async () => {
       width: 200,
       margin: 2,
       color: {
-        dark: '#142B4A',
+        dark: '#141413',
         light: '#FFFFFF'
       }
     })
@@ -38,30 +39,36 @@ function handleSimulateLink() {
 </script>
 
 <template>
-  <div class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-    <div class="bg-surface rounded-2xl max-w-sm w-full p-6 shadow-dialog border border-border-default text-center space-y-4">
-      <div class="flex items-center justify-between pb-2 border-b border-border-default">
-        <h3 class="text-sm font-bold text-text-primary flex items-center gap-1.5">
-          <span>✈️</span>
+  <div class="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-card rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-border text-center space-y-4">
+      <div class="flex items-center justify-between pb-2 border-b border-border">
+        <h3 class="text-sm font-bold text-foreground flex items-center gap-1.5">
+          <Send class="w-4 h-4 text-sky-600 dark:text-sky-400" />
           <span>Liên Kết Bot Telegram VeloBus</span>
         </h3>
-        <button @click="$emit('close')" class="text-slate-400 hover:text-slate-600 text-lg">✕</button>
+        <button
+          type="button"
+          @click="$emit('close')"
+          class="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+        >
+          <X class="w-4 h-4" />
+        </button>
       </div>
 
-      <p class="text-xs text-text-secondary leading-relaxed">
+      <p class="text-xs text-muted-foreground leading-relaxed">
         Quét mã QR hoặc bấm nút bên dưới để mở Telegram Bot nhận biến động số dư ví, mã OTP xác thực và cảnh báo vận hành tức thì.
       </p>
 
       <!-- QR Code Container -->
-      <div class="p-3 bg-slate-50 rounded-xl border border-border-default flex justify-center">
+      <div class="p-3 bg-muted/40 rounded-xl border border-border flex justify-center">
         <img
           v-if="qrDataUrl"
           :src="qrDataUrl"
           alt="QR Telegram Deep Link"
           data-testid="img-telegram-qr"
-          class="w-48 h-48 rounded-lg shadow-xs"
+          class="w-48 h-48 rounded-lg shadow-xs bg-white p-1"
         />
-        <div v-else class="w-48 h-48 flex items-center justify-center text-xs text-text-muted">
+        <div v-else class="w-48 h-48 flex items-center justify-center text-xs text-muted-foreground">
           Đang sinh mã QR kết nối...
         </div>
       </div>
@@ -88,8 +95,9 @@ function handleSimulateLink() {
         </AppButton>
       </div>
 
-      <p class="text-[11px] text-text-muted italic">
-        🔒 Mã kết nối an toàn (One-time Token có thời hạn trong 5 phút)
+      <p class="text-[11px] text-muted-foreground flex items-center justify-center gap-1 italic">
+        <ShieldCheck class="w-3.5 h-3.5" />
+        <span>Mã kết nối an toàn (One-time Token có thời hạn trong 5 phút)</span>
       </p>
     </div>
   </div>
