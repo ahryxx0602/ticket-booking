@@ -18,6 +18,9 @@ public interface PaymentRepository {
     default Optional<Payment> findLatestByBookingId(Long bookingId) {
         return Optional.empty();
     }
+    default java.util.List<Payment> findAllByBookingIdOrderByIdDesc(Long bookingId) {
+        return java.util.Collections.emptyList();
+    }
     PaymentRevenueReport getRevenueReport(LocalDateTime from, LocalDateTime to);
     PageResponse<Payment> findPaymentsWithFilters(PaymentStatus status, PaymentMethod paymentMethod, String paymentReference, Boolean reconciliationRequired, int page, int size);
 

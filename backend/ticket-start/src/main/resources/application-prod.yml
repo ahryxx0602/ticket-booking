@@ -49,6 +49,11 @@ server:
     include-message: never
     include-binding-errors: never
 
+app:
+  notification:
+    qr:
+      secret-key: ${QR_SECRET_KEY}
+
 # Disable public swagger docs in production
 springdoc:
   api-docs:

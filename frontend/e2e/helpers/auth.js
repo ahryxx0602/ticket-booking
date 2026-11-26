@@ -25,7 +25,7 @@ export async function loginAsRole(page, role, username) {
   const defaultUser = role === 'ROLE_ADMIN' ? 'admin' : role === 'ROLE_OPERATOR' ? 'operator1' : 'customer1'
   const resolvedUsername = username || defaultUser
   const token = makeE2eJwt(role, resolvedUsername)
-  const user = { username: resolvedUsername, role }
+  const user = { id: 1, username: resolvedUsername, role }
   await page.addInitScript(({ token, user }) => {
     window.localStorage.setItem('velobus_access_token', token)
     window.localStorage.setItem('velobus_user', JSON.stringify(user))

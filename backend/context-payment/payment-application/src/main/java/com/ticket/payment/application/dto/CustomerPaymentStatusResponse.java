@@ -26,4 +26,10 @@ public class CustomerPaymentStatusResponse {
     private boolean reconciliationRequired;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    // BLOCKER-02 Multiple attempts & deterministic financial state
+    private boolean hasSuccessfulPayment;
+    private int totalAttempts;
+    private boolean canAttemptPayment;
+    private String activePaymentReference;
 }

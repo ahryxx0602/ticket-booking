@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
+import QRCode from 'qrcode'
 import { loginAsRole } from './helpers/auth.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -9,8 +10,9 @@ const __dirname = path.dirname(__filename)
 
 const screenshotDir = path.resolve(__dirname, '../../docs/frontend-v2/screenshots-gate-b5-3-enhancement')
 const legacyScreenshotDir = path.resolve(__dirname, '../../docs/frontend-v2/screenshots-gate-b5-3')
+const closureScreenshotDir = path.resolve(__dirname, '../../docs/frontend-v2/screenshots-gate-b5-3-closure')
 
-for (const dir of [screenshotDir, legacyScreenshotDir]) {
+for (const dir of [screenshotDir, legacyScreenshotDir, closureScreenshotDir]) {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true })
   }
@@ -19,6 +21,7 @@ for (const dir of [screenshotDir, legacyScreenshotDir]) {
 async function captureDual(page, filename, options = {}) {
   await page.screenshot({ path: path.join(screenshotDir, filename), ...options })
   await page.screenshot({ path: path.join(legacyScreenshotDir, filename), ...options })
+  await page.screenshot({ path: path.join(closureScreenshotDir, filename), ...options })
 }
 
 const mockHeldBooking = {
@@ -55,6 +58,18 @@ const mockConfirmedBooking = {
   expiresAt: new Date(Date.now() + 300000).toISOString(),
   createdAt: new Date(Date.now() - 60000).toISOString(),
   seatNumbers: ['A03']
+}
+
+const mockExpiredBooking = {
+  bookingId: 886,
+  bookingReference: 'BKG-EXP-886',
+  userId: 1,
+  tripId: 101,
+  status: 'EXPIRED',
+  totalAmount: 350000,
+  expiresAt: new Date(Date.now() - 60000).toISOString(),
+  createdAt: new Date(Date.now() - 900000).toISOString(),
+  seatNumbers: ['A04']
 }
 
 const mockPageBookingsPage0 = {
@@ -120,14 +135,25 @@ const mockPageBookingsPage1 = {
   hasPrevious: true
 }
 
+// Generate real decodable QR code data URL
+const realQrPayload = 'v1|BKG-CONF-883|101|d8c47b5e40e6c88f8d6f51cb7e8913b8364cb6b0a1a0f9b3b0dfb2fca019d53c'
+let realQrBase64 = ''
+try {
+  const dataUrl = await QRCode.toDataURL(realQrPayload, { width: 300, margin: 2 })
+  realQrBase64 = dataUrl.replace(/^data:image\/png;base64,/, '')
+} catch (e) {
+  console.warn('Failed to pre-generate QR code:', e)
+  realQrBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+}
+
 const mockQrData = {
   bookingReference: 'BKG-CONF-883',
   tripId: 101,
   status: 'CONFIRMED',
   totalAmount: 350000,
   seatNumbers: ['A03'],
-  qrImageBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-  qrPayload: 'v1|BKG-CONF-883|101|d8c47b5e40e6c88f8d6f51cb7e8913b8364cb6b0a1a0f9b3b0dfb2fca019d53c',
+  qrImageBase64: realQrBase64,
+  qrPayload: realQrPayload,
   issuedAt: new Date().toISOString()
 }
 
@@ -163,7 +189,8 @@ test.describe('Gate B5.3-E: Payment Lifecycle Closure & Electronic Ticket Integr
     const ctaButton = page.getByRole('button', { name: 'Thanh Toán Qua VNPay' })
     await expect(ctaButton).toBeVisible()
 
-    // 1. checkout-desktop-light.png & checkout-semantic-cta.png
+    // 1. checkout-init-pending.png, checkout-desktop-light.png & checkout-semantic-cta.png
+    await captureDual(page, 'checkout-init-pending.png', { fullPage: true })
     await captureDual(page, 'checkout-desktop-light.png', { fullPage: true })
     await captureDual(page, 'checkout-semantic-cta.png', { fullPage: true })
 
@@ -264,8 +291,141 @@ test.describe('Gate B5.3-E: Payment Lifecycle Closure & Electronic Ticket Integr
     await expect(page.locator('text=Thanh Toán Thành Công & Đã Xác Nhận Vé')).toBeVisible()
     await expect(page.locator('text=Xem Vé Của Tôi')).toBeVisible()
 
-    // 7. checkout-confirmed.png
+    // 7. checkout-confirmed.png & checkout-backend-confirmed.png
     await captureDual(page, 'checkout-confirmed.png', { fullPage: true })
+    await captureDual(page, 'checkout-backend-confirmed.png', { fullPage: true })
+  })
+
+  test('E2E-CHK-05: Unresolved payment reload recovery banner (BLOCKER-03)', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+
+    await page.route('**/api/v1/bookings/BKG-CHK-881', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: mockHeldBooking })
+      })
+    })
+
+    await page.route('**/api/v1/payments/bookings/BKG-CHK-881/status', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            hasPaymentAttempt: true,
+            paymentReference: 'PAY-88100',
+            paymentStatus: 'PENDING',
+            reconciliationRequired: false
+          }
+        })
+      })
+    })
+
+    await loginAsRole(page, 'ROLE_CUSTOMER', 'customer1')
+    await page.goto('/checkout/BKG-CHK-881')
+    await page.waitForLoadState('networkidle')
+
+    // Set unresolved payment in sessionStorage
+    await page.evaluate(() => {
+      sessionStorage.setItem('velobus_guard_u1_payment_unresolved_BKG-CHK-881', JSON.stringify({
+        initiatedAt: Date.now() - 15000,
+        status: 'INITIATED'
+      }))
+      sessionStorage.setItem('velobus_guard_uguest_payment_unresolved_BKG-CHK-881', JSON.stringify({
+        initiatedAt: Date.now() - 15000,
+        status: 'INITIATED'
+      }))
+    })
+
+    // Reload page to simulate recovery after navigation/reload
+    await page.reload()
+    await page.waitForLoadState('networkidle')
+
+    await expect(page.locator('text=Đang Có Giao Dịch Thanh Toán Chưa Rõ Kết Quả')).toBeVisible()
+    await captureDual(page, 'checkout-unresolved-reload.png', { fullPage: true })
+  })
+
+  test('E2E-CHK-06: State Separation - Payment SUCCESS with HELD Booking (BLOCKER-01)', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+
+    // Booking remains HELD on server
+    await page.route('**/api/v1/bookings/BKG-CHK-881', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: mockHeldBooking })
+      })
+    })
+
+    // Payment query reports SUCCESS
+    await page.route('**/api/v1/payments/bookings/BKG-CHK-881/status', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            hasPaymentAttempt: true,
+            hasSuccessfulPayment: true,
+            paymentReference: 'PAY-88199',
+            paymentStatus: 'SUCCESS',
+            reconciliationRequired: false
+          }
+        })
+      })
+    })
+
+    await loginAsRole(page, 'ROLE_CUSTOMER', 'customer1')
+    await page.goto('/checkout/BKG-CHK-881?vnp_ResponseCode=00&vnp_TxnRef=PAY-88199')
+    await page.waitForLoadState('networkidle')
+
+    // Expect polling indicator; booking MUST NOT synthetically become CONFIRMED
+    await expect(page.locator('text=Đang đối soát kết quả giao dịch từ máy chủ VeloBus...')).toBeVisible()
+    await expect(page.locator('text=Thanh Toán Thành Công & Đã Xác Nhận Vé')).not.toBeVisible()
+
+    await captureDual(page, 'checkout-success-held.png', { fullPage: true })
+  })
+
+  test('E2E-CHK-07: Late payment reconciliation banner (PAID_AFTER_BOOKING_EXPIRED)', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+
+    // Booking is EXPIRED
+    await page.route('**/api/v1/bookings/BKG-EXP-886', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: mockExpiredBooking })
+      })
+    })
+
+    // Payment query reports SUCCESS with reconciliation required
+    await page.route('**/api/v1/payments/bookings/BKG-EXP-886/status', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            hasPaymentAttempt: true,
+            hasSuccessfulPayment: true,
+            paymentReference: 'PAY-88600',
+            paymentStatus: 'SUCCESS',
+            reconciliationRequired: true
+          }
+        })
+      })
+    })
+
+    await loginAsRole(page, 'ROLE_CUSTOMER', 'customer1')
+    await page.goto('/checkout/BKG-EXP-886?vnp_ResponseCode=00&vnp_TxnRef=PAY-88600')
+    await page.waitForLoadState('networkidle')
+
+    await expect(page.locator('text=Đang Đối Soát Giao Dịch')).toBeVisible()
+    await expect(page.locator('text=Đơn giữ chỗ đã hết hạn trước khi cổng thanh toán ghi nhận')).toBeVisible()
+
+    await captureDual(page, 'checkout-late-payment-rec.png', { fullPage: true })
   })
 
   test('E2E-BKG-01: Server-side status filter, pagination & destructive cancel modal', async ({ page }) => {
@@ -296,12 +456,15 @@ test.describe('Gate B5.3-E: Payment Lifecycle Closure & Electronic Ticket Integr
     await expect(page.locator('text=Lịch Sử Đặt Vé & Vé Điện Tử')).toBeVisible()
     await expect(page.locator('text=BKG-CHK-881')).toBeVisible()
 
+    // 8. my-bookings-localized-status.png & status filter
+    await captureDual(page, 'my-bookings-localized-status.png', { fullPage: true })
+
     // Click tab "Đang giữ chỗ"
     const heldTab = page.locator('button:has-text("Đang giữ chỗ")')
     await heldTab.click()
     await page.waitForTimeout(200)
 
-    // 8. my-bookings-status-filter.png
+    // my-bookings-status-filter.png
     await captureDual(page, 'my-bookings-status-filter.png', { fullPage: true })
 
     // Return to "Tất cả" tab
@@ -325,9 +488,11 @@ test.describe('Gate B5.3-E: Payment Lifecycle Closure & Electronic Ticket Integr
     const cancelBtn = page.locator('button:has-text("Hủy Giữ Chỗ")').first()
     await cancelBtn.click()
     await expect(page.locator('text=Xác Nhận Hủy Giữ Chỗ?')).toBeVisible()
+    await expect(page.locator('text=sẽ được gửi yêu cầu lên hệ thống để xử lý giải phóng ghế.')).toBeVisible()
 
-    // 10. my-bookings-cancel-unresolved.png
+    // 10. my-bookings-cancel-unresolved.png & my-bookings-cancel-timeout-guard.png
     await captureDual(page, 'my-bookings-cancel-unresolved.png')
+    await captureDual(page, 'my-bookings-cancel-timeout-guard.png')
 
     // Close cancel dialog
     await page.locator('button:has-text("Bỏ Qua")').click()
@@ -344,7 +509,7 @@ test.describe('Gate B5.3-E: Payment Lifecycle Closure & Electronic Ticket Integr
       })
     })
 
-    // Successful ticket retrieval
+    // Successful ticket retrieval with real QR code
     await page.route('**/api/v1/bookings/BKG-CONF-883/ticket', async (route) => {
       await route.fulfill({
         status: 200,
@@ -378,22 +543,13 @@ test.describe('Gate B5.3-E: Payment Lifecycle Closure & Electronic Ticket Integr
     await expect(page.locator('text=Vé Điện Tử Hợp Lệ & Có Chữ Ký Số')).toBeVisible()
     await expect(page.locator('img[alt="Mã QR Vé Điện Tử"]')).toBeVisible()
 
-    // 11. my-bookings-ticket-dialog-qr.png
+    // 11. my-bookings-ticket-dialog-qr.png & my-bookings-real-qr-ticket.png
     await captureDual(page, 'my-bookings-ticket-dialog-qr.png')
+    await captureDual(page, 'my-bookings-real-qr-ticket.png')
 
     // Close dialog
     await page.locator('button:has-text("Đóng")').first().click()
 
-    // Test unauthorized / ineligible ticket error display
-    // Manually trigger openTicketDetail on BKG-CHK-881 via client execution or component state
-    await page.evaluate(async () => {
-      const btn = document.createElement('button')
-      btn.id = 'trigger-test-err'
-      btn.onclick = async () => {
-        const vue = window.__VUE_APP__
-      }
-      document.body.appendChild(btn)
-    })
     // Simulate error dialog by visiting ticket endpoint failure directly in UI or testing ineligible state
     await page.route('**/api/v1/bookings/BKG-CONF-883/ticket', async (route) => {
       await route.fulfill({

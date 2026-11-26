@@ -77,6 +77,10 @@ const ticketLoading = ref(false)
 const ticketError = ref('')
 const ticketData = ref(null)
 
+// Out-of-order request sequence guards
+let fetchSequence = 0
+let ticketSequence = 0
+
 // Client-side fallback filter if backend returned un-filtered items
 const filteredBookings = computed(() => {
   if (currentTab.value === 'ALL') return bookings.value
@@ -84,6 +88,7 @@ const filteredBookings = computed(() => {
 })
 
 async function fetchMyBookings(page = 0, status = currentTab.value === 'ALL' ? undefined : currentTab.value) {
+  const currentSeq = ++fetchSequence
   isLoading.value = true
   loadError.value = ''
 
@@ -94,9 +99,15 @@ async function fetchMyBookings(page = 0, status = currentTab.value === 'ALL' ? u
       status: status || undefined
     })
 
+    if (currentSeq !== fetchSequence) return
+
     const pageData = res.data?.data || res.data
 
-    if (pageData && Array.isArray(pageData.items)) {
+    if (!pageData || typeof pageData !== 'object') {
+      throw new Error('Dữ liệu danh sách đơn đặt vé không hợp lệ.')
+    }
+
+    if (Array.isArray(pageData.items)) {
       bookings.value = pageData.items
       currentPage.value = Number(pageData.page ?? 0)
       pageSize.value = Number(pageData.size ?? 10)
@@ -112,19 +123,22 @@ async function fetchMyBookings(page = 0, status = currentTab.value === 'ALL' ? u
       hasNext.value = false
       hasPrevious.value = false
     } else {
-      bookings.value = []
-      totalElements.value = 0
+      throw new Error('Cấu trúc dữ liệu đơn đặt vé từ máy chủ không đúng định dạng (thiếu items).')
     }
   } catch (err) {
+    if (currentSeq !== fetchSequence) return
     console.error('[MyBookings] Failed to fetch bookings:', err)
     loadError.value = err.response?.data?.message || err.message || 'Không thể tải danh sách đơn vé từ máy chủ.'
   } finally {
-    isLoading.value = false
+    if (currentSeq === fetchSequence) {
+      isLoading.value = false
+    }
   }
 }
 
 function selectTab(tabKey) {
   currentTab.value = tabKey
+  currentPage.value = 0
   fetchMyBookings(0, tabKey === 'ALL' ? undefined : tabKey)
 }
 
@@ -165,6 +179,7 @@ async function confirmCancelBooking() {
 
 // Ticket Detail / E-Ticket Modal
 async function openTicketDetail(booking) {
+  const currentTicketSeq = ++ticketSequence
   selectedBookingForDetail.value = booking
   showDetailModal.value = true
   ticketLoading.value = true
@@ -173,12 +188,20 @@ async function openTicketDetail(booking) {
 
   try {
     const res = await catalogBookingApi.getElectronicTicket(booking.bookingReference)
-    ticketData.value = res.data?.data || res.data
+    if (currentTicketSeq !== ticketSequence) return
+    const data = res.data?.data || res.data
+    if (!data || !data.qrImageBase64 || !data.qrPayload) {
+      throw new Error('Dữ liệu vé điện tử từ máy chủ không đầy đủ thông tin mã QR.')
+    }
+    ticketData.value = data
   } catch (err) {
+    if (currentTicketSeq !== ticketSequence) return
     console.error('[MyBookings] Failed to load electronic ticket:', err)
     ticketError.value = err.response?.data?.message || err.message || 'Không thể lấy thông tin vé điện tử từ máy chủ.'
   } finally {
-    ticketLoading.value = false
+    if (currentTicketSeq === ticketSequence) {
+      ticketLoading.value = false
+    }
   }
 }
 
@@ -422,7 +445,7 @@ onMounted(() => {
             Bạn có chắc chắn muốn hủy phiên giữ chỗ cho đơn vé
             <strong class="font-mono text-foreground">#{{ bookingToCancel?.bookingReference }}</strong>?
             Ghế <strong class="text-primary font-mono">{{ (bookingToCancel?.seatNumbers || []).join(', ') }}</strong>
-            sẽ được giải phóng ngay lập tức trên hệ thống để người khác có thể đặt.
+            sẽ được gửi yêu cầu lên hệ thống để xử lý giải phóng ghế.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

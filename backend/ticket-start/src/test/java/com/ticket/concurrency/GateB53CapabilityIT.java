@@ -1,5 +1,10 @@
 package com.ticket.concurrency;
 
+import com.google.zxing.BinaryBitmap;
+import com.google.zxing.MultiFormatReader;
+import com.google.zxing.Result;
+import com.google.zxing.client.j2se.BufferedImageLuminanceSource;
+import com.google.zxing.common.HybridBinarizer;
 import com.ticket.TicketApplication;
 import com.ticket.booking.application.dto.BookingResponse;
 import com.ticket.booking.application.dto.HoldSeatCommand;
@@ -12,6 +17,7 @@ import com.ticket.identity.domain.model.User;
 import com.ticket.identity.domain.model.UserRole;
 import com.ticket.identity.domain.model.UserStatus;
 import com.ticket.identity.domain.repository.UserRepository;
+import com.ticket.notification.infrastructure.mail.QrCodeUtil;
 import com.ticket.payment.application.dto.CreatePaymentCommand;
 import com.ticket.payment.application.dto.CustomerPaymentStatusResponse;
 import com.ticket.payment.application.dto.PaymentInitResponse;
@@ -34,6 +40,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.URLEncoder;
@@ -56,6 +65,7 @@ class GateB53CapabilityIT {
     @Autowired private GetCustomerPaymentStatusUseCase getCustomerPaymentStatusUseCase;
     @Autowired private HandleVnPayBrowserReturnUseCase handleVnPayBrowserReturnUseCase;
     @Autowired private VnPayProperties vnPayProperties;
+    @Autowired private QrCodeUtil qrCodeUtil;
     @Autowired private UserRepository userRepository;
     @Autowired private PasswordEncoder passwordEncoder;
 
@@ -131,11 +141,11 @@ class GateB53CapabilityIT {
                 INSERT INTO trips (trip_code, departure_station_id, arrival_station_id, departure_time, arrival_time,
                                    transport_type, total_seats, base_price, status, settlement_status)
                 VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 2 DAY),
-                        'BUS', 6, 250000.00, 'SCHEDULED', 'UNSETTLED')
+                        'BUS', 12, 250000.00, 'SCHEDULED', 'UNSETTLED')
                 """, tripCode, depId, arrId);
         testTripId = jdbcTemplate.queryForObject("SELECT id FROM trips WHERE trip_code = ?", Long.class, tripCode);
 
-        for (String seatNum : List.of("11A", "11B", "11C", "12A", "12B", "12C")) {
+        for (String seatNum : List.of("11A", "11B", "11C", "11D", "12A", "12B", "12C", "12D")) {
             jdbcTemplate.update("""
                     INSERT INTO seats (trip_id, seat_number, seat_type, price_multiplier)
                     VALUES (?, ?, 'STANDARD', 1.00)
@@ -146,7 +156,6 @@ class GateB53CapabilityIT {
     @Test
     @DisplayName("Cap 01: VNPay Browser Return - Valid Signature redirects to frontend with responseCode and bookingRef")
     void cap01_vnpayBrowserReturnValidSignature() {
-        // Create held booking and initiate payment
         HoldSeatCommand cmd = new HoldSeatCommand();
         cmd.setTripId(testTripId);
         cmd.setSeatNumbers(List.of("11A"));
@@ -158,7 +167,6 @@ class GateB53CapabilityIT {
         payCmd.setPaymentMethod(com.ticket.payment.domain.model.PaymentMethod.VNPAY);
         PaymentInitResponse payInit = createPaymentUseCase.execute(payCmd, customer1Username, "127.0.0.1");
 
-        // Prepare simulated VNPay return parameters with valid signature
         Map<String, String> returnParams = new HashMap<>();
         returnParams.put("vnp_TxnRef", payInit.getPaymentReference());
         returnParams.put("vnp_Amount", "25000000");
@@ -184,15 +192,29 @@ class GateB53CapabilityIT {
     }
 
     @Test
-    @DisplayName("Cap 01b: VNPay Browser Return - Tampered Signature redirects with INVALID_SIGNATURE error")
+    @DisplayName("Cap 01b: VNPay Browser Return - Tampered Signature redirects with INVALID_SIGNATURE error without booking disclose")
     void cap01b_vnpayBrowserReturnTamperedSignature() {
+        HoldSeatCommand cmd = new HoldSeatCommand();
+        cmd.setTripId(testTripId);
+        cmd.setSeatNumbers(List.of("11B"));
+        cmd.setClientRequestId(UUID.randomUUID().toString());
+        BookingResponse booking = holdSeatUseCase.execute(cmd, customer1Username);
+
+        CreatePaymentCommand payCmd = new CreatePaymentCommand();
+        payCmd.setBookingReference(booking.getBookingReference());
+        payCmd.setPaymentMethod(com.ticket.payment.domain.model.PaymentMethod.VNPAY);
+        PaymentInitResponse payInit = createPaymentUseCase.execute(payCmd, customer1Username, "127.0.0.1");
+
         Map<String, String> returnParams = new HashMap<>();
-        returnParams.put("vnp_TxnRef", "PAY_FAKE_REF");
+        returnParams.put("vnp_TxnRef", payInit.getPaymentReference());
         returnParams.put("vnp_ResponseCode", "00");
         returnParams.put("vnp_SecureHash", "tampered_hash_12345");
 
         String redirectUrl = handleVnPayBrowserReturnUseCase.execute(returnParams);
+
+        // BLOCKER-06: MUST NOT reveal bookingReference when signature is invalid
         assertThat(redirectUrl).contains("vnp_Error=INVALID_SIGNATURE");
+        assertThat(redirectUrl).doesNotContain(booking.getBookingReference());
     }
 
     @Test
@@ -200,7 +222,7 @@ class GateB53CapabilityIT {
     void cap02_customerPaymentStatusQuery() {
         HoldSeatCommand cmd = new HoldSeatCommand();
         cmd.setTripId(testTripId);
-        cmd.setSeatNumbers(List.of("11B"));
+        cmd.setSeatNumbers(List.of("11C"));
         cmd.setClientRequestId(UUID.randomUUID().toString());
         BookingResponse booking = holdSeatUseCase.execute(cmd, customer1Username);
 
@@ -208,6 +230,7 @@ class GateB53CapabilityIT {
         CustomerPaymentStatusResponse before = getCustomerPaymentStatusUseCase.execute(booking.getBookingReference(), customer1Username);
         assertThat(before.isHasPaymentAttempt()).isFalse();
         assertThat(before.getBookingStatus()).isEqualTo("HELD");
+        assertThat(before.isCanAttemptPayment()).isTrue();
 
         // Initiate payment
         CreatePaymentCommand payCmd = new CreatePaymentCommand();
@@ -220,6 +243,7 @@ class GateB53CapabilityIT {
         assertThat(after.isHasPaymentAttempt()).isTrue();
         assertThat(after.getPaymentReference()).isEqualTo(payInit.getPaymentReference());
         assertThat(after.getPaymentStatus().name()).isEqualTo("PENDING");
+        assertThat(after.getTotalAttempts()).isEqualTo(1);
 
         // Access denied for other customer
         assertThatThrownBy(() -> getCustomerPaymentStatusUseCase.execute(booking.getBookingReference(), customer2Username))
@@ -227,11 +251,45 @@ class GateB53CapabilityIT {
     }
 
     @Test
+    @DisplayName("Cap 02b: Multiple Payment Attempts Aggregation - Preserves older reconciliation issues")
+    void cap02b_multiplePaymentAttemptsAggregation() {
+        HoldSeatCommand cmd = new HoldSeatCommand();
+        cmd.setTripId(testTripId);
+        cmd.setSeatNumbers(List.of("11D"));
+        cmd.setClientRequestId(UUID.randomUUID().toString());
+        BookingResponse booking = holdSeatUseCase.execute(cmd, customer1Username);
+
+        Long bookingId = jdbcTemplate.queryForObject("SELECT id FROM bookings WHERE booking_reference = ?", Long.class, booking.getBookingReference());
+
+        // Attempt 1: Failed with reconciliation_required = true
+        String payRef1 = "PAY-ATTEMPT1-" + UUID.randomUUID().toString().substring(0, 8);
+        jdbcTemplate.update("""
+                INSERT INTO payments (payment_reference, booking_id, amount, currency, payment_method, status, reconciliation_required, created_at)
+                VALUES (?, ?, 250000.00, 'VND', 'VNPAY', 'FAILED', 1, NOW() - INTERVAL 10 MINUTE)
+                """, payRef1, bookingId);
+
+        // Attempt 2: Current pending attempt
+        String payRef2 = "PAY-ATTEMPT2-" + UUID.randomUUID().toString().substring(0, 8);
+        jdbcTemplate.update("""
+                INSERT INTO payments (payment_reference, booking_id, amount, currency, payment_method, status, reconciliation_required, created_at)
+                VALUES (?, ?, 250000.00, 'VND', 'VNPAY', 'PENDING', 0, NOW())
+                """, payRef2, bookingId);
+
+        CustomerPaymentStatusResponse status = getCustomerPaymentStatusUseCase.execute(booking.getBookingReference(), customer1Username);
+
+        assertThat(status.getTotalAttempts()).isEqualTo(2);
+        // BLOCKER-02: Older reconciliation issue MUST NOT be hidden by newer attempt!
+        assertThat(status.isReconciliationRequired()).isTrue();
+        assertThat(status.getPaymentReference()).isEqualTo(payRef2);
+        assertThat(status.getPaymentStatus().name()).isEqualTo("PENDING");
+    }
+
+    @Test
     @DisplayName("Cap 03: Electronic Ticket Retrieval - Strictly requires CONFIRMED status and generates signed QR")
     void cap03_electronicTicketRetrieval() {
         HoldSeatCommand cmd = new HoldSeatCommand();
         cmd.setTripId(testTripId);
-        cmd.setSeatNumbers(List.of("11C"));
+        cmd.setSeatNumbers(List.of("12A"));
         cmd.setClientRequestId(UUID.randomUUID().toString());
         BookingResponse booking = holdSeatUseCase.execute(cmd, customer1Username);
 
@@ -256,18 +314,53 @@ class GateB53CapabilityIT {
     }
 
     @Test
+    @DisplayName("Cap 03b: QR Generation, ZXing Decodability & HMAC Verification")
+    void cap03b_qrGenerationAndZxingDecodingVerification() throws Exception {
+        String testBookingRef = "BKG-ZXING-TEST-" + UUID.randomUUID().toString().substring(0, 6);
+        Long testTrip = 9999L;
+        String isolatedSecret = "test-only-signing-secret-key-32-bytes!";
+
+        String payload = qrCodeUtil.buildQrPayload(testBookingRef, testTrip, isolatedSecret);
+        assertThat(payload).startsWith("v1|" + testBookingRef + "|" + testTrip + "|");
+
+        String qrBase64 = qrCodeUtil.generateQrCodeBase64(payload);
+        assertThat(qrBase64).isNotEmpty();
+
+        // Decode Base64 to image and decode with ZXing
+        byte[] pngBytes = Base64.getDecoder().decode(qrBase64);
+        BufferedImage bufferedImage = ImageIO.read(new ByteArrayInputStream(pngBytes));
+        assertThat(bufferedImage).isNotNull();
+
+        BinaryBitmap bitmap = new BinaryBitmap(new HybridBinarizer(new BufferedImageLuminanceSource(bufferedImage)));
+        Result zxingResult = new MultiFormatReader().decode(bitmap);
+
+        // Assert decoded content equals issued payload
+        assertThat(zxingResult.getText()).isEqualTo(payload);
+
+        // Verify HMAC signature
+        String[] parts = payload.split("\\|");
+        assertThat(parts).hasSize(4);
+        String signature = parts[3];
+
+        boolean valid = qrCodeUtil.verifyHmacSignature(testBookingRef, testTrip, signature, isolatedSecret);
+        assertThat(valid).isTrue();
+
+        boolean tampered = qrCodeUtil.verifyHmacSignature(testBookingRef, testTrip, "tampered-signature", isolatedSecret);
+        assertThat(tampered).isFalse();
+    }
+
+    @Test
     @DisplayName("Cap 04: Server-side My Bookings Status Filtering and Pagination")
     void cap04_serverSideMyBookingsFiltering() {
-        // Create 2 bookings for customer 1: one HELD, one CONFIRMED
         HoldSeatCommand cmd1 = new HoldSeatCommand();
         cmd1.setTripId(testTripId);
-        cmd1.setSeatNumbers(List.of("12A"));
+        cmd1.setSeatNumbers(List.of("12B"));
         cmd1.setClientRequestId(UUID.randomUUID().toString());
         BookingResponse b1 = holdSeatUseCase.execute(cmd1, customer1Username);
 
         HoldSeatCommand cmd2 = new HoldSeatCommand();
         cmd2.setTripId(testTripId);
-        cmd2.setSeatNumbers(List.of("12B"));
+        cmd2.setSeatNumbers(List.of("12C"));
         cmd2.setClientRequestId(UUID.randomUUID().toString());
         BookingResponse b2 = holdSeatUseCase.execute(cmd2, customer1Username);
         jdbcTemplate.update("UPDATE bookings SET status = 'CONFIRMED' WHERE booking_reference = ?", b2.getBookingReference());

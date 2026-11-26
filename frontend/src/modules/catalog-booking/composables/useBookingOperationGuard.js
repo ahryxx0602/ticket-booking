@@ -1,61 +1,161 @@
 /**
- * PRE-03: Shared Booking Operation Guard Composable
- * Scopes stored mutation recovery metadata by authenticated user and bookingReference (or tripId).
+ * BLOCKER-04: Canonical Shared Booking Operation Guard Composable
+ * Unified mutation recovery metadata for SeatSelectionView, CheckoutView, and MyBookingsView.
+ * Scoped by authenticated user, bookingReference (or tripId for holds).
  * Prevents checkout when cancellation is pending/unresolved, and retains failure states across reloads.
  */
 import { ref, computed } from 'vue'
 import { useAuthStore } from '@/modules/auth/store'
 
+// Global reactive revision counter so all composable instances react to storage mutations
+const storageRevision = ref(0)
+
 export function useBookingOperationGuard() {
   const authStore = useAuthStore()
   const userId = computed(() => authStore.user?.id || 'guest')
 
-  function getStorageKey(prefix, identifier) {
-    return `velobus_op_${prefix}_u${userId.value}_${String(identifier || '').trim()}`
+  function getCanonicalKey(scope, identifier) {
+    return `velobus_guard_u${userId.value}_${scope}_${String(identifier || '').trim()}`
   }
 
-  function readState(prefix, identifier) {
+  function getLegacyKeys(scope, identifier) {
+    const id = String(identifier || '').trim()
+    const u = userId.value
+    switch (scope) {
+      case 'hold_unknown':
+        return [`velobus_hold_unknown_${u}_${id}`, `velobus_op_hold_unresolved_u${u}_${id}`]
+      case 'hold_request':
+        return [`velobus_hold_request_${u}_${id}`]
+      case 'active_hold':
+        return [`velobus_active_hold_${u}_${id}`]
+      case 'cancel_pending':
+        return [`velobus_op_cancel_pending_u${u}_${id}`]
+      case 'cancel_unresolved':
+        return [`velobus_cancel_unresolved_${u}_${id}`, `velobus_op_cancel_unresolved_u${u}_${id}`]
+      case 'payment_unresolved':
+        return [`velobus_op_payment_unresolved_u${u}_${id}`]
+      default:
+        return []
+    }
+  }
+
+  function readState(scope, identifier) {
+    // Read reactive revision to register Vue reactivity dependency
+    void storageRevision.value
+
+    if (!identifier) return null
     try {
-      const raw = sessionStorage.getItem(getStorageKey(prefix, identifier))
-      return raw ? JSON.parse(raw) : null
+      // 1. Try canonical key
+      const canonicalKey = getCanonicalKey(scope, identifier)
+      const raw = sessionStorage.getItem(canonicalKey)
+      if (raw) return JSON.parse(raw)
+
+      // 2. Try legacy migration keys
+      const legacyKeys = getLegacyKeys(scope, identifier)
+      for (const legacyKey of legacyKeys) {
+        const legacyRaw = sessionStorage.getItem(legacyKey)
+        if (legacyRaw) {
+          const parsed = JSON.parse(legacyRaw)
+          // Migrate to canonical key
+          sessionStorage.setItem(canonicalKey, legacyRaw)
+          sessionStorage.removeItem(legacyKey)
+          return parsed
+        }
+      }
+      return null
     } catch {
       return null
     }
   }
 
-  function writeState(prefix, identifier, data) {
+  function writeState(scope, identifier, data) {
+    if (!identifier) return
     try {
-      if (!identifier) return
-      sessionStorage.setItem(getStorageKey(prefix, identifier), JSON.stringify({
-        ...data,
+      const canonicalKey = getCanonicalKey(scope, identifier)
+      // Sanitize payload: strip any raw Axios response / headers / credentials
+      const sanitized = sanitizeData(data)
+      sessionStorage.setItem(canonicalKey, JSON.stringify({
+        ...sanitized,
         updatedAt: Date.now()
       }))
+      storageRevision.value++
     } catch (e) {
       console.warn('[BookingGuard] Failed to save operation state', e)
     }
   }
 
-  function removeState(prefix, identifier) {
+  function removeState(scope, identifier) {
+    if (!identifier) return
     try {
-      if (!identifier) return
-      sessionStorage.removeItem(getStorageKey(prefix, identifier))
+      const canonicalKey = getCanonicalKey(scope, identifier)
+      sessionStorage.removeItem(canonicalKey)
+      const legacyKeys = getLegacyKeys(scope, identifier)
+      for (const legacyKey of legacyKeys) {
+        sessionStorage.removeItem(legacyKey)
+      }
+      storageRevision.value++
     } catch {}
   }
 
-  // --- HOLD MUTATIONS ---
-  function getUnresolvedHold(tripId) {
-    return readState('hold_unresolved', tripId)
+  function sanitizeData(data) {
+    if (!data) return {}
+    if (typeof data !== 'object') return { value: String(data) }
+    const clean = {}
+    for (const [k, v] of Object.entries(data)) {
+      if (k === 'config' || k === 'request' || k === 'headers') continue
+      if (v instanceof Error) {
+        clean[k] = v.message
+      } else if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' || Array.isArray(v)) {
+        clean[k] = v
+      } else if (v && typeof v === 'object') {
+        clean[k] = v.message || v.code || String(v)
+      }
+    }
+    return clean
   }
 
-  function setUnresolvedHold(tripId, data) {
-    writeState('hold_unresolved', tripId, data)
+  // --- 1. HOLD MUTATIONS (Scoped by tripId) ---
+  function getHoldUnknown(tripId) {
+    return readState('hold_unknown', tripId)
   }
 
-  function clearUnresolvedHold(tripId) {
-    removeState('hold_unresolved', tripId)
+  function isHoldUnknown(tripId) {
+    return Boolean(getHoldUnknown(tripId))
   }
 
-  // --- CANCELLATION MUTATIONS ---
+  function setHoldUnknown(tripId, data) {
+    writeState('hold_unknown', tripId, data)
+  }
+
+  function clearHoldUnknown(tripId) {
+    removeState('hold_unknown', tripId)
+  }
+
+  function getHoldRequest(tripId) {
+    return readState('hold_request', tripId)
+  }
+
+  function setHoldRequest(tripId, data) {
+    writeState('hold_request', tripId, data)
+  }
+
+  function clearHoldRequest(tripId) {
+    removeState('hold_request', tripId)
+  }
+
+  function getActiveHold(tripId) {
+    return readState('active_hold', tripId)
+  }
+
+  function setActiveHold(tripId, data) {
+    writeState('active_hold', tripId, data)
+  }
+
+  function clearActiveHold(tripId) {
+    removeState('active_hold', tripId)
+  }
+
+  // --- 2. CANCELLATION MUTATIONS (Scoped by bookingReference) ---
   function isCancelPending(bookingReference) {
     return Boolean(readState('cancel_pending', bookingReference))
   }
@@ -84,19 +184,23 @@ export function useBookingOperationGuard() {
   }
 
   function setUnresolvedCancel(bookingReference, errorInfo) {
-    const payload = typeof errorInfo === 'string'
-      ? { message: errorInfo }
-      : { message: errorInfo?.message || 'Lỗi thao tác hủy', ...errorInfo }
-    writeState('cancel_unresolved', bookingReference, payload)
+    const message = typeof errorInfo === 'string'
+      ? errorInfo
+      : errorInfo?.response?.data?.message || errorInfo?.message || 'Lỗi thao tác hủy đơn đặt chỗ'
+    writeState('cancel_unresolved', bookingReference, { message })
   }
 
   function clearUnresolvedCancel(bookingReference) {
     removeState('cancel_unresolved', bookingReference)
   }
 
-  // --- PAYMENT MUTATIONS ---
+  // --- 3. PAYMENT MUTATIONS (Scoped by bookingReference) ---
   function getUnresolvedPayment(bookingReference) {
     return readState('payment_unresolved', bookingReference)
+  }
+
+  function isPaymentUnresolved(bookingReference) {
+    return Boolean(getUnresolvedPayment(bookingReference))
   }
 
   function setUnresolvedPayment(bookingReference, data) {
@@ -107,20 +211,28 @@ export function useBookingOperationGuard() {
     removeState('payment_unresolved', bookingReference)
   }
 
-  // --- CHECKOUT ELIGIBILITY GUARD ---
+  // --- 4. CHECKOUT ELIGIBILITY GUARD ---
   function isCheckoutBlocked(bookingReference) {
     if (!bookingReference) return false
-    // Blocked if cancellation is pending or in unresolved outcome state
     if (isCancelPending(bookingReference)) return true
-    if (getUnresolvedCancel(bookingReference)) return true
+    if (isCancelUnresolved(bookingReference)) return true
     return false
   }
 
   return {
-    getUnresolvedHold,
-    setUnresolvedHold,
-    clearUnresolvedHold,
+    // Hold operations
+    getHoldUnknown,
+    isHoldUnknown,
+    setHoldUnknown,
+    clearHoldUnknown,
+    getHoldRequest,
+    setHoldRequest,
+    clearHoldRequest,
+    getActiveHold,
+    setActiveHold,
+    clearActiveHold,
 
+    // Cancel operations
     isCancelPending,
     setCancelPending,
     clearCancelPending,
@@ -130,10 +242,13 @@ export function useBookingOperationGuard() {
     setUnresolvedCancel,
     clearUnresolvedCancel,
 
+    // Payment operations
     getUnresolvedPayment,
+    isPaymentUnresolved,
     setUnresolvedPayment,
     clearUnresolvedPayment,
 
+    // Guards
     isCheckoutBlocked
   }
 }

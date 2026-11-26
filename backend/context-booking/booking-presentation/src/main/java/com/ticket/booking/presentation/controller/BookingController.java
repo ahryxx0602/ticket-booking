@@ -101,7 +101,11 @@ public class BookingController {
             @PathVariable String bookingReference,
             Principal principal) {
         TicketResponse response = getTicketUseCase.getTicket(bookingReference, requireUsername(principal));
-        return ResponseEntity.ok(ApiResponse.ok("Electronic ticket retrieved successfully", response));
+        return ResponseEntity.ok()
+                .header(org.springframework.http.HttpHeaders.CACHE_CONTROL, "private, no-cache, no-store, must-revalidate")
+                .header(org.springframework.http.HttpHeaders.PRAGMA, "no-cache")
+                .header(org.springframework.http.HttpHeaders.EXPIRES, "0")
+                .body(ApiResponse.ok("Electronic ticket retrieved successfully", response));
     }
 
     private String requireUsername(Principal principal) {

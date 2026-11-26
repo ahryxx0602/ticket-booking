@@ -63,47 +63,75 @@ public class PaymentQueryServiceImpl implements GetPaymentReportUseCase, AdminGe
             throw new ForbiddenException("Access denied: You do not own this booking");
         }
 
-        Optional<Payment> paymentOpt = paymentRepository.findLatestByBookingId(booking.id());
+        List<Payment> payments = paymentRepository.findAllByBookingIdOrderByIdDesc(booking.id());
 
-        if (paymentOpt.isEmpty()) {
+        if (payments.isEmpty()) {
             return CustomerPaymentStatusResponse.builder()
                     .bookingReference(booking.bookingReference())
                     .bookingStatus(booking.status())
                     .hasPaymentAttempt(false)
+                    .hasSuccessfulPayment(false)
+                    .totalAttempts(0)
+                    .canAttemptPayment("HELD".equalsIgnoreCase(booking.status()))
                     .amount(booking.totalAmount())
                     .currency("VND")
                     .reconciliationRequired(false)
                     .build();
         }
 
-        Payment payment = paymentOpt.get();
+        // BLOCKER-02: Deterministic multiple attempts aggregation
+        boolean anyReconciliationRequired = payments.stream().anyMatch(Payment::isReconciliationRequired);
+        Optional<Payment> successfulPayment = payments.stream().filter(p -> p.getStatus() == PaymentStatus.SUCCESS).findFirst();
+        Optional<Payment> pendingPayment = payments.stream().filter(p -> p.getStatus() == PaymentStatus.PENDING).findFirst();
+
+        // Priority: SUCCESS > PENDING > Most Recent
+        Payment selectedPayment = successfulPayment.orElseGet(() -> pendingPayment.orElseGet(() -> payments.get(0)));
+        boolean hasSuccessful = successfulPayment.isPresent();
+        boolean canAttempt = !hasSuccessful && "HELD".equalsIgnoreCase(booking.status());
+
         return CustomerPaymentStatusResponse.builder()
                 .bookingReference(booking.bookingReference())
                 .bookingStatus(booking.status())
                 .hasPaymentAttempt(true)
-                .paymentReference(payment.getPaymentReference())
-                .paymentStatus(payment.getStatus())
-                .paymentMethod(payment.getPaymentMethod())
-                .amount(payment.getAmount())
-                .currency(payment.getCurrency() != null ? payment.getCurrency() : "VND")
-                .reconciliationRequired(payment.isReconciliationRequired())
-                .createdAt(payment.getCreatedAt())
-                .updatedAt(payment.getPaymentTime() != null ? payment.getPaymentTime() : payment.getCreatedAt())
+                .hasSuccessfulPayment(hasSuccessful)
+                .totalAttempts(payments.size())
+                .canAttemptPayment(canAttempt)
+                .activePaymentReference(pendingPayment.map(Payment::getPaymentReference).orElse(null))
+                .paymentReference(selectedPayment.getPaymentReference())
+                .paymentStatus(selectedPayment.getStatus())
+                .paymentMethod(selectedPayment.getPaymentMethod())
+                .amount(selectedPayment.getAmount())
+                .currency(selectedPayment.getCurrency() != null ? selectedPayment.getCurrency() : "VND")
+                .reconciliationRequired(anyReconciliationRequired)
+                .createdAt(selectedPayment.getCreatedAt())
+                .updatedAt(selectedPayment.getPaymentTime() != null ? selectedPayment.getPaymentTime() : selectedPayment.getCreatedAt())
                 .build();
     }
 
     @Override
     @Transactional(readOnly = true)
     public String execute(Map<String, String> allParams) {
+        String baseReturnUrl = vnPayProperties.getFrontendReturnUrl();
+        if (baseReturnUrl == null || baseReturnUrl.isBlank() || (!baseReturnUrl.startsWith("http://") && !baseReturnUrl.startsWith("https://"))) {
+            baseReturnUrl = "http://localhost:5173/checkout";
+        }
+        String cleanBase = baseReturnUrl.endsWith("/") ? baseReturnUrl.substring(0, baseReturnUrl.length() - 1) : baseReturnUrl;
+
         if (allParams == null || allParams.isEmpty()) {
-            return vnPayProperties.getFrontendReturnUrl() + "?vnp_Error=EMPTY_CALLBACK";
+            return cleanBase + "?vnp_Error=EMPTY_CALLBACK";
         }
 
+        // BLOCKER-06: Validate signature BEFORE querying or revealing bookingReference
         boolean validSignature = VnPaySignUtil.verifySignature(allParams, vnPayProperties.getHashSecret());
         String txnRef = allParams.get("vnp_TxnRef");
         String responseCode = allParams.get("vnp_ResponseCode");
 
-        // Correlation to booking reference
+        if (!validSignature) {
+            log.warn("[VNPAY BROWSER RETURN] Invalid or unverified signature. Rejecting without correlating payment/booking.");
+            return cleanBase + "?vnp_Error=INVALID_SIGNATURE";
+        }
+
+        // Only with valid signature: correlate to booking reference
         String targetBookingReference = "";
         if (txnRef != null && !txnRef.isBlank()) {
             Optional<Payment> paymentOpt = paymentRepository.findByPaymentReference(txnRef.trim());
@@ -115,21 +143,16 @@ public class PaymentQueryServiceImpl implements GetPaymentReportUseCase, AdminGe
             }
         }
 
-        StringBuilder redirectUrl = new StringBuilder(vnPayProperties.getFrontendReturnUrl());
+        StringBuilder redirectUrl = new StringBuilder(cleanBase);
         if (!targetBookingReference.isBlank()) {
-            if (!redirectUrl.toString().endsWith("/")) {
-                redirectUrl.append("/");
-            }
-            redirectUrl.append(URLEncoder.encode(targetBookingReference, StandardCharsets.UTF_8));
+            redirectUrl.append("/").append(URLEncoder.encode(targetBookingReference, StandardCharsets.UTF_8));
         }
 
-        redirectUrl.append("?");
-        if (!validSignature) {
-            log.warn("[VNPAY BROWSER RETURN] Invalid signature detected for txnRef: {}", txnRef);
-            redirectUrl.append("vnp_Error=INVALID_SIGNATURE");
-        } else {
-            redirectUrl.append("vnp_ResponseCode=").append(responseCode != null ? responseCode : "")
-                    .append("&vnp_TxnRef=").append(txnRef != null ? txnRef : "");
+        redirectUrl.append("?vnp_ResponseCode=").append(responseCode != null ? URLEncoder.encode(responseCode, StandardCharsets.UTF_8) : "")
+                .append("&vnp_TxnRef=").append(txnRef != null ? URLEncoder.encode(txnRef, StandardCharsets.UTF_8) : "");
+
+        if (targetBookingReference.isBlank() && txnRef != null && !txnRef.isBlank()) {
+            redirectUrl.append("&vnp_Error=BOOKING_NOT_FOUND");
         }
 
         return redirectUrl.toString();

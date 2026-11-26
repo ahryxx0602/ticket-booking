@@ -7,6 +7,7 @@ import SeatMap2Deck from '@/shared/components/SeatMap2Deck.vue'
 import { useCountdown } from '@/shared/composables/useCountdown'
 import { catalogBookingApi } from '../api'
 import { validateBookingResponse } from '../utils/booking-validator'
+import { useBookingOperationGuard } from '../composables/useBookingOperationGuard'
 import {
   Bus,
   ArrowLeft,
@@ -57,11 +58,8 @@ const activeClientRequestId = ref(null)
 // Active booking information after successful hold
 const heldBooking = ref(null)
 
-// Storage keys partitioned by user and trip
-const getHoldUnknownStorageKey = () => `velobus_hold_unknown_${auth.user?.id || 'guest'}_${tripId.value}`
-const getActiveHoldStorageKey = () => `velobus_active_hold_${auth.user?.id || 'guest'}_${tripId.value}`
-const getHoldRequestStorageKey = () => `velobus_hold_request_${auth.user?.id || 'guest'}_${tripId.value}`
-const getCancelUnresolvedStorageKey = () => `velobus_cancel_unresolved_${auth.user?.id || 'guest'}_${tripId.value}`
+// BLOCKER-04: Canonical Shared Operation Guard
+const operationGuard = useBookingOperationGuard()
 
 // Trip Metadata initialized from route history.state or defaults based on tripId
 const initialTrip = history.state?.trip
@@ -94,9 +92,7 @@ const { remainingSeconds, formattedTime, isRunning, start: startCountdown, stop:
   })
   heldBooking.value = null
   selectedSeats.value = []
-  try {
-    sessionStorage.removeItem(getActiveHoldStorageKey())
-  } catch (_) {}
+  operationGuard.clearActiveHold(tripId.value)
   fetchTripSeats()
   fetchAvailability()
 })
@@ -126,21 +122,16 @@ function recordHoldUnknownOutcome(seats, customReason) {
     tripId: Number(tripId.value),
     seatNumbers: [...seats],
     clientRequestId: activeClientRequestId.value || null,
-    timestamp: Date.now(),
     reason: customReason || 'Unknown outcome'
   }
   holdUnknownContext.value = ctx
-  try {
-    sessionStorage.setItem(getHoldUnknownStorageKey(), JSON.stringify(ctx))
-  } catch (_) {}
+  operationGuard.setHoldUnknown(tripId.value, ctx)
 }
 
 function clearHoldUnknownOutcome() {
   isHoldUnknownOutcome.value = false
   holdUnknownContext.value = null
-  try {
-    sessionStorage.removeItem(getHoldUnknownStorageKey())
-  } catch (_) {}
+  operationGuard.clearHoldUnknown(tripId.value)
 }
 
 /**
@@ -180,14 +171,12 @@ async function verifyHoldServerState() {
             heldBooking.value = replayBooking
             selectedSeats.value = [...(replayBooking.seatNumbers || [])]
             startCountdown(replayBooking.expiresAt)
-            try {
-              sessionStorage.setItem(getActiveHoldStorageKey(), JSON.stringify({
-                bookingReference: replayBooking.bookingReference,
-                tripId: Number(tripId.value),
-                userId: auth.user?.id
-              }))
-              sessionStorage.removeItem(getHoldRequestStorageKey())
-            } catch (_) {}
+            operationGuard.setActiveHold(tripId.value, {
+              bookingReference: replayBooking.bookingReference,
+              tripId: Number(tripId.value),
+              userId: auth.user?.id
+            })
+            operationGuard.clearHoldRequest(tripId.value)
             clearHoldUnknownOutcome()
             activeClientRequestId.value = null
             toast.success(`Máy chủ đã xác nhận phiên giữ chỗ #${replayBooking.bookingReference} cho ghế ${replayBooking.seatNumbers.join(', ')}.`)
@@ -196,9 +185,7 @@ async function verifyHoldServerState() {
           } else {
             clearHoldUnknownOutcome()
             activeClientRequestId.value = null
-            try {
-              sessionStorage.removeItem(getHoldRequestStorageKey())
-            } catch (_) {}
+            operationGuard.clearHoldRequest(tripId.value)
             toast.info(`Phiên giữ chỗ #${replayBooking.bookingReference} trước đó đã ở trạng thái ${replayBooking.status}.`)
             await fetchAvailability()
             return
@@ -245,14 +232,12 @@ async function verifyHoldServerState() {
         heldBooking.value = matched
         selectedSeats.value = [...(matched.seatNumbers || [])]
         startCountdown(matched.expiresAt)
-        try {
-          sessionStorage.setItem(getActiveHoldStorageKey(), JSON.stringify({
-            bookingReference: matched.bookingReference,
-            tripId: Number(tripId.value),
-            userId: auth.user?.id
-          }))
-          sessionStorage.removeItem(getHoldRequestStorageKey())
-        } catch (_) {}
+        operationGuard.setActiveHold(tripId.value, {
+          bookingReference: matched.bookingReference,
+          tripId: Number(tripId.value),
+          userId: auth.user?.id
+        })
+        operationGuard.clearHoldRequest(tripId.value)
         clearHoldUnknownOutcome()
         activeClientRequestId.value = null
         toast.success(`Máy chủ đã xác nhận phiên giữ chỗ #${matched.bookingReference} cho ghế ${matched.seatNumbers.join(', ')}.`)
@@ -260,9 +245,7 @@ async function verifyHoldServerState() {
       } else {
         clearHoldUnknownOutcome()
         activeClientRequestId.value = null
-        try {
-          sessionStorage.removeItem(getHoldRequestStorageKey())
-        } catch (_) {}
+        operationGuard.clearHoldRequest(tripId.value)
         toast.info(`Phiên giữ chỗ #${matched.bookingReference} trước đó đã ở trạng thái ${matched.status}.`)
         await fetchAvailability()
       }
@@ -397,15 +380,10 @@ async function handleHoldSeats() {
 
   // Ensure stable clientRequestId across retries/timeouts
   if (!activeClientRequestId.value) {
-    try {
-      const storedReq = sessionStorage.getItem(getHoldRequestStorageKey())
-      if (storedReq) {
-        const parsed = JSON.parse(storedReq)
-        if (parsed?.clientRequestId && String(parsed.tripId) === String(tripId.value)) {
-          activeClientRequestId.value = parsed.clientRequestId
-        }
-      }
-    } catch (_) {}
+    const storedReq = operationGuard.getHoldRequest(tripId.value)
+    if (storedReq?.clientRequestId && String(storedReq.tripId) === String(tripId.value)) {
+      activeClientRequestId.value = storedReq.clientRequestId
+    }
   }
   if (!activeClientRequestId.value) {
     activeClientRequestId.value = (typeof crypto !== 'undefined' && crypto.randomUUID)
@@ -413,14 +391,11 @@ async function handleHoldSeats() {
       : 'req-' + Date.now() + '-' + Math.random().toString(36).substring(2, 10)
   }
 
-  try {
-    sessionStorage.setItem(getHoldRequestStorageKey(), JSON.stringify({
-      clientRequestId: activeClientRequestId.value,
-      tripId: Number(tripId.value),
-      seatNumbers: requestedSeats,
-      timestamp: Date.now()
-    }))
-  } catch (_) {}
+  operationGuard.setHoldRequest(tripId.value, {
+    clientRequestId: activeClientRequestId.value,
+    tripId: Number(tripId.value),
+    seatNumbers: requestedSeats
+  })
 
   try {
     const res = await catalogBookingApi.holdSeats({
@@ -454,14 +429,12 @@ async function handleHoldSeats() {
       startCountdown(booking.expiresAt)
       clearHoldUnknownOutcome()
 
-      try {
-        sessionStorage.setItem(getActiveHoldStorageKey(), JSON.stringify({
-          bookingReference: booking.bookingReference,
-          tripId: Number(tripId.value),
-          userId: auth.user?.id
-        }))
-        sessionStorage.removeItem(getHoldRequestStorageKey())
-      } catch (_) {}
+      operationGuard.setActiveHold(tripId.value, {
+        bookingReference: booking.bookingReference,
+        tripId: Number(tripId.value),
+        userId: auth.user?.id
+      })
+      operationGuard.clearHoldRequest(tripId.value)
       activeClientRequestId.value = null
 
       toast.success(`Giữ chỗ thành công! Đã khóa ${selectedSeats.value.join(', ')} trong 10 phút. Vui lòng thanh toán!`)
@@ -469,9 +442,7 @@ async function handleHoldSeats() {
     } else {
       // Terminal booking replay (CONFIRMED, CANCELLED, EXPIRED)
       clearHoldUnknownOutcome()
-      try {
-        sessionStorage.removeItem(getHoldRequestStorageKey())
-      } catch (_) {}
+      operationGuard.clearHoldRequest(tripId.value)
       activeClientRequestId.value = null
       toast.info(`Phiên giữ chỗ trước đó đã ở trạng thái ${booking.status}.`)
       await fetchAvailability()
@@ -491,9 +462,7 @@ async function handleHoldSeats() {
         // and refresh authoritative availability rather than permanently disabling all seats.
         selectedSeats.value = selectedSeats.value.filter(s => !requestedSeats.includes(s))
         activeClientRequestId.value = null
-        try {
-          sessionStorage.removeItem(getHoldRequestStorageKey())
-        } catch (_) {}
+        operationGuard.clearHoldRequest(tripId.value)
         toast.error('Một hoặc nhiều ghế đã bị hành khách khác chọn. Vui lòng chọn ghế khác!')
         await fetchAvailability()
       }
@@ -536,19 +505,21 @@ async function handleCancelBooking() {
   const ref = heldBooking.value.bookingReference
 
   try {
+    operationGuard.setCancelPending(ref)
     await catalogBookingApi.cancelBooking(ref)
     stopCountdown()
     heldBooking.value = null
     selectedSeats.value = []
     isCancelUnresolved.value = false
-    try {
-      sessionStorage.removeItem(getActiveHoldStorageKey())
-      sessionStorage.removeItem(getCancelUnresolvedStorageKey())
-    } catch (_) {}
+    operationGuard.clearCancelPending(ref)
+    operationGuard.clearActiveHold(tripId.value)
+    operationGuard.clearUnresolvedCancel(tripId.value)
+    operationGuard.clearUnresolvedCancel(ref)
     toast.success('Đã hủy giữ chỗ thành công.')
     await Promise.all([fetchTripSeats(), fetchAvailability()])
   } catch (err) {
     console.error('Cancel booking failed:', err)
+    operationGuard.clearCancelPending(ref)
     const errMsg = err?.message || ''
     const isTimeoutOrNetwork =
       errMsg.toLowerCase().includes('timeout') ||
@@ -557,14 +528,16 @@ async function handleCancelBooking() {
 
     if (isTimeoutOrNetwork) {
       isCancelUnresolved.value = true
-      try {
-        sessionStorage.setItem(getCancelUnresolvedStorageKey(), JSON.stringify({
-          bookingReference: ref,
-          tripId: Number(tripId.value),
-          userId: auth.user?.id,
-          timestamp: Date.now()
-        }))
-      } catch (_) {}
+      operationGuard.setUnresolvedCancel(tripId.value, {
+        bookingReference: ref,
+        tripId: Number(tripId.value),
+        userId: auth.user?.id,
+        message: 'Timeout khi hủy giữ chỗ'
+      })
+      operationGuard.setUnresolvedCancel(ref, {
+        bookingReference: ref,
+        tripId: Number(tripId.value)
+      })
       toast.error('Yêu cầu hủy giữ chỗ gặp sự cố mạng hoặc timeout. Đã khóa thanh toán để đối soát trạng thái máy chủ.')
     } else {
       toast.error('Không thể hủy giữ chỗ trên máy chủ: ' + errMsg)
@@ -630,79 +603,59 @@ onMounted(async () => {
   } catch (_) {}
 
   // 2. Restore Hold Unknown Outcome state if previously interrupted
-  try {
-    const storedUnknown = sessionStorage.getItem(getHoldUnknownStorageKey())
-    if (storedUnknown) {
-      const parsed = JSON.parse(storedUnknown)
-      if (parsed && typeof parsed === 'object') {
-        isHoldUnknownOutcome.value = true
-        holdUnknownContext.value = parsed
-      }
-    }
-  } catch (_) {}
+  const storedUnknown = operationGuard.getHoldUnknown(tripId.value)
+  if (storedUnknown && typeof storedUnknown === 'object') {
+    isHoldUnknownOutcome.value = true
+    holdUnknownContext.value = storedUnknown
+  }
 
   // 3. Restore Active Held Booking from Server with strict validator
-  try {
-    const storedActiveHold = sessionStorage.getItem(getActiveHoldStorageKey())
-    if (storedActiveHold) {
-      const parsed = JSON.parse(storedActiveHold)
-      if (parsed?.bookingReference && String(parsed.tripId) === String(tripId.value)) {
-        try {
-          const detailRes = await catalogBookingApi.getBookingDetail(parsed.bookingReference)
-          const booking = detailRes?.data || detailRes
-          const validation = validateBookingResponse(booking, {
-            expectedTripId: tripId.value,
-            expectedUserId: auth.user?.id
-          })
-          if (validation.valid) {
-            heldBooking.value = booking
-            selectedSeats.value = [...(booking.seatNumbers || [])]
-            startCountdown(booking.expiresAt)
-          } else {
-            sessionStorage.removeItem(getActiveHoldStorageKey())
-          }
-        } catch (_) {
-          // If server check fails, keep client state clean
-        }
+  const storedActiveHold = operationGuard.getActiveHold(tripId.value)
+  if (storedActiveHold?.bookingReference && String(storedActiveHold.tripId) === String(tripId.value)) {
+    try {
+      const detailRes = await catalogBookingApi.getBookingDetail(storedActiveHold.bookingReference)
+      const booking = detailRes?.data || detailRes
+      const validation = validateBookingResponse(booking, {
+        expectedTripId: tripId.value,
+        expectedUserId: auth.user?.id
+      })
+      if (validation.valid) {
+        heldBooking.value = booking
+        selectedSeats.value = [...(booking.seatNumbers || [])]
+        startCountdown(booking.expiresAt)
+      } else {
+        operationGuard.clearActiveHold(tripId.value)
       }
+    } catch (_) {
+      // If server check fails, keep client state clean
     }
-  } catch (_) {}
+  }
 
   // 4. Restore Cancel Unresolved state if previously interrupted
-  try {
-    const storedCancel = sessionStorage.getItem(getCancelUnresolvedStorageKey())
-    if (storedCancel) {
-      const parsed = JSON.parse(storedCancel)
-      if (parsed && String(parsed.tripId) === String(tripId.value)) {
-        isCancelUnresolved.value = true
-      }
-    }
-  } catch (_) {}
+  const storedCancel = operationGuard.getUnresolvedCancel(tripId.value)
+  if (storedCancel && String(storedCancel.tripId) === String(tripId.value)) {
+    isCancelUnresolved.value = true
+  }
 
   // 5. Restore active clientRequestId and pending hold context if previously interrupted (PRE-04)
-  try {
-    const storedReq = sessionStorage.getItem(getHoldRequestStorageKey())
-    if (storedReq) {
-      const parsed = JSON.parse(storedReq)
-      if (parsed?.clientRequestId && String(parsed.tripId) === String(tripId.value)) {
-        activeClientRequestId.value = parsed.clientRequestId
-        if (Array.isArray(parsed.seatNumbers) && parsed.seatNumbers.length > 0) {
-          selectedSeats.value = [...parsed.seatNumbers]
-        }
-        isHoldUnknownOutcome.value = true
-        if (!holdUnknownContext.value) {
-          holdUnknownContext.value = {
-            userId: auth.user?.id || null,
-            tripId: Number(tripId.value),
-            seatNumbers: [...(parsed.seatNumbers || [])],
-            clientRequestId: parsed.clientRequestId,
-            timestamp: parsed.timestamp || Date.now(),
-            reason: 'Interrupted hold restored from session storage'
-          }
-        }
+  const storedReq = operationGuard.getHoldRequest(tripId.value)
+  if (storedReq?.clientRequestId && String(storedReq.tripId) === String(tripId.value)) {
+    activeClientRequestId.value = storedReq.clientRequestId
+    if (Array.isArray(storedReq.seatNumbers) && storedReq.seatNumbers.length > 0) {
+      selectedSeats.value = [...storedReq.seatNumbers]
+    }
+    isHoldUnknownOutcome.value = true
+    if (!holdUnknownContext.value) {
+      holdUnknownContext.value = {
+        userId: auth.user?.id || null,
+        tripId: Number(tripId.value),
+        seatNumbers: [...(storedReq.seatNumbers || [])],
+        clientRequestId: storedReq.clientRequestId,
+        timestamp: storedReq.timestamp || Date.now(),
+        reason: 'Interrupted hold restored from session storage'
       }
     }
-  } catch (_) {}
+  }
 })
 </script>
 
