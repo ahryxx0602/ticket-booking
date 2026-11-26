@@ -2,14 +2,14 @@
 import { ref } from 'vue'
 import ThemeCustomizer from '@/shared/components/ThemeCustomizer.vue'
 import { Button } from '@/components/ui/button'
-import { ShieldCheck, Bus, CheckCircle2, Paintbrush } from 'lucide-vue-next'
+import { ShieldCheck, MapPin, Ticket, CalendarCheck, Paintbrush } from 'lucide-vue-next'
 
 const isThemeCustomizerOpen = ref(false)
 </script>
 
 <template>
   <div class="min-h-screen flex bg-background text-foreground transition-colors duration-200 relative">
-    <!-- Left Brand Panel (Desktop: 45% width, Claude+ Warm Minimalist Architecture) -->
+    <!-- Left Brand Panel (Desktop: 45% width, Claude+ Warm Minimalist) -->
     <div class="hidden lg:flex lg:w-[45%] bg-card border-r border-border text-foreground flex-col justify-between p-12 relative select-none">
       <!-- Top Brand Identity -->
       <div class="flex items-center gap-3">
@@ -18,57 +18,57 @@ const isThemeCustomizerOpen = ref(false)
         </div>
         <div>
           <h1 class="text-lg font-bold tracking-tight text-foreground">VeloBus</h1>
-          <p class="text-xs text-muted-foreground">Enterprise Mobility SaaS Platform</p>
+          <p class="text-xs text-muted-foreground">Nền tảng vé xe khách liên tỉnh</p>
         </div>
       </div>
 
-      <!-- Center Hero Message & Technical Pillars -->
+      <!-- Center Hero Message & Feature Pillars -->
       <div class="space-y-6 max-w-md">
         <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-xs font-semibold text-primary">
           <span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-          Hệ thống Đặt vé & Vận hành Chuyên nghiệp
+          Đặt vé nhanh chóng & tiện lợi
         </div>
 
         <h2 class="text-2xl sm:text-3xl font-extrabold leading-snug tracking-tight text-foreground">
-          Nền tảng đặt vé xe khách và quản trị đội xe thông minh
+          Tìm chuyến xe, chọn chỗ ngồi và quản lý vé của bạn
         </h2>
 
         <p class="text-sm text-muted-foreground leading-relaxed">
-          Giải pháp toàn diện cho hành khách và đối tác vận tải: Khóa giữ chỗ phân tán thời gian thực, quản lý ví ký quỹ Escrow 4 số dư và kiểm soát hành trình liên tỉnh.
+          Hàng nghìn chuyến xe liên tỉnh mỗi ngày. Đặt vé trong vài giây, nhận vé điện tử, kiểm tra lịch trình và hoàn vé dễ dàng.
         </p>
 
         <!-- Feature Pill Indicators -->
         <div class="grid grid-cols-2 gap-3 pt-2 text-xs text-muted-foreground">
           <div class="flex items-center gap-2">
-            <CheckCircle2 class="w-4 h-4 text-primary font-bold flex-shrink-0" />
-            <span>Khóa ghế phân tán Redis</span>
+            <MapPin class="w-4 h-4 text-primary flex-shrink-0" />
+            <span>Hàng trăm tuyến xe toàn quốc</span>
           </div>
           <div class="flex items-center gap-2">
-            <CheckCircle2 class="w-4 h-4 text-primary font-bold flex-shrink-0" />
-            <span>Thanh toán VNPay Sandbox</span>
+            <Ticket class="w-4 h-4 text-primary flex-shrink-0" />
+            <span>Vé điện tử QR tức thì</span>
           </div>
           <div class="flex items-center gap-2">
-            <CheckCircle2 class="w-4 h-4 text-primary font-bold flex-shrink-0" />
-            <span>Vé điện tử QR HMAC-SHA256</span>
+            <CalendarCheck class="w-4 h-4 text-primary flex-shrink-0" />
+            <span>Quản lý vé, hoàn vé dễ dàng</span>
           </div>
           <div class="flex items-center gap-2">
-            <CheckCircle2 class="w-4 h-4 text-primary font-bold flex-shrink-0" />
-            <span>Ví ký quỹ Escrow minh bạch</span>
+            <ShieldCheck class="w-4 h-4 text-primary flex-shrink-0" />
+            <span>Thanh toán an toàn & bảo mật</span>
           </div>
         </div>
       </div>
 
-      <!-- Bottom Security & Copyright note -->
+      <!-- Bottom Copyright -->
       <div class="text-xs text-muted-foreground flex items-center justify-between border-t border-border pt-6">
-        <span>© 2026 VeloBus Ecosystem</span>
+        <span>© 2026 VeloBus</span>
         <span class="flex items-center gap-1.5 font-medium">
           <ShieldCheck class="w-4 h-4 text-primary" />
-          Bảo mật cấp độ Enterprise
+          Thanh toán bảo mật
         </span>
       </div>
     </div>
 
-    <!-- Right Form Container (Desktop: 55% width, Form container max-width 420px, vertically centered) -->
+    <!-- Right Form Container (Desktop: 55% width, Form max-width 420px, vertically centered) -->
     <div class="flex-1 flex flex-col justify-center items-center p-6 sm:p-12 relative">
       <!-- Top Right Theme Customizer Toggle -->
       <div class="absolute top-4 right-4 sm:top-6 sm:right-6">

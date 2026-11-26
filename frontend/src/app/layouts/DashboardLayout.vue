@@ -231,26 +231,41 @@ function handleLogout() {
         'hidden md:flex'
       ]"
     >
-      <!-- Top Brand Logo -->
-      <div class="h-16 px-4 flex items-center justify-between border-b border-border flex-shrink-0">
-        <router-link to="/" class="flex items-center gap-3 overflow-hidden font-bold">
+      <!-- Top Brand Logo — always visible in both expanded/collapsed states -->
+      <div
+        :class="[
+          'h-16 flex items-center border-b border-border flex-shrink-0',
+          isCollapsed ? 'justify-center px-0' : 'px-4 justify-between'
+        ]"
+      >
+        <!-- Logo mark: always visible, centered when collapsed -->
+        <router-link
+          to="/"
+          :class="[
+            'flex items-center gap-3 font-bold overflow-hidden min-w-0',
+            isCollapsed ? 'justify-center' : ''
+          ]"
+          :title="isCollapsed ? 'VeloBus' : undefined"
+        >
           <div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center font-black text-primary-foreground text-sm flex-shrink-0 shadow-xs">
             VB
           </div>
-          <div v-show="!isCollapsed" class="whitespace-nowrap transition-opacity">
+          <div v-show="!isCollapsed" class="whitespace-nowrap transition-opacity min-w-0">
             <span class="text-sm font-bold tracking-tight text-foreground">VeloBus</span>
             <span class="block text-[10px] text-muted-foreground uppercase tracking-wider font-medium">{{ portalTitle }}</span>
           </div>
         </router-link>
 
+        <!-- Collapse trigger — only visible when expanded; in header area when collapsed -->
         <button
+          v-show="!isCollapsed"
           type="button"
           @click="isCollapsed = !isCollapsed"
-          class="text-muted-foreground hover:text-foreground p-1.5 rounded-md hover:bg-muted/60 transition-colors"
-          :title="isCollapsed ? 'Mở rộng menu (256px)' : 'Thu gọn menu (64px)'"
+          class="text-muted-foreground hover:text-foreground p-1.5 rounded-md hover:bg-muted/60 transition-colors flex-shrink-0"
+          title="Thu gọn menu (64px)"
+          aria-label="Thu gọn menu"
         >
-          <ChevronRight v-if="isCollapsed" class="w-4 h-4" />
-          <ChevronLeft v-else class="w-4 h-4" />
+          <ChevronLeft class="w-4 h-4" />
         </button>
       </div>
 
@@ -271,7 +286,7 @@ function handleLogout() {
             :class="[
               'flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium transition-all group',
               route.path === item.to || (!item.exact && route.path.startsWith(item.to) && item.to !== '/operator' && item.to !== '/admin')
-                ? 'bg-primary-effective text-primary-effective-foreground shadow-xs font-semibold'
+                ? 'sidebar-nav-active shadow-xs font-semibold'
                 : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
             ]"
             :title="isCollapsed ? item.label : ''"
@@ -326,8 +341,20 @@ function handleLogout() {
 
       <!-- Fixed Header (64px height, Claude+ Sticky Navigation with Backdrop Blur) -->
       <header class="h-16 bg-background/95 backdrop-blur-md border-b border-border px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 shadow-xs flex-shrink-0">
-        <!-- Left: Mobile Menu Trigger & Breadcrumbs -->
+        <!-- Left: Sidebar Expand trigger (desktop collapsed) + Mobile Menu + Breadcrumbs -->
         <div class="flex items-center gap-3">
+          <!-- Desktop: expand sidebar trigger (only shown when collapsed) -->
+          <button
+            v-if="isCollapsed"
+            type="button"
+            @click="isCollapsed = false"
+            class="hidden md:flex text-muted-foreground hover:text-foreground p-1.5 rounded-md hover:bg-muted/60 transition-colors h-9 w-9 items-center justify-center"
+            title="Mở rộng menu (256px)"
+            aria-label="Mở rộng menu"
+          >
+            <ChevronRight class="w-4 h-4" />
+          </button>
+
           <!-- Mobile Drawer Trigger (< md) -->
           <Sheet v-model:open="isMobileOpen">
             <SheetTrigger as-child>
@@ -361,7 +388,7 @@ function handleLogout() {
                     :class="[
                       'flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium transition-colors',
                       route.path === item.to || (!item.exact && route.path.startsWith(item.to) && item.to !== '/operator' && item.to !== '/admin')
-                        ? 'bg-primary-effective text-primary-effective-foreground font-semibold'
+                        ? 'sidebar-nav-active font-semibold'
                         : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
                     ]"
                   >

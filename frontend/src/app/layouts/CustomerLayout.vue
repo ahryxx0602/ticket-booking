@@ -3,7 +3,6 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/modules/auth/store'
 import { useLayoutWidth } from '@/shared/composables/useLayoutWidth'
-import LayoutWidthSwitcher from '@/shared/components/LayoutWidthSwitcher.vue'
 import NotificationCenter from '@/shared/components/NotificationCenter.vue'
 import ThemeCustomizer from '@/shared/components/ThemeCustomizer.vue'
 import { Button } from '@/components/ui/button'
@@ -30,8 +29,6 @@ import {
   Building2,
   Shield,
   Menu,
-  Sparkles,
-  PhoneCall,
   ShieldCheck,
   Paintbrush
 } from 'lucide-vue-next'
@@ -74,7 +71,7 @@ function handleLogout() {
               Tìm & Đặt vé
             </router-link>
             <router-link
-              v-if="!auth.isAuthenticated || auth.isCustomer"
+              v-if="auth.isAuthenticated && auth.isCustomer"
               to="/my-bookings"
               class="px-3 py-2 rounded-lg text-xs font-semibold text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors"
               active-class="bg-primary/10 text-primary"
@@ -86,13 +83,8 @@ function handleLogout() {
 
         <!-- Right Side Nav Actions & Dropdowns -->
         <div class="flex items-center gap-2 sm:gap-3">
-          <!-- Notification Center -->
-          <NotificationCenter />
-
-          <!-- Layout Width Switcher -->
-          <div class="hidden sm:block">
-            <LayoutWidthSwitcher />
-          </div>
+          <!-- Notification Center (authenticated users only — REV-04) -->
+          <NotificationCenter v-if="auth.isAuthenticated" />
 
           <!-- Theme Customizer Trigger Button -->
           <Button
@@ -199,6 +191,7 @@ function handleLogout() {
                 </router-link>
                 <router-link
                   to="/my-bookings"
+                  v-if="auth.isAuthenticated && auth.isCustomer"
                   @click="isMobileOpen = false"
                   class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium text-foreground hover:bg-muted/60"
                 >
@@ -273,19 +266,19 @@ function handleLogout() {
             </ul>
           </div>
           <div>
-            <h4 class="font-semibold text-foreground mb-3 uppercase tracking-wider text-[11px]">Bảo mật & Chuẩn</h4>
+            <h4 class="font-semibold text-foreground mb-3 uppercase tracking-wider text-[11px]">Hỗ trợ & An toàn</h4>
             <p class="text-muted-foreground leading-relaxed mb-3">
-              Áp dụng thuật toán mã hóa HMAC-SHA256 trên vé điện tử QR Code và khóa phân tán Redis 10 phút.
+              Vé điện tử QR bảo mật. Thanh toán qua VNPay. Hoàn vé theo chính sách nhà xe.
             </p>
             <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-muted text-[11px] font-medium text-foreground">
               <ShieldCheck class="w-3.5 h-3.5 text-primary" />
-              <span>Fintech Escrow Secured</span>
+              <span>Thanh toán an toàn</span>
             </div>
           </div>
         </div>
 
         <div class="border-t border-border pt-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted-foreground">
-          <p>© 2026 VeloBus Platform. Chuẩn hóa kiến trúc Claude+ Design System.</p>
+          <p>© 2026 VeloBus Platform. Đặt vé xe khách liên tỉnh toàn quốc.</p>
           <div class="flex items-center gap-4">
             <span class="hover:text-foreground cursor-pointer">Điều khoản dịch vụ</span>
             <span class="hover:text-foreground cursor-pointer">Chính sách bảo mật</span>

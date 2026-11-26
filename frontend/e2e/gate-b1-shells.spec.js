@@ -110,7 +110,7 @@ test.describe('Gate B1: Application Shells Verification & Visual Evidence', () =
     await page.waitForLoadState('networkidle')
 
     // Verify 45% brand panel and 55% form container
-    await expect(page.locator('text=Enterprise Mobility SaaS Platform')).toBeVisible()
+    await expect(page.locator('text=Nền tảng vé xe khách liên tỉnh')).toBeVisible()
     await expect(page.locator('text=Đăng nhập VeloBus')).toBeVisible()
 
     // Capture Light Mode

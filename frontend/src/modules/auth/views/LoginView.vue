@@ -18,6 +18,9 @@ const password = ref('')
 const loading = ref(false)
 const errorMsg = ref('')
 
+// B2: Demo credentials only shown in DEV builds — never in production
+const isDev = import.meta.env.DEV
+
 const reasonMessage = computed(() => {
   if (route.query.reason === 'session_expired') {
     return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.'
@@ -123,7 +126,8 @@ async function onSubmit() {
     </CardContent>
 
     <CardFooter class="pt-0 pb-4 text-center justify-center">
-      <p class="text-[11px] text-muted-foreground">
+      <!-- B2: Demo account info only shown in DEV environment -->
+      <p v-if="isDev" class="text-[11px] text-muted-foreground">
         Tài khoản mẫu: <span class="font-mono font-medium text-foreground">admin</span> (Admin) hoặc <span class="font-mono font-medium text-foreground">operator1</span> (Nhà xe)
       </p>
     </CardFooter>

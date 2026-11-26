@@ -87,6 +87,9 @@
   --destructive-effective: oklch(0.585 0.20 28.0);   /* #D9372F (Contrast 4.63:1 with white) */
   --destructive-effective-foreground: oklch(1.0000 0 0); /* #FFFFFF */
 
+  /* Active nav link: enforce primary-effective foreground to override any global anchor/muted rules */
+  /* REV-02: Ensure collapsed/expanded active state has correct contrast in both light & dark */
+
   /* Density & Dimensions (Scoped via CSS Variables) */
   --spacing-density: 1;
   --table-cell-py: 0.75rem;
@@ -263,4 +266,25 @@ body {
 
 .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+
+/* =============================================================================
+   REV-02: Active sidebar nav link contrast override
+   bg-primary-effective sets background, but Tailwind text-primary-effective-foreground
+   uses CSS variable. Force color via utility-compatible rule to ensure AA contrast
+   in both light/dark and when router-link-active class is added by Vue Router.
+   ============================================================================= */
+.sidebar-nav-active,
+.sidebar-nav-active:visited,
+.sidebar-nav-active:hover {
+  color: var(--primary-effective-foreground) !important;
+  background-color: var(--primary-effective) !important;
+}
+
+/* =============================================================================
+   REV-06: ThemeCustomizer — scroll lock when drawer is open
+   Body overflow is locked by the Teleport overlay; the drawer itself scrolls.
+   ============================================================================= */
+body.theme-customizer-open {
+  overflow: hidden;
 }

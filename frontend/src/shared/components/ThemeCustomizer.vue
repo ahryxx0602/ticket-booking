@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import {
   useTheme,
   type ThemeMode,
@@ -38,6 +38,8 @@ const emits = defineEmits<{
 }>()
 
 const isOpen = ref(false)
+// REV-06: Track element that opened the drawer for focus restoration
+let lastFocusedElement: HTMLElement | null = null
 
 watch(
   () => props.modelValue,
@@ -51,7 +53,32 @@ watch(
 
 watch(isOpen, (val) => {
   emits('update:modelValue', val)
+  // REV-06: Body scroll lock when drawer is open
+  if (val) {
+    lastFocusedElement = document.activeElement as HTMLElement
+    document.body.classList.add('theme-customizer-open')
+  } else {
+    document.body.classList.remove('theme-customizer-open')
+    // Restore focus to trigger element after close
+    if (lastFocusedElement) {
+      lastFocusedElement.focus()
+      lastFocusedElement = null
+    }
+  }
 })
+
+// REV-06: Keyboard Escape handler
+function handleKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && isOpen.value) {
+    handleCancel()
+  }
+}
+onMounted(() => document.addEventListener('keydown', handleKeydown))
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', handleKeydown)
+  document.body.classList.remove('theme-customizer-open')
+})
+
 const {
   draftTheme,
   currentTheme,
@@ -123,7 +150,8 @@ function handleReset() {
       >
         <div
           role="dialog"
-          aria-label="VeloBus Theme Studio"
+          aria-modal="true"
+          aria-labelledby="theme-customizer-title"
           data-testid="theme-customizer-drawer"
           class="flex flex-col h-full w-full max-w-md bg-background border-l shadow-2xl p-6 overflow-y-auto animate-in slide-in-from-right duration-300"
         >
@@ -133,7 +161,7 @@ function handleReset() {
               <Paintbrush class="h-5 w-5" />
             </div>
             <div>
-              <h2 class="text-base font-semibold">VeloBus Theme Studio</h2>
+              <h2 id="theme-customizer-title" class="text-base font-semibold">VeloBus Theme Studio</h2>
               <p class="text-xs text-muted-foreground">Claude+ Warm Minimalist Customizer</p>
             </div>
           </div>
