@@ -57,7 +57,8 @@ export function validateBookingResponse(booking, options = {}) {
     expectedTripId,
     expectedUserId,
     expectedSeats,
-    allowPastExpiry = false
+    allowPastExpiry = false,
+    allowTerminalReplay = false
   } = options
 
   if (!booking || typeof booking !== 'object') {
@@ -70,9 +71,15 @@ export function validateBookingResponse(booking, options = {}) {
     return { valid: false, error: 'Thiếu mã tham chiếu đặt chỗ (bookingReference)' }
   }
 
-  // 2. status must be strictly HELD
-  if (booking.status !== 'HELD') {
-    return { valid: false, error: `Trạng thái giữ chỗ không hợp lệ: ${booking.status || 'UNDEFINED'} (Yêu cầu: HELD)` }
+  // 2. status check: strictly HELD unless terminal replay is permitted
+  const allowedStatuses = allowTerminalReplay
+    ? ['HELD', 'CONFIRMED', 'CANCELLED', 'EXPIRED']
+    : ['HELD']
+  if (!allowedStatuses.includes(booking.status)) {
+    return {
+      valid: false,
+      error: `Trạng thái giữ chỗ không hợp lệ: ${booking.status || 'UNDEFINED'} (Yêu cầu: ${allowedStatuses.join('/')})`
+    }
   }
 
   // 3. tripId match
@@ -85,16 +92,24 @@ export function validateBookingResponse(booking, options = {}) {
     }
   }
 
-  // 4. userId match (if present and expected)
-  if (expectedUserId !== undefined && expectedUserId !== null && booking.userId !== undefined && booking.userId !== null) {
+  // 4. userId match: if expectedUserId provided, booking.userId MUST be present and match
+  if (expectedUserId !== undefined && expectedUserId !== null) {
+    if (booking.userId === undefined || booking.userId === null) {
+      return { valid: false, error: 'Phản hồi thiếu thông tin người dùng (userId)' }
+    }
     if (String(booking.userId).trim() !== String(expectedUserId).trim()) {
       return { valid: false, error: 'Phiên giữ chỗ thuộc về người dùng khác' }
     }
   }
 
-  // 5. totalAmount: finite number >= 0
-  if (booking.totalAmount === undefined || booking.totalAmount === null) {
-    return { valid: false, error: 'Thiếu tổng tiền thanh toán (totalAmount)' }
+  // 5. totalAmount: finite number >= 0; explicitly reject boolean, empty string or null/undefined
+  if (
+    booking.totalAmount === undefined ||
+    booking.totalAmount === null ||
+    typeof booking.totalAmount === 'boolean' ||
+    (typeof booking.totalAmount === 'string' && booking.totalAmount.trim() === '')
+  ) {
+    return { valid: false, error: 'Thiếu tổng tiền thanh toán hoặc định dạng không hợp lệ' }
   }
   const totalNum = Number(booking.totalAmount)
   if (!Number.isFinite(totalNum) || totalNum < 0) {
@@ -125,13 +140,14 @@ export function validateBookingResponse(booking, options = {}) {
     }
   }
 
-  // 7. expiresAt: finite timestamp in future
+  // 7. expiresAt: finite timestamp in future (for HELD status)
   const expiresAtMs = parseIsoDate(booking.expiresAt)
   if (!Number.isFinite(expiresAtMs)) {
     return { valid: false, error: `Thời gian hết hạn giữ chỗ (expiresAt) không hợp lệ: ${booking.expiresAt}` }
   }
 
-  if (!allowPastExpiry && expiresAtMs <= Date.now()) {
+  const isTerminalReplay = allowTerminalReplay && booking.status !== 'HELD'
+  if (!allowPastExpiry && !isTerminalReplay && expiresAtMs <= Date.now()) {
     return { valid: false, error: 'Phiên giữ chỗ từ máy chủ đã quá hạn thời gian thanh toán' }
   }
 

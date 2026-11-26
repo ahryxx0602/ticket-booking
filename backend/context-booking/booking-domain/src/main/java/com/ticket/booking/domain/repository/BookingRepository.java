@@ -15,6 +15,9 @@ public interface BookingRepository {
         return findById(id);
     }
     Optional<Booking> findByReference(String bookingReference);
+    default Optional<Booking> findByUserIdAndClientRequestId(Long userId, String clientRequestId) {
+        return Optional.empty();
+    }
     Optional<Booking> findByReferenceForUpdate(String bookingReference);
     Set<String> findActiveBookedSeatNumbers(Long tripId, LocalDateTime now);
     default Set<String> findConfirmedSeatNumbers(Long tripId) {

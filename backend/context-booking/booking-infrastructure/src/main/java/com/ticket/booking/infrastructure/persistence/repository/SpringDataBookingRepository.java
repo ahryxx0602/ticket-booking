@@ -29,6 +29,9 @@ public interface SpringDataBookingRepository extends JpaRepository<BookingJpaEnt
     @Query("SELECT DISTINCT b FROM BookingJpaEntity b LEFT JOIN FETCH b.items WHERE b.bookingReference = :bookingReference")
     Optional<BookingJpaEntity> findByBookingReferenceWithItems(@Param("bookingReference") String bookingReference);
 
+    @Query("SELECT DISTINCT b FROM BookingJpaEntity b LEFT JOIN FETCH b.items WHERE b.userId = :userId AND b.clientRequestId = :clientRequestId")
+    Optional<BookingJpaEntity> findByUserIdAndClientRequestIdWithItems(@Param("userId") Long userId, @Param("clientRequestId") String clientRequestId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT b FROM BookingJpaEntity b LEFT JOIN FETCH b.items WHERE b.bookingReference = :bookingReference")
     Optional<BookingJpaEntity> findByBookingReferenceForUpdate(@Param("bookingReference") String bookingReference);

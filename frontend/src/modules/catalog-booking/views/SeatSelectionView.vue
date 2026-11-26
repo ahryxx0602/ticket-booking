@@ -51,6 +51,7 @@ const availabilityMap = ref({})
 // Unknown outcome state for hold mutation (fail-closed guard)
 const isHoldUnknownOutcome = ref(false)
 const holdUnknownContext = ref(null)
+const activeClientRequestId = ref(null)
 
 // Active booking information after successful hold
 const heldBooking = ref(null)
@@ -58,6 +59,8 @@ const heldBooking = ref(null)
 // Storage keys partitioned by user and trip
 const getHoldUnknownStorageKey = () => `velobus_hold_unknown_${auth.user?.id || 'guest'}_${tripId.value}`
 const getActiveHoldStorageKey = () => `velobus_active_hold_${auth.user?.id || 'guest'}_${tripId.value}`
+const getHoldRequestStorageKey = () => `velobus_hold_request_${auth.user?.id || 'guest'}_${tripId.value}`
+const getCancelUnresolvedStorageKey = () => `velobus_cancel_unresolved_${auth.user?.id || 'guest'}_${tripId.value}`
 
 // Trip Metadata initialized from route history.state or defaults based on tripId
 const initialTrip = history.state?.trip
@@ -121,6 +124,7 @@ function recordHoldUnknownOutcome(seats, customReason) {
     userId: auth.user?.id || null,
     tripId: Number(tripId.value),
     seatNumbers: [...seats],
+    clientRequestId: activeClientRequestId.value || null,
     timestamp: Date.now(),
     reason: customReason || 'Unknown outcome'
   }
@@ -152,6 +156,58 @@ async function verifyHoldServerState() {
   isVerifyingHoldState.value = true
 
   try {
+    const targetSeats = holdUnknownContext.value?.seatNumbers || selectedSeats.value
+
+    // If clientRequestId is available, first attempt authoritative idempotent replay via hold API
+    const reqKey = activeClientRequestId.value || holdUnknownContext.value?.clientRequestId
+    if (reqKey && targetSeats.length > 0) {
+      try {
+        const replayRes = await catalogBookingApi.holdSeats({
+          tripId: Number(tripId.value),
+          seatNumbers: targetSeats
+        }, reqKey)
+        const replayBooking = replayRes?.data || replayRes
+        const validation = validateBookingResponse(replayBooking, {
+          expectedTripId: tripId.value,
+          expectedUserId: auth.user?.id,
+          expectedSeats: targetSeats,
+          allowTerminalReplay: true
+        })
+
+        if (validation.valid) {
+          if (replayBooking.status === 'HELD') {
+            heldBooking.value = replayBooking
+            selectedSeats.value = [...(replayBooking.seatNumbers || [])]
+            startCountdown(replayBooking.expiresAt)
+            try {
+              sessionStorage.setItem(getActiveHoldStorageKey(), JSON.stringify({
+                bookingReference: replayBooking.bookingReference,
+                tripId: Number(tripId.value),
+                userId: auth.user?.id
+              }))
+              sessionStorage.removeItem(getHoldRequestStorageKey())
+            } catch (_) {}
+            clearHoldUnknownOutcome()
+            activeClientRequestId.value = null
+            toast.success(`Máy chủ đã xác nhận phiên giữ chỗ #${replayBooking.bookingReference} cho ghế ${replayBooking.seatNumbers.join(', ')}.`)
+            await fetchAvailability()
+            return
+          } else {
+            clearHoldUnknownOutcome()
+            activeClientRequestId.value = null
+            try {
+              sessionStorage.removeItem(getHoldRequestStorageKey())
+            } catch (_) {}
+            toast.info(`Phiên giữ chỗ #${replayBooking.bookingReference} trước đó đã ở trạng thái ${replayBooking.status}.`)
+            await fetchAvailability()
+            return
+          }
+        }
+      } catch (replayErr) {
+        console.warn('Direct idempotent hold replay check did not resolve, falling back to getMyBookings:', replayErr)
+      }
+    }
+
     let allItems = []
     let currentPage = 0
     let hasMore = true
@@ -171,32 +227,43 @@ async function verifyHoldServerState() {
       currentPage++
     }
 
-    const targetSeats = holdUnknownContext.value?.seatNumbers || selectedSeats.value
-
-    // PRE-02 & PRE-03: Strict match against exact requested seats on this trip
+    // PRE-02 & PRE-03: Strict match against exact requested seats on this trip (supporting terminal replay)
     const matched = allItems.find(b => {
       const validation = validateBookingResponse(b, {
         expectedTripId: tripId.value,
         expectedUserId: auth.user?.id,
-        expectedSeats: targetSeats
+        expectedSeats: targetSeats,
+        allowTerminalReplay: true
       })
       return validation.valid
     })
 
     if (matched) {
-      heldBooking.value = matched
-      selectedSeats.value = [...(matched.seatNumbers || [])]
-      startCountdown(matched.expiresAt)
-      try {
-        sessionStorage.setItem(getActiveHoldStorageKey(), JSON.stringify({
-          bookingReference: matched.bookingReference,
-          tripId: Number(tripId.value),
-          userId: auth.user?.id
-        }))
-      } catch (_) {}
-      clearHoldUnknownOutcome()
-      toast.success(`Máy chủ đã xác nhận phiên giữ chỗ #${matched.bookingReference} cho ghế ${matched.seatNumbers.join(', ')}.`)
-      await fetchAvailability()
+      if (matched.status === 'HELD') {
+        heldBooking.value = matched
+        selectedSeats.value = [...(matched.seatNumbers || [])]
+        startCountdown(matched.expiresAt)
+        try {
+          sessionStorage.setItem(getActiveHoldStorageKey(), JSON.stringify({
+            bookingReference: matched.bookingReference,
+            tripId: Number(tripId.value),
+            userId: auth.user?.id
+          }))
+          sessionStorage.removeItem(getHoldRequestStorageKey())
+        } catch (_) {}
+        clearHoldUnknownOutcome()
+        activeClientRequestId.value = null
+        toast.success(`Máy chủ đã xác nhận phiên giữ chỗ #${matched.bookingReference} cho ghế ${matched.seatNumbers.join(', ')}.`)
+        await fetchAvailability()
+      } else {
+        clearHoldUnknownOutcome()
+        activeClientRequestId.value = null
+        try {
+          sessionStorage.removeItem(getHoldRequestStorageKey())
+        } catch (_) {}
+        toast.info(`Phiên giữ chỗ #${matched.bookingReference} trước đó đã ở trạng thái ${matched.status}.`)
+        await fetchAvailability()
+      }
     } else {
       // PRE-02: Do NOT clear unknown outcome merely because no booking was found!
       // Fail-closed security rule: retain lock to prevent double booking.
@@ -324,19 +391,47 @@ async function handleHoldSeats() {
   const requestedSeats = [...selectedSeats.value]
   holding.value = true
 
+  // Ensure stable clientRequestId across retries/timeouts
+  if (!activeClientRequestId.value) {
+    try {
+      const storedReq = sessionStorage.getItem(getHoldRequestStorageKey())
+      if (storedReq) {
+        const parsed = JSON.parse(storedReq)
+        if (parsed?.clientRequestId && String(parsed.tripId) === String(tripId.value)) {
+          activeClientRequestId.value = parsed.clientRequestId
+        }
+      }
+    } catch (_) {}
+  }
+  if (!activeClientRequestId.value) {
+    activeClientRequestId.value = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : 'req-' + Date.now() + '-' + Math.random().toString(36).substring(2, 10)
+  }
+
+  try {
+    sessionStorage.setItem(getHoldRequestStorageKey(), JSON.stringify({
+      clientRequestId: activeClientRequestId.value,
+      tripId: Number(tripId.value),
+      seatNumbers: requestedSeats,
+      timestamp: Date.now()
+    }))
+  } catch (_) {}
+
   try {
     const res = await catalogBookingApi.holdSeats({
       tripId: Number(tripId.value),
       seatNumbers: requestedSeats
-    })
+    }, activeClientRequestId.value)
 
     const booking = res?.data || res
 
-    // PRE-03: Strict shared validator for BookingResponse
+    // PRE-03: Strict shared validator for BookingResponse (supporting terminal replay)
     const validation = validateBookingResponse(booking, {
       expectedTripId: tripId.value,
       expectedUserId: auth.user?.id,
-      expectedSeats: requestedSeats
+      expectedSeats: requestedSeats,
+      allowTerminalReplay: true
     })
 
     if (!validation.valid) {
@@ -344,26 +439,39 @@ async function handleHoldSeats() {
       throw new Error(validation.error)
     }
 
-    // Success: Server state is authoritative (no fallback to requestedSeats)
-    heldBooking.value = {
-      ...booking,
-      seatNumbers: booking.seatNumbers
+    if (booking.status === 'HELD') {
+      // Success: Server state is authoritative (no fallback to requestedSeats)
+      heldBooking.value = {
+        ...booking,
+        seatNumbers: booking.seatNumbers
+      }
+      selectedSeats.value = [...booking.seatNumbers]
+
+      startCountdown(booking.expiresAt)
+      clearHoldUnknownOutcome()
+
+      try {
+        sessionStorage.setItem(getActiveHoldStorageKey(), JSON.stringify({
+          bookingReference: booking.bookingReference,
+          tripId: Number(tripId.value),
+          userId: auth.user?.id
+        }))
+        sessionStorage.removeItem(getHoldRequestStorageKey())
+      } catch (_) {}
+      activeClientRequestId.value = null
+
+      toast.success(`Giữ chỗ thành công! Đã khóa ${selectedSeats.value.join(', ')} trong 10 phút. Vui lòng thanh toán!`)
+      await fetchAvailability()
+    } else {
+      // Terminal booking replay (CONFIRMED, CANCELLED, EXPIRED)
+      clearHoldUnknownOutcome()
+      try {
+        sessionStorage.removeItem(getHoldRequestStorageKey())
+      } catch (_) {}
+      activeClientRequestId.value = null
+      toast.info(`Phiên giữ chỗ trước đó đã ở trạng thái ${booking.status}.`)
+      await fetchAvailability()
     }
-    selectedSeats.value = [...booking.seatNumbers]
-
-    startCountdown(booking.expiresAt)
-    clearHoldUnknownOutcome()
-
-    try {
-      sessionStorage.setItem(getActiveHoldStorageKey(), JSON.stringify({
-        bookingReference: booking.bookingReference,
-        tripId: Number(tripId.value),
-        userId: auth.user?.id
-      }))
-    } catch (_) {}
-
-    toast.success(`Giữ chỗ thành công! Đã khóa ${selectedSeats.value.join(', ')} trong 10 phút. Vui lòng thanh toán!`)
-    await fetchAvailability()
   } catch (err) {
     console.error('Hold seats failed:', err)
     const errMsg = err?.message || ''
@@ -374,6 +482,10 @@ async function handleHoldSeats() {
       // PRE-05: Definitive business rejection: remove only requested seats from selection,
       // and refresh authoritative availability rather than permanently disabling all seats.
       selectedSeats.value = selectedSeats.value.filter(s => !requestedSeats.includes(s))
+      activeClientRequestId.value = null
+      try {
+        sessionStorage.removeItem(getHoldRequestStorageKey())
+      } catch (_) {}
       toast.error('Một hoặc nhiều ghế đã bị hành khách khác chọn. Vui lòng chọn ghế khác!')
       await fetchAvailability()
     } else {
@@ -422,6 +534,7 @@ async function handleCancelBooking() {
     isCancelUnresolved.value = false
     try {
       sessionStorage.removeItem(getActiveHoldStorageKey())
+      sessionStorage.removeItem(getCancelUnresolvedStorageKey())
     } catch (_) {}
     toast.success('Đã hủy giữ chỗ thành công.')
     await Promise.all([fetchTripSeats(), fetchAvailability()])
@@ -435,6 +548,14 @@ async function handleCancelBooking() {
 
     if (isTimeoutOrNetwork) {
       isCancelUnresolved.value = true
+      try {
+        sessionStorage.setItem(getCancelUnresolvedStorageKey(), JSON.stringify({
+          bookingReference: ref,
+          tripId: Number(tripId.value),
+          userId: auth.user?.id,
+          timestamp: Date.now()
+        }))
+      } catch (_) {}
       toast.error('Yêu cầu hủy giữ chỗ gặp sự cố mạng hoặc timeout. Đã khóa thanh toán để đối soát trạng thái máy chủ.')
     } else {
       toast.error('Không thể hủy giữ chỗ trên máy chủ: ' + errMsg)
@@ -534,6 +655,28 @@ onMounted(async () => {
         } catch (_) {
           // If server check fails, keep client state clean
         }
+      }
+    }
+  } catch (_) {}
+
+  // 4. Restore Cancel Unresolved state if previously interrupted
+  try {
+    const storedCancel = sessionStorage.getItem(getCancelUnresolvedStorageKey())
+    if (storedCancel) {
+      const parsed = JSON.parse(storedCancel)
+      if (parsed && String(parsed.tripId) === String(tripId.value)) {
+        isCancelUnresolved.value = true
+      }
+    }
+  } catch (_) {}
+
+  // 5. Restore active clientRequestId if previously pending
+  try {
+    const storedReq = sessionStorage.getItem(getHoldRequestStorageKey())
+    if (storedReq) {
+      const parsed = JSON.parse(storedReq)
+      if (parsed?.clientRequestId && String(parsed.tripId) === String(tripId.value)) {
+        activeClientRequestId.value = parsed.clientRequestId
       }
     }
   } catch (_) {}

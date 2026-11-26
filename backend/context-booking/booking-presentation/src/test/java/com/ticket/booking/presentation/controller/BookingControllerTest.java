@@ -51,7 +51,18 @@ class BookingControllerTest {
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(bookingController).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(bookingController)
+                .setControllerAdvice(new TestExceptionHandler())
+                .build();
+    }
+
+    @org.springframework.web.bind.annotation.ControllerAdvice
+    static class TestExceptionHandler {
+        @org.springframework.web.bind.annotation.ExceptionHandler(com.ticket.shared.exception.BusinessException.class)
+        public org.springframework.http.ResponseEntity<com.ticket.shared.dto.ApiResponse<Void>> handleBusiness(com.ticket.shared.exception.BusinessException ex) {
+            return org.springframework.http.ResponseEntity.status(org.springframework.http.HttpStatus.BAD_REQUEST)
+                    .body(com.ticket.shared.dto.ApiResponse.error(ex.getCode(), ex.getMessage()));
+        }
     }
 
     @Test
@@ -88,6 +99,53 @@ class BookingControllerTest {
         command.setSeatNumbers(List.of("01A", "01B", "01C", "01D", "01E", "01F", "02A", "02B", "02C", "02D", "02E"));
 
         mockMvc.perform(post("/api/v1/bookings/hold")
+                        .principal(customerPrincipal)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(command)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void holdSeats_withValidIdempotencyKey_shouldPassKeyToCommand() throws Exception {
+        HoldSeatCommand command = new HoldSeatCommand();
+        command.setTripId(1L);
+        command.setSeatNumbers(List.of("01A", "01B"));
+
+        BookingResponse response = BookingResponse.builder()
+                .bookingId(10L)
+                .bookingReference("REF-10")
+                .clientRequestId("req-uuid-12345")
+                .tripId(1L)
+                .status(BookingStatus.HELD)
+                .totalAmount(BigDecimal.valueOf(2500000))
+                .seatNumbers(List.of("01A", "01B"))
+                .build();
+
+        when(holdSeatUseCase.execute(any(HoldSeatCommand.class), eq("customer1"))).thenAnswer(inv -> {
+            HoldSeatCommand cmd = inv.getArgument(0);
+            org.junit.jupiter.api.Assertions.assertEquals("req-uuid-12345", cmd.getClientRequestId());
+            return response;
+        });
+
+        mockMvc.perform(post("/api/v1/bookings/hold")
+                        .header("Idempotency-Key", "req-uuid-12345")
+                        .principal(customerPrincipal)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(command)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.clientRequestId").value("req-uuid-12345"));
+    }
+
+    @Test
+    void holdSeats_withInvalidIdempotencyKey_shouldThrowBadRequest() throws Exception {
+        HoldSeatCommand command = new HoldSeatCommand();
+        command.setTripId(1L);
+        command.setSeatNumbers(List.of("01A", "01B"));
+
+        // Key with spaces and illegal characters
+        mockMvc.perform(post("/api/v1/bookings/hold")
+                        .header("Idempotency-Key", "invalid key with spaces & symbols!")
                         .principal(customerPrincipal)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(command)))

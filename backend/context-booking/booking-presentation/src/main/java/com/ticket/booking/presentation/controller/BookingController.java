@@ -46,8 +46,19 @@ public class BookingController {
     @PostMapping("/hold")
     @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<ApiResponse<BookingResponse>> holdSeats(
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody HoldSeatCommand command,
             Principal principal) {
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            String trimmedKey = idempotencyKey.trim();
+            if (trimmedKey.length() > 64 || !trimmedKey.matches("^[0-9a-zA-Z_-]{1,64}$")) {
+                throw new com.ticket.shared.exception.BusinessException(
+                        "INVALID_IDEMPOTENCY_KEY",
+                        "Idempotency-Key header must be an alphanumeric/hyphen string up to 64 characters"
+                );
+            }
+            command.setClientRequestId(trimmedKey);
+        }
         BookingResponse response = holdSeatUseCase.execute(command, requireUsername(principal));
         return ResponseEntity.ok(ApiResponse.ok("Seats held successfully for 10 minutes", response));
     }

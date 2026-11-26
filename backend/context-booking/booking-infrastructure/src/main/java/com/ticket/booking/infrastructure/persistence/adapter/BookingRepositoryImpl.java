@@ -47,6 +47,14 @@ public class BookingRepositoryImpl implements BookingRepository {
     }
 
     @Override
+    public Optional<Booking> findByUserIdAndClientRequestId(Long userId, String clientRequestId) {
+        if (userId == null || clientRequestId == null || clientRequestId.isBlank()) {
+            return Optional.empty();
+        }
+        return springDataBookingRepository.findByUserIdAndClientRequestIdWithItems(userId, clientRequestId).map(this::toDomain);
+    }
+
+    @Override
     public Optional<Booking> findByReferenceForUpdate(String bookingReference) {
         return springDataBookingRepository.findByBookingReferenceForUpdate(bookingReference).map(this::toDomain);
     }
@@ -106,6 +114,9 @@ public class BookingRepositoryImpl implements BookingRepository {
             entity.setStatus(booking.getStatus());
             entity.setTotalAmount(booking.getTotalAmount());
             entity.setExpiresAt(booking.getExpiresAt());
+            if (booking.getClientRequestId() != null) {
+                entity.setClientRequestId(booking.getClientRequestId());
+            }
         } else {
             entity = toNewEntity(booking);
         }
@@ -147,6 +158,7 @@ public class BookingRepositoryImpl implements BookingRepository {
                 .totalAmount(entity.getTotalAmount())
                 .expiresAt(entity.getExpiresAt())
                 .version(entity.getVersion())
+                .clientRequestId(entity.getClientRequestId())
                 .items(entity.getItems().stream().map(i -> BookingItem.builder()
                         .id(i.getId())
                         .seatId(i.getSeatId())
@@ -170,6 +182,7 @@ public class BookingRepositoryImpl implements BookingRepository {
         entity.setTotalAmount(booking.getTotalAmount());
         entity.setExpiresAt(booking.getExpiresAt());
         entity.setVersion(booking.getVersion() != null ? booking.getVersion() : 0L);
+        entity.setClientRequestId(booking.getClientRequestId());
 
         if (booking.getItems() != null) {
             entity.setItems(booking.getItems().stream().map(i -> {

@@ -444,4 +444,196 @@ class BookingCommandServiceImplTest {
 
         verify(seatLockRepository).releaseOwnedLocks(eq(1L), eq(List.of("01A", "02B")), anyString());
     }
+
+    @Test
+    void holdSeats_withNewIdempotencyKey_shouldSaveBookingWithClientRequestId() {
+        HoldSeatCommand cmd = new HoldSeatCommand();
+        cmd.setTripId(1L);
+        cmd.setSeatNumbers(List.of("01A"));
+        cmd.setClientRequestId("req-uuid-test-1");
+
+        when(identityUserPort.findByUsername("customer1"))
+                .thenReturn(Optional.of(new IdentityUserPort.AuthenticatedUserInfo(2L, false)));
+        when(bookingRepository.findByUserIdAndClientRequestId(2L, "req-uuid-test-1"))
+                .thenReturn(Optional.empty());
+        when(seatLockRepository.acquireLocks(eq(1L), eq(List.of("01A")), anyString(), eq(Duration.ofMinutes(10))))
+                .thenReturn(true);
+        when(catalogTripPort.findTripWithSeats(1L)).thenReturn(Optional.of(new CatalogTripPort.TripSnapshot(
+                1L,
+                true,
+                Map.of("01A", new CatalogTripPort.TripSeatInfo(101L, "01A", BigDecimal.valueOf(1500000)))
+        )));
+        when(bookingRepository.findActiveBookedSeatNumbers(eq(1L), any(LocalDateTime.class))).thenReturn(Set.of());
+        when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> {
+            Booking b = inv.getArgument(0);
+            b.setId(100L);
+            return b;
+        });
+
+        BookingResponse response = commandService.execute(cmd, "customer1");
+
+        assertThat(response.getBookingId()).isEqualTo(100L);
+        assertThat(response.getClientRequestId()).isEqualTo("req-uuid-test-1");
+        verify(bookingRepository).save(any(Booking.class));
+        verify(seatLockRepository).acquireLocks(eq(1L), eq(List.of("01A")), anyString(), any());
+    }
+
+    @Test
+    void holdSeats_withExistingIdempotencyKeyAndSamePayload_shouldReplayWithoutAcquiringNewLocks() {
+        HoldSeatCommand cmd = new HoldSeatCommand();
+        cmd.setTripId(1L);
+        cmd.setSeatNumbers(List.of("01A", "02B"));
+        cmd.setClientRequestId("req-uuid-replay");
+
+        when(identityUserPort.findByUsername("customer1"))
+                .thenReturn(Optional.of(new IdentityUserPort.AuthenticatedUserInfo(2L, false)));
+
+        Booking existing = Booking.builder()
+                .id(105L)
+                .bookingReference("VB-REPLAY-105")
+                .userId(2L)
+                .tripId(1L)
+                .status(BookingStatus.HELD)
+                .totalAmount(BigDecimal.valueOf(2500000))
+                .expiresAt(LocalDateTime.now().plusMinutes(8))
+                .clientRequestId("req-uuid-replay")
+                .items(List.of(
+                        BookingItem.builder().seatNumber("01A").price(BigDecimal.valueOf(1500000)).build(),
+                        BookingItem.builder().seatNumber("02B").price(BigDecimal.valueOf(1000000)).build()
+                ))
+                .build();
+
+        when(bookingRepository.findByUserIdAndClientRequestId(2L, "req-uuid-replay"))
+                .thenReturn(Optional.of(existing));
+
+        BookingResponse response = commandService.execute(cmd, "customer1");
+
+        assertThat(response.getBookingReference()).isEqualTo("VB-REPLAY-105");
+        assertThat(response.getClientRequestId()).isEqualTo("req-uuid-replay");
+        // Verify zero new Redis locks acquired and zero new saves
+        verify(seatLockRepository, never()).acquireLocks(any(), any(), any(), any());
+        verify(bookingRepository, never()).save(any());
+    }
+
+    @Test
+    void holdSeats_withExistingIdempotencyKeyAndDifferentTripId_shouldThrowPayloadMismatch() {
+        HoldSeatCommand cmd = new HoldSeatCommand();
+        cmd.setTripId(2L); // Different trip
+        cmd.setSeatNumbers(List.of("01A"));
+        cmd.setClientRequestId("req-uuid-mismatch");
+
+        when(identityUserPort.findByUsername("customer1"))
+                .thenReturn(Optional.of(new IdentityUserPort.AuthenticatedUserInfo(2L, false)));
+
+        Booking existing = Booking.builder()
+                .id(105L)
+                .bookingReference("VB-ORIGINAL")
+                .userId(2L)
+                .tripId(1L) // Original trip 1
+                .status(BookingStatus.HELD)
+                .clientRequestId("req-uuid-mismatch")
+                .items(List.of(BookingItem.builder().seatNumber("01A").build()))
+                .build();
+
+        when(bookingRepository.findByUserIdAndClientRequestId(2L, "req-uuid-mismatch"))
+                .thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> commandService.execute(cmd, "customer1"))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("IDEMPOTENCY_KEY_PAYLOAD_MISMATCH");
+    }
+
+    @Test
+    void holdSeats_withExistingIdempotencyKeyAndDifferentSeats_shouldThrowPayloadMismatch() {
+        HoldSeatCommand cmd = new HoldSeatCommand();
+        cmd.setTripId(1L);
+        cmd.setSeatNumbers(List.of("01A", "03C")); // Different seat 03C
+        cmd.setClientRequestId("req-uuid-mismatch-seat");
+
+        when(identityUserPort.findByUsername("customer1"))
+                .thenReturn(Optional.of(new IdentityUserPort.AuthenticatedUserInfo(2L, false)));
+
+        Booking existing = Booking.builder()
+                .id(105L)
+                .bookingReference("VB-ORIGINAL")
+                .userId(2L)
+                .tripId(1L)
+                .status(BookingStatus.HELD)
+                .clientRequestId("req-uuid-mismatch-seat")
+                .items(List.of(
+                        BookingItem.builder().seatNumber("01A").build(),
+                        BookingItem.builder().seatNumber("02B").build()
+                ))
+                .build();
+
+        when(bookingRepository.findByUserIdAndClientRequestId(2L, "req-uuid-mismatch-seat"))
+                .thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> commandService.execute(cmd, "customer1"))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("IDEMPOTENCY_KEY_PAYLOAD_MISMATCH");
+    }
+
+    @Test
+    void holdSeats_withExistingIdempotencyKeyAndReorderedSeats_shouldReplaySuccessfully() {
+        HoldSeatCommand cmd = new HoldSeatCommand();
+        cmd.setTripId(1L);
+        cmd.setSeatNumbers(List.of("02B", "01A")); // Reordered
+        cmd.setClientRequestId("req-uuid-reordered");
+
+        when(identityUserPort.findByUsername("customer1"))
+                .thenReturn(Optional.of(new IdentityUserPort.AuthenticatedUserInfo(2L, false)));
+
+        Booking existing = Booking.builder()
+                .id(105L)
+                .bookingReference("VB-REPLAY-REORDERED")
+                .userId(2L)
+                .tripId(1L)
+                .status(BookingStatus.HELD)
+                .clientRequestId("req-uuid-reordered")
+                .items(List.of(
+                        BookingItem.builder().seatNumber("01A").build(),
+                        BookingItem.builder().seatNumber("02B").build()
+                ))
+                .build();
+
+        when(bookingRepository.findByUserIdAndClientRequestId(2L, "req-uuid-reordered"))
+                .thenReturn(Optional.of(existing));
+
+        BookingResponse response = commandService.execute(cmd, "customer1");
+
+        assertThat(response.getBookingReference()).isEqualTo("VB-REPLAY-REORDERED");
+        verify(seatLockRepository, never()).acquireLocks(any(), any(), any(), any());
+    }
+
+    @Test
+    void holdSeats_withTerminalBooking_shouldReplayExistingBooking() {
+        HoldSeatCommand cmd = new HoldSeatCommand();
+        cmd.setTripId(1L);
+        cmd.setSeatNumbers(List.of("01A"));
+        cmd.setClientRequestId("req-uuid-terminal");
+
+        when(identityUserPort.findByUsername("customer1"))
+                .thenReturn(Optional.of(new IdentityUserPort.AuthenticatedUserInfo(2L, false)));
+
+        // Booking already CONFIRMED
+        Booking existingConfirmed = Booking.builder()
+                .id(106L)
+                .bookingReference("VB-CONFIRMED")
+                .userId(2L)
+                .tripId(1L)
+                .status(BookingStatus.CONFIRMED)
+                .clientRequestId("req-uuid-terminal")
+                .items(List.of(BookingItem.builder().seatNumber("01A").build()))
+                .build();
+
+        when(bookingRepository.findByUserIdAndClientRequestId(2L, "req-uuid-terminal"))
+                .thenReturn(Optional.of(existingConfirmed));
+
+        BookingResponse response = commandService.execute(cmd, "customer1");
+
+        assertThat(response.getBookingReference()).isEqualTo("VB-CONFIRMED");
+        assertThat(response.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+        verify(bookingRepository, never()).save(any());
+    }
 }

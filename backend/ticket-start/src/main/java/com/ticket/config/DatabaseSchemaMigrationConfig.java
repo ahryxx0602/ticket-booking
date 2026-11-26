@@ -60,6 +60,7 @@ public class DatabaseSchemaMigrationConfig {
                 ensureSchemaVersionTable(conn);
                 applyV1BaselineIfAbsent(conn);
                 applyV2AddUserTokenVersionIfAbsent(conn);
+                applyV3AddBookingClientRequestIdIfAbsent(conn);
             }
         }
 
@@ -97,6 +98,21 @@ public class DatabaseSchemaMigrationConfig {
             }
             recordVersion(conn, "V2", "Add persistent token_version column to users", "v2-users-token-version-sha256");
             log.info("[DB MIGRATION] Recorded V2 migration in schema_version_history");
+        }
+
+        private void applyV3AddBookingClientRequestIdIfAbsent(Connection conn) throws Exception {
+            if (isVersionApplied(conn, "V3")) {
+                return;
+            }
+            if (tableExists(conn, "bookings") && !columnExists(conn, "bookings", "client_request_id")) {
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.execute("ALTER TABLE bookings ADD COLUMN client_request_id VARCHAR(64) NULL");
+                    stmt.execute("ALTER TABLE bookings ADD CONSTRAINT uk_booking_user_client_request UNIQUE (user_id, client_request_id)");
+                    log.info("[DB MIGRATION] Applied V3: Added column client_request_id and constraint uk_booking_user_client_request to bookings table");
+                }
+            }
+            recordVersion(conn, "V3", "Add client_request_id and unique constraint to bookings", "v3-bookings-client-request-id-sha256");
+            log.info("[DB MIGRATION] Recorded V3 migration in schema_version_history");
         }
 
         private boolean isVersionApplied(Connection conn, String version) throws Exception {

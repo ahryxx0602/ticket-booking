@@ -60,10 +60,38 @@ public class BookingCommandServiceImpl implements HoldSeatUseCase, CancelBooking
                 .sorted()
                 .toList();
 
+        String clientRequestId = command.getClientRequestId() != null && !command.getClientRequestId().isBlank()
+                ? command.getClientRequestId().trim()
+                : null;
+
+        IdentityUserPort.AuthenticatedUserInfo user = null;
+        if (clientRequestId != null) {
+            user = identityUserPort.findByUsername(authenticatedUsername)
+                    .orElseThrow(() -> new EntityNotFoundException("User", authenticatedUsername));
+
+            if (user.locked()) {
+                throw new BusinessException("ACCOUNT_LOCKED", "Your account has been locked by administrator");
+            }
+
+            if (command.getUserId() != null && !command.getUserId().equals(user.userId())) {
+                throw new BusinessException("IDOR_VIOLATION", "User ID does not match authenticated user");
+            }
+
+            // 1. Idempotent Lookup: If clientRequestId provided and already committed, replay authoritative booking
+            java.util.Optional<Booking> existingOpt = bookingRepository.findByUserIdAndClientRequestId(user.userId(), clientRequestId);
+            if (existingOpt.isPresent()) {
+                Booking existing = existingOpt.get();
+                validateCanonicalPayloadEquality(existing, command.getTripId(), normalizedSeats);
+                log.info("[HOLD IDEMPOTENCY] Replaying existing booking [{}] for user [{}] and clientRequestId [{}]",
+                        existing.getBookingReference(), user.userId(), clientRequestId);
+                return BookingMapper.toResponse(existing);
+            }
+        }
+
         String bookingReference = UUID.randomUUID().toString();
         LocalDateTime holdStart = LocalDateTime.now();
 
-        // 1. Acquire Owner-Token distributed locks OUTSIDE DB transaction to avoid MySQL REPEATABLE READ stale snapshot & Hikari pool exhaustion
+        // 2. Acquire Owner-Token distributed locks OUTSIDE DB transaction to avoid MySQL REPEATABLE READ stale snapshot & Hikari pool exhaustion
         boolean locked = seatLockRepository.acquireLocks(
                 command.getTripId(),
                 normalizedSeats,
@@ -72,28 +100,89 @@ public class BookingCommandServiceImpl implements HoldSeatUseCase, CancelBooking
         );
 
         if (!locked) {
+            // If lock rejected, verify if a concurrent request with same clientRequestId already succeeded and committed
+            if (clientRequestId != null && user != null) {
+                java.util.Optional<Booking> existingOpt = bookingRepository.findByUserIdAndClientRequestId(user.userId(), clientRequestId);
+                if (existingOpt.isPresent()) {
+                    Booking existing = existingOpt.get();
+                    validateCanonicalPayloadEquality(existing, command.getTripId(), normalizedSeats);
+                    return BookingMapper.toResponse(existing);
+                }
+            }
             throw new BusinessException("SEAT_ALREADY_RESERVED", "One or more selected seats are currently held or reserved");
         }
 
-        // 2. Execute short DB transaction; if any validation/conflict/commit fails, release owned locks safely
+        final IdentityUserPort.AuthenticatedUserInfo preFetchedUser = user;
+        // 3. Execute short DB transaction; if unique constraint violation occurs on clientRequestId race, replay committed winner
         try {
             Booking saved = transactionTemplate.execute(status ->
-                    createHeldBookingInTransaction(command, authenticatedUsername, normalizedSeats, bookingReference, holdStart)
+                    createHeldBookingInTransaction(command, authenticatedUsername, preFetchedUser, normalizedSeats, bookingReference, holdStart, clientRequestId)
             );
             return BookingMapper.toResponse(saved);
         } catch (RuntimeException ex) {
             releaseOwnedLocksSafely(command.getTripId(), normalizedSeats, bookingReference);
+
+            // Handle race condition: concurrent thread with same clientRequestId committed first
+            if (clientRequestId != null && isUniqueConstraintViolation(ex)) {
+                Long uid = preFetchedUser != null ? preFetchedUser.userId() : null;
+                if (uid != null) {
+                    java.util.Optional<Booking> winningOpt = bookingRepository.findByUserIdAndClientRequestId(uid, clientRequestId);
+                    if (winningOpt.isPresent()) {
+                        Booking winningBooking = winningOpt.get();
+                        validateCanonicalPayloadEquality(winningBooking, command.getTripId(), normalizedSeats);
+                        log.info("[HOLD IDEMPOTENCY] Resolved concurrent race for user [{}] and clientRequestId [{}], replaying winner [{}]",
+                                uid, clientRequestId, winningBooking.getBookingReference());
+                        return BookingMapper.toResponse(winningBooking);
+                    }
+                }
+            }
             throw ex;
         }
     }
 
+    private void validateCanonicalPayloadEquality(Booking booking, Long expectedTripId, List<String> expectedNormalizedSeats) {
+        if (!booking.getTripId().equals(expectedTripId)) {
+            throw new BusinessException("IDEMPOTENCY_KEY_PAYLOAD_MISMATCH",
+                    "Idempotency key has already been used for trip " + booking.getTripId() + ", but requested trip is " + expectedTripId);
+        }
+        List<String> existingSeats = booking.getSeatNumbers().stream()
+                .map(String::trim)
+                .map(String::toUpperCase)
+                .distinct()
+                .sorted()
+                .toList();
+        if (!existingSeats.equals(expectedNormalizedSeats)) {
+            throw new BusinessException("IDEMPOTENCY_KEY_PAYLOAD_MISMATCH",
+                    "Idempotency key has already been used with seats " + existingSeats + ", but requested seats are " + expectedNormalizedSeats);
+        }
+    }
+
+    private boolean isUniqueConstraintViolation(Throwable ex) {
+        Throwable cause = ex;
+        while (cause != null) {
+            String msg = cause.getMessage() != null ? cause.getMessage().toLowerCase() : "";
+            if (cause instanceof org.springframework.dao.DataIntegrityViolationException
+                    || cause instanceof java.sql.SQLIntegrityConstraintViolationException
+                    || msg.contains("duplicate entry")
+                    || msg.contains("uk_booking_user_client_request")) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+        return false;
+    }
+
     private Booking createHeldBookingInTransaction(HoldSeatCommand command,
                                                    String authenticatedUsername,
+                                                   IdentityUserPort.AuthenticatedUserInfo preFetchedUser,
                                                    List<String> normalizedSeats,
                                                    String bookingReference,
-                                                   LocalDateTime holdStart) {
-        IdentityUserPort.AuthenticatedUserInfo user = identityUserPort.findByUsername(authenticatedUsername)
-                .orElseThrow(() -> new EntityNotFoundException("User", authenticatedUsername));
+                                                   LocalDateTime holdStart,
+                                                   String clientRequestId) {
+        IdentityUserPort.AuthenticatedUserInfo user = preFetchedUser != null
+                ? preFetchedUser
+                : identityUserPort.findByUsername(authenticatedUsername)
+                        .orElseThrow(() -> new EntityNotFoundException("User", authenticatedUsername));
 
         if (user.locked()) {
             throw new BusinessException("ACCOUNT_LOCKED", "Your account has been locked by administrator");
@@ -102,7 +191,6 @@ public class BookingCommandServiceImpl implements HoldSeatUseCase, CancelBooking
         if (command.getUserId() != null && !command.getUserId().equals(user.userId())) {
             throw new BusinessException("IDOR_VIOLATION", "User ID does not match authenticated user");
         }
-
         CatalogTripPort.TripSnapshot trip = catalogTripPort.findTripWithSeats(command.getTripId())
                 .orElseThrow(() -> new EntityNotFoundException("Trip", command.getTripId()));
 
@@ -148,6 +236,7 @@ public class BookingCommandServiceImpl implements HoldSeatUseCase, CancelBooking
                 .status(BookingStatus.PENDING)
                 .totalAmount(totalAmount.setScale(2, RoundingMode.HALF_UP))
                 .expiresAt(holdStart.plus(HOLD_SEAT_DURATION))
+                .clientRequestId(clientRequestId)
                 .items(items)
                 .build();
         booking.transitionTo(BookingStatus.HELD);

@@ -82,16 +82,40 @@ describe('booking-validator.js unit tests', () => {
       expect(res.error).toContain('Mã chuyến xe không khớp')
     })
 
-    it('rejects mismatched userId', () => {
+    it('rejects mismatched userId or missing userId when expectedUserId is set', () => {
       const res = validateBookingResponse(validBooking, { expectedUserId: 999 })
       expect(res.valid).toBe(false)
       expect(res.error).toContain('người dùng khác')
+
+      const noUserBooking = { ...validBooking, userId: null }
+      const res2 = validateBookingResponse(noUserBooking, { expectedUserId: 42 })
+      expect(res2.valid).toBe(false)
+      expect(res2.error).toContain('thiếu thông tin người dùng')
     })
 
-    it('rejects invalid or negative totalAmount', () => {
+    it('rejects invalid or negative totalAmount, including boolean and empty string', () => {
       expect(validateBookingResponse({ ...validBooking, totalAmount: -100 }).valid).toBe(false)
       expect(validateBookingResponse({ ...validBooking, totalAmount: 'not-a-number' }).valid).toBe(false)
       expect(validateBookingResponse({ ...validBooking, totalAmount: null }).valid).toBe(false)
+      expect(validateBookingResponse({ ...validBooking, totalAmount: false }).valid).toBe(false)
+      expect(validateBookingResponse({ ...validBooking, totalAmount: true }).valid).toBe(false)
+      expect(validateBookingResponse({ ...validBooking, totalAmount: '  ' }).valid).toBe(false)
+    })
+
+    it('supports allowTerminalReplay option for idempotency recovery', () => {
+      const confirmedBooking = { ...validBooking, status: 'CONFIRMED' }
+      expect(validateBookingResponse(confirmedBooking).valid).toBe(false)
+      expect(validateBookingResponse(confirmedBooking, { allowTerminalReplay: true }).valid).toBe(true)
+
+      const cancelledBooking = { ...validBooking, status: 'CANCELLED' }
+      expect(validateBookingResponse(cancelledBooking, { allowTerminalReplay: true }).valid).toBe(true)
+
+      const expiredBooking = {
+        ...validBooking,
+        status: 'EXPIRED',
+        expiresAt: new Date(Date.now() - 60000).toISOString()
+      }
+      expect(validateBookingResponse(expiredBooking, { allowTerminalReplay: true }).valid).toBe(true)
     })
 
     it('rejects empty or corrupt seatNumbers', () => {
