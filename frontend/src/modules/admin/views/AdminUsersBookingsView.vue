@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, h } from 'vue'
 import { toast } from 'vue-sonner'
 import {
   Users,
@@ -16,20 +16,53 @@ import {
   Check,
   X,
   AlertTriangle,
-  Zap
+  AlertCircle,
+  Zap,
+  RefreshCw,
+  MoreHorizontal
 } from 'lucide-vue-next'
 import StatusBadge from '@/shared/components/StatusBadge.vue'
 import FormField from '@/shared/components/FormField.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { PasswordInput } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
-import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
+import DataTable from '@/components/ui/table/DataTable.vue'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter
+} from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction
+} from '@/components/ui/alert-dialog'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator
+} from '@/components/ui/dropdown-menu'
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
 import { ADMIN_PERMISSION_MODULES, ALL_ADMIN_PERMISSION_CODES } from '@/modules/auth/store'
 import { useAdminPermissions } from '@/modules/admin/composables/useAdminPermissions'
 import { adminApi } from '@/modules/admin/api'
 
 const {
+  auth,
   isSuperAdmin,
   customRole,
   previewRole,
@@ -38,7 +71,7 @@ const {
   stopRolePreview
 } = useAdminPermissions()
 
-// Active main tab: 'USERS' | 'ROLES' | 'BOOKINGS' — FND-003: Tự động chọn Tab đầu tiên mà user có quyền xem
+// Active main tab: 'USERS' | 'ROLES' | 'BOOKINGS'
 const resolveInitialTab = () => {
   if (hasPermission('USER_VIEW')) return 'USERS'
   if (hasPermission('ROLE_MANAGE_CRUD')) return 'ROLES'
@@ -56,11 +89,26 @@ watch(previewRole, () => {
   }
 })
 
-// Active user category filter inside USERS tab: 'ALL' | 'CUSTOMER' | 'OPERATOR' | 'SYSTEM'
-const activeUserCategory = ref('ALL')
-const userSearchKeyword = ref('')
+// Current user identity from auth store for invariant checks
+const currentUsername = computed(() => {
+  if (auth?.user?.username) return auth.user.username
+  if (auth?.jwtPayload?.sub) return auth.jwtPayload.sub
+  if (auth?.jwtPayload?.username) return auth.jwtPayload.username
+  if (auth?.isSuperAdmin) return 'admin'
+  return ''
+})
+const currentUserId = computed(() => auth?.user?.id || auth?.jwtPayload?.userId || null)
+
+function isSelfUser(u) {
+  if (!u) return false
+  if (u.isSelf) return true
+  if (currentUserId.value && u.id && String(currentUserId.value) === String(u.id)) return true
+  if (currentUsername.value && u.username && currentUsername.value.toLowerCase() === u.username.toLowerCase()) return true
+  return false
+}
+
 const feedbackMessage = ref('')
-const feedbackType = ref('success') // 'success' | 'error'
+const feedbackType = ref('success')
 
 function notify(msg, type = 'success') {
   feedbackMessage.value = msg
@@ -70,173 +118,115 @@ function notify(msg, type = 'success') {
   } else {
     toast.success(msg)
   }
-  setTimeout(() => {
-    if (feedbackMessage.value === msg) {
-      feedbackMessage.value = ''
-    }
-  }, 4500)
+}
+
+function formatVnd(val) {
+  if (val === undefined || val === null) return '0'
+  return Number(val).toLocaleString('vi-VN')
 }
 
 // =========================================================================
-// 1. DYNAMIC SYSTEM ROLES & 7 MODULES x 26 APIs MATRIX
+// 1. REAL API USERS STATE & SERVER-SIDE PAGINATION
+// =========================================================================
+const users = ref([])
+const isLoadingUsers = ref(false)
+const usersError = ref(null)
+const userPage = ref(0)
+const userPageSize = ref(10)
+const userTotalElements = ref(0)
+const userTotalPages = ref(1)
+
+const activeUserCategory = ref('ALL')
+const userSearchKeyword = ref('')
+
+async function fetchUsers() {
+  if (!hasPermission('USER_VIEW')) return
+  isLoadingUsers.value = true
+  usersError.value = null
+
+  try {
+    const params = {
+      page: userPage.value,
+      size: userPageSize.value
+    }
+    if (userSearchKeyword.value.trim()) {
+      params.keyword = userSearchKeyword.value.trim()
+    }
+    if (activeUserCategory.value !== 'ALL') {
+      params.role = activeUserCategory.value
+    }
+
+    const res = await adminApi.getUsers(params)
+    const pageData = res?.data || res || {}
+    const items = pageData.items || (Array.isArray(pageData) ? pageData : [])
+    users.value = items.map(u => ({
+      ...u,
+      isSelf: isSelfUser(u)
+    }))
+    userTotalElements.value = pageData.totalElements ?? users.value.length
+    userTotalPages.value = pageData.totalPages ?? Math.max(1, Math.ceil(userTotalElements.value / userPageSize.value))
+  } catch (err) {
+    usersError.value = err?.message || 'Không thể tải danh sách người dùng từ máy chủ Backend'
+    users.value = []
+    userTotalElements.value = 0
+  } finally {
+    isLoadingUsers.value = false
+  }
+}
+
+function onUserPageChange(newPage) {
+  userPage.value = newPage
+  fetchUsers()
+}
+
+function handleSearchUsers() {
+  userPage.value = 0
+  fetchUsers()
+}
+
+function handleCategoryChange(cat) {
+  activeUserCategory.value = cat
+  userPage.value = 0
+  fetchUsers()
+}
+
+// =========================================================================
+// 2. REAL API SYSTEM ROLES & 7x26 PERMISSION MATRIX
 // =========================================================================
 const permissionCatalog = ref(ADMIN_PERMISSION_MODULES)
+const systemRoles = ref([])
+const isLoadingRoles = ref(false)
+const rolesError = ref(null)
 
-const systemRoles = ref([
-  {
-    id: 1,
-    code: 'ROLE_ADMIN',
-    name: 'Quản Trị Viên Toàn Sàn (Super Admin)',
-    description: 'Toàn quyền điều hành hệ thống, quản lý 7 Modules và 26 APIs quản trị.',
-    category: 'SYSTEM',
-    permissions: [...ALL_ADMIN_PERMISSION_CODES],
-    systemDefault: true
-  },
-  {
-    id: 2,
-    code: 'ROLE_OPERATOR',
-    name: 'Chủ Xe / Đối Tác Vận Tải',
-    description: 'Vai trò dành cho đối tác nhà xe (Quản lý đội xe, tài xế, chuyến xe và ví ký quỹ tại /operator).',
-    category: 'OPERATOR',
-    permissions: [],
-    systemDefault: true
-  },
-  {
-    id: 3,
-    code: 'ROLE_CUSTOMER',
-    name: 'Khách Hàng Đặt Vé',
-    description: 'Vai trò dành cho hành khách tìm chuyến, chọn ghế, thanh toán và tra cứu vé.',
-    category: 'CUSTOMER',
-    permissions: [],
-    systemDefault: true
-  },
-  {
-    id: 4,
-    code: 'ROLE_ACCOUNTANT',
-    name: 'Kế Toán & Đối Soát Tài Chính',
-    description: 'Chuyên trách báo cáo doanh thu, xử lý đối soát VNPay, giải ngân ví Escrow và hoa hồng nhà xe.',
-    category: 'SYSTEM',
-    permissions: [
-      'PAYMENT_REPORT_VIEW',
-      'PAYMENT_LIST_VIEW',
-      'PAYMENT_RECONCILE_RESOLVE',
-      'WITHDRAWAL_VIEW',
-      'WITHDRAWAL_APPROVE',
-      'WITHDRAWAL_REJECT',
-      'OPERATOR_VIEW',
-      'OPERATOR_COMMISSION_MANAGE',
-      'BOOKING_VIEW',
-      'BOOKING_FORCE_REFUND'
-    ],
-    systemDefault: false
-  },
-  {
-    id: 5,
-    code: 'ROLE_CSKH',
-    name: 'CSKH & Điều Hành Vận Tải',
-    description: 'Hỗ trợ khách hàng, tra cứu/hoàn vé, duyệt nhà xe, kiểm duyệt banner và quản lý bến/chuyến xe.',
-    category: 'SYSTEM',
-    permissions: [
-      'OPERATOR_VIEW',
-      'OPERATOR_APPROVE_REJECT',
-      'BANNER_VIEW',
-      'BANNER_CREATE_DELETE',
-      'BANNER_APPROVE_REJECT',
-      'USER_VIEW',
-      'USER_STATUS_LOCK',
-      'USER_PASSWORD_RESET',
-      'BOOKING_VIEW',
-      'BOOKING_FORCE_REFUND',
-      'STATION_VIEW',
-      'STATION_CREATE_UPDATE_DELETE',
-      'TRIP_MANAGE_CRUD'
-    ],
-    systemDefault: false
-  }
-])
+async function fetchRoles() {
+  isLoadingRoles.value = true
+  rolesError.value = null
 
-// =========================================================================
-// 2. USERS LIST (3 CATEGORIES: CUSTOMER, OPERATOR, SYSTEM STAFF)
-// =========================================================================
-const users = ref([
-  {
-    id: 'USR-ADMIN-01',
-    username: 'admin',
-    fullName: 'Quản Trị Viên Toàn Sàn',
-    email: 'admin@velobus.vn',
-    phone: '0901000001',
-    role: 'ROLE_ADMIN',
-    category: 'SYSTEM',
-    status: 'ACTIVE',
-    isSelf: true
-  },
-  {
-    id: 'USR-SYS-02',
-    username: 'ketoan01',
-    fullName: 'Lê Thị Thu Hà (Kế Toán)',
-    email: 'ketoan@velobus.vn',
-    phone: '0901000088',
-    role: 'ROLE_ACCOUNTANT',
-    category: 'SYSTEM',
-    status: 'ACTIVE',
-    isSelf: false
-  },
-  {
-    id: 'USR-SYS-03',
-    username: 'cskh01',
-    fullName: 'Trần Quốc Bảo (Điều Hành & CSKH)',
-    email: 'cskh@velobus.vn',
-    phone: '0901000099',
-    role: 'ROLE_CSKH',
-    category: 'SYSTEM',
-    status: 'ACTIVE',
-    isSelf: false
-  },
-  {
-    id: 'USR-OPER-01',
-    username: 'operator1',
-    fullName: 'Nguyễn Hoàng Long',
-    email: 'hoanglong@velobus.vn',
-    phone: '0901234567',
-    role: 'ROLE_OPERATOR',
-    category: 'OPERATOR',
-    status: 'ACTIVE',
-    isSelf: false
-  },
-  {
-    id: 'USR-OPER-02',
-    username: 'phuongtrang_op',
-    fullName: 'Lê Minh Phương (Phương Trang Velo)',
-    email: 'phuongtrang@velobus.vn',
-    phone: '0918765432',
-    role: 'ROLE_OPERATOR',
-    category: 'OPERATOR',
-    status: 'ACTIVE',
-    isSelf: false
-  },
-  {
-    id: 'USR-CUST-01',
-    username: 'thanhpv',
-    fullName: 'Phan Văn Thành',
-    email: 'thanh.pv@gmail.com',
-    phone: '0912345678',
-    role: 'ROLE_CUSTOMER',
-    category: 'CUSTOMER',
-    status: 'ACTIVE',
-    isSelf: false
-  },
-  {
-    id: 'USR-CUST-02',
-    username: 'quantm',
-    fullName: 'Trần Minh Quân',
-    email: 'quan.tm@gmail.com',
-    phone: '0988776655',
-    role: 'ROLE_CUSTOMER',
-    category: 'CUSTOMER',
-    status: 'ACTIVE',
-    isSelf: false
+  // 1. Fetch catalog
+  try {
+    const catRes = await adminApi.getPermissionsCatalog()
+    const cat = catRes?.data || catRes
+    if (Array.isArray(cat) && cat.length > 0) {
+      permissionCatalog.value = cat
+    }
+  } catch (_) {
+    permissionCatalog.value = ADMIN_PERMISSION_MODULES
   }
-])
+
+  // 2. Fetch roles
+  try {
+    const res = await adminApi.getRoles()
+    const roles = res?.data || res || []
+    if (Array.isArray(roles)) {
+      systemRoles.value = roles
+    }
+  } catch (err) {
+    rolesError.value = err?.message || 'Không thể tải danh sách vai trò từ máy chủ Backend'
+    systemRoles.value = []
+  } finally {
+    isLoadingRoles.value = false
+  }
+}
 
 function getRoleInfo(roleCode) {
   return (
@@ -249,54 +239,61 @@ function getRoleInfo(roleCode) {
   )
 }
 
-function getCategoryLabel(category) {
-  if (category === 'CUSTOMER') return '1. Khách hàng (Customer)'
-  if (category === 'OPERATOR') return '2. Chủ xe (Operator)'
-  return '3. Phía hệ thống (Admin)'
-}
-
-function getCategoryBadgeClass(category) {
-  if (category === 'CUSTOMER') return 'bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30'
-  if (category === 'OPERATOR') return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
-  return 'bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30'
-}
-
-const categoryCounts = computed(() => {
-  const counts = { ALL: users.value.length, CUSTOMER: 0, OPERATOR: 0, SYSTEM: 0 }
-  for (const u of users.value) {
-    const cat = u.category || getRoleInfo(u.role).category
-    if (counts[cat] !== undefined) counts[cat]++
-  }
-  return counts
-})
-
-const filteredUsers = computed(() => {
-  return users.value.filter(u => {
-    const cat = u.category || getRoleInfo(u.role).category
-    if (activeUserCategory.value !== 'ALL' && cat !== activeUserCategory.value) {
-      return false
-    }
-    if (userSearchKeyword.value.trim()) {
-      const kw = userSearchKeyword.value.trim().toLowerCase()
-      return (
-        u.username.toLowerCase().includes(kw) ||
-        u.fullName.toLowerCase().includes(kw) ||
-        u.email.toLowerCase().includes(kw) ||
-        u.role.toLowerCase().includes(kw)
-      )
-    }
-    return true
-  })
-})
-
 function countUsersWithRole(roleCode) {
   return users.value.filter(u => u.role === roleCode).length
 }
 
 // =========================================================================
-// 3. USER CRUD (CREATE, EDIT, ASSIGN ROLE, LOCK/UNLOCK, RESET PASSWORD, DELETE)
+// 3. REAL API BOOKINGS & ADMIN FORCED REFUND
+// =========================================================================
+const allBookings = ref([])
+const isLoadingBookings = ref(false)
+const bookingsError = ref(null)
+const bookingPage = ref(0)
+const bookingPageSize = ref(10)
+const bookingTotalElements = ref(0)
+const bookingTotalPages = ref(1)
+
+async function fetchBookings() {
+  if (!hasPermission('BOOKING_VIEW')) return
+  isLoadingBookings.value = true
+  bookingsError.value = null
+
+  try {
+    const params = {
+      page: bookingPage.value,
+      size: bookingPageSize.value
+    }
+    const res = await adminApi.getBookings(params)
+    const pageData = res?.data || res || {}
+    allBookings.value = pageData.items || (Array.isArray(pageData) ? pageData : [])
+    bookingTotalElements.value = pageData.totalElements ?? allBookings.value.length
+    bookingTotalPages.value = pageData.totalPages ?? Math.max(1, Math.ceil(bookingTotalElements.value / bookingPageSize.value))
+  } catch (err) {
+    bookingsError.value = err?.message || 'Không thể tải danh sách đơn vé từ máy chủ Backend'
+    allBookings.value = []
+    bookingTotalElements.value = 0
+  } finally {
+    isLoadingBookings.value = false
+  }
+}
+
+function onBookingPageChange(newPage) {
+  bookingPage.value = newPage
+  fetchBookings()
+}
+
+onMounted(() => {
+  fetchUsers()
+  fetchRoles()
+  fetchBookings()
+})
+
+// =========================================================================
+// 4. USER MUTATIONS (CREATE, EDIT, ROLE, LOCK, RESET PWD, DELETE)
 // =========================================================================
 const isUserModalOpen = ref(false)
+const isSavingUser = ref(false)
 const editingUser = ref(null)
 const userForm = ref({
   username: '',
@@ -370,76 +367,61 @@ async function handleSaveUser() {
     return
   }
 
-  // Chốt chặn PC-02: Bảo vệ Super Admin
+  // Chốt chặn bảo vệ Super Admin
   if (userForm.value.role === 'ROLE_ADMIN' && !isSuperAdmin.value) {
     userFormError.value = 'Chỉ Super Admin (ROLE_ADMIN) mới có quyền tạo hoặc gán quyền ROLE_ADMIN'
     return
   }
 
-  const roleMeta = getRoleInfo(userForm.value.role)
+  isSavingUser.value = true
+  try {
+    if (!editingUser.value) {
+      // Create user
+      if (!userForm.value.username.trim() || userForm.value.username.trim().length < 3) {
+        throw new Error('Tên đăng nhập (Username) phải từ 3 ký tự trở lên')
+      }
+      if (!userForm.value.password || userForm.value.password.length < 6) {
+        throw new Error('Mật khẩu khởi tạo phải tối thiểu 6 ký tự')
+      }
 
-  if (!editingUser.value) {
-    if (!userForm.value.username.trim() || userForm.value.username.trim().length < 3) {
-      userFormError.value = 'Tên đăng nhập (Username) phải từ 3 ký tự trở lên'
-      return
-    }
-    if (!userForm.value.password || userForm.value.password.length < 6) {
-      userFormError.value = 'Mật khẩu khởi tạo phải tối thiểu 6 ký tự'
-      return
-    }
-    if (users.value.some(u => u.username.toLowerCase() === userForm.value.username.trim().toLowerCase())) {
-      userFormError.value = 'Tên đăng nhập này đã tồn tại trên hệ thống'
-      return
-    }
+      await adminApi.createUser({
+        username: userForm.value.username.trim(),
+        fullName: userForm.value.fullName.trim(),
+        email: userForm.value.email.trim(),
+        phone: userForm.value.phone.trim(),
+        password: userForm.value.password,
+        role: userForm.value.role
+      })
 
-    const prefix = roleMeta.category === 'CUSTOMER' ? 'USR-CUST-' : roleMeta.category === 'OPERATOR' ? 'USR-OPER-' : 'USR-SYS-'
-    const newUser = {
-      id: `${prefix}${String(users.value.length + 1).padStart(2, '0')}`,
-      username: userForm.value.username.trim(),
-      fullName: userForm.value.fullName.trim(),
-      email: userForm.value.email.trim(),
-      phone: userForm.value.phone.trim(),
-      role: roleMeta.code,
-      category: roleMeta.category,
-      status: 'ACTIVE',
-      isSelf: false
+      notify(`Đã tạo tài khoản @${userForm.value.username.trim()} thành công!`)
+      closeUserModal()
+      await fetchUsers()
+    } else {
+      // Edit user
+      if (isSelfUser(editingUser.value) && userForm.value.role !== editingUser.value.role) {
+        throw new Error('Không thể tự hạ quyền hoặc đổi Role của chính tài khoản đang đăng nhập (ADMIN_CANNOT_DEMOTE_SELF)')
+      }
+
+      await adminApi.updateUser(editingUser.value.id, {
+        fullName: userForm.value.fullName.trim(),
+        email: userForm.value.email.trim(),
+        phone: userForm.value.phone.trim(),
+        role: userForm.value.role
+      })
+
+      notify(`Đã cập nhật thông tin tài khoản @${editingUser.value.username}`)
+      closeUserModal()
+      await fetchUsers()
     }
-    users.value.unshift(newUser)
-    notify(`Đã tạo tài khoản @${newUser.username} với Role ${roleMeta.name} (${roleMeta.code})`)
-    adminApi.createUser({
-      username: newUser.username,
-      fullName: newUser.fullName,
-      email: newUser.email,
-      phone: newUser.phone,
-      password: userForm.value.password,
-      role: newUser.role
-    }).then(res => {
-      if (res?.data?.id) newUser.id = res.data.id
-    }).catch(() => {})
-  } else {
-    if (editingUser.value.isSelf && userForm.value.role !== editingUser.value.role) {
-      userFormError.value = 'Không thể tự hạ quyền hoặc đổi Role của chính tài khoản đang đăng nhập (ADMIN_CANNOT_DEMOTE_SELF)'
-      return
-    }
-    editingUser.value.fullName = userForm.value.fullName.trim()
-    editingUser.value.email = userForm.value.email.trim()
-    editingUser.value.phone = userForm.value.phone.trim()
-    editingUser.value.role = roleMeta.code
-    editingUser.value.category = roleMeta.category
-    adminApi.updateUser(editingUser.value.id, {
-      fullName: editingUser.value.fullName,
-      email: editingUser.value.email,
-      phone: editingUser.value.phone,
-      role: editingUser.value.role
-    }).catch(() => {})
-    notify(`Đã cập nhật thông tin tài khoản @${editingUser.value.username}`)
+  } catch (err) {
+    userFormError.value = err?.message || 'Lỗi khi lưu thông tin người dùng'
+  } finally {
+    isSavingUser.value = false
   }
-
-  closeUserModal()
 }
 
 async function handleQuickRoleChange(user, newRoleCode) {
-  if (user.isSelf) {
+  if (isSelfUser(user)) {
     notify('Không thể tự thay đổi Role của tài khoản đang đăng nhập (ADMIN_CANNOT_DEMOTE_SELF)', 'error')
     return
   }
@@ -447,34 +429,45 @@ async function handleQuickRoleChange(user, newRoleCode) {
     notify('Nhân sự mang Custom Role không được phép cấp hoặc thu hồi quyền ROLE_ADMIN (SUPER_ADMIN_PROTECTED)', 'error')
     return
   }
-  const roleMeta = getRoleInfo(newRoleCode)
-  user.role = roleMeta.code
-  user.category = roleMeta.category
   try {
-    await adminApi.changeUserRole(user.id, roleMeta.code)
-  } catch (_) {}
-  notify(`Đã gán Role "${roleMeta.name} (${roleMeta.code})" cho tài khoản @${user.username}`)
+    await adminApi.changeUserRole(user.id, newRoleCode)
+    notify(`Đã gán Role "${newRoleCode}" cho tài khoản @${user.username}`)
+    await fetchUsers()
+  } catch (err) {
+    notify(err?.message || 'Lỗi khi thay đổi vai trò người dùng', 'error')
+  }
 }
 
 async function toggleUserLock(user) {
-  if (user.isSelf) return // Invariant: ADMIN_CANNOT_LOCK_SELF
+  if (isSelfUser(user)) {
+    notify('Không thể tự khóa tài khoản của chính mình (ADMIN_CANNOT_LOCK_SELF)', 'error')
+    return
+  }
   if (user.role === 'ROLE_ADMIN' && !isSuperAdmin.value) {
     notify('Không được phép khóa tài khoản Super Admin (SUPER_ADMIN_PROTECTED)', 'error')
     return
   }
-  user.status = user.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE'
+
+  const targetStatus = user.status === 'ACTIVE' ? 'LOCKED' : 'ACTIVE'
   try {
-    await adminApi.updateUserStatus(user.id, user.status === 'ACTIVE' ? 'ACTIVE' : 'LOCKED')
-  } catch (_) {}
-  notify(
-    user.status === 'ACTIVE'
-      ? `Đã mở khóa tài khoản @${user.username}`
-      : `Đã khóa tài khoản @${user.username}`
-  )
+    await adminApi.updateUserStatus(user.id, targetStatus)
+    notify(
+      targetStatus === 'ACTIVE'
+        ? `Đã mở khóa tài khoản @${user.username}`
+        : `Đã khóa tài khoản @${user.username}`
+    )
+    await fetchUsers()
+  } catch (err) {
+    notify(err?.message || 'Lỗi khi cập nhật trạng thái tài khoản', 'error')
+  }
 }
 
-async function handleDeleteUser(user) {
-  if (user.isSelf) {
+const userToDelete = ref(null)
+const isConfirmDeleteUserOpen = ref(false)
+const isDeletingUser = ref(false)
+
+function openDeleteUserModal(user) {
+  if (isSelfUser(user)) {
     notify('Không thể tự xóa tài khoản quản trị đang đăng nhập (ADMIN_CANNOT_DELETE_SELF)', 'error')
     return
   }
@@ -482,15 +475,30 @@ async function handleDeleteUser(user) {
     notify('Không được phép xóa tài khoản Super Admin (SUPER_ADMIN_PROTECTED)', 'error')
     return
   }
+  userToDelete.value = user
+  isConfirmDeleteUserOpen.value = true
+}
+
+async function confirmDeleteUser() {
+  if (!userToDelete.value) return
+  isDeletingUser.value = true
   try {
-    await adminApi.deleteUser(user.id)
-  } catch (_) {}
-  users.value = users.value.filter(u => u.id !== user.id)
-  notify(`Đã xóa tài khoản @${user.username} khỏi hệ thống`)
+    await adminApi.deleteUser(userToDelete.value.id)
+    notify(`Đã xóa tài khoản @${userToDelete.value.username} khỏi hệ thống`)
+    isConfirmDeleteUserOpen.value = false
+    userToDelete.value = null
+    await fetchUsers()
+  } catch (err) {
+    notify(err?.message || 'Lỗi khi xóa tài khoản', 'error')
+  } finally {
+    isDeletingUser.value = false
+  }
 }
 
 // Reset Password Modal
 const userForPasswordReset = ref(null)
+const isResetPasswordOpen = ref(false)
+const isResettingPassword = ref(false)
 const newPasswordInput = ref('')
 const passwordResetError = ref('')
 
@@ -502,185 +510,160 @@ function openResetPasswordModal(user) {
   userForPasswordReset.value = user
   newPasswordInput.value = ''
   passwordResetError.value = ''
+  isResetPasswordOpen.value = true
 }
 
-async function confirmResetPassword() {
+async function handleConfirmResetPassword() {
   passwordResetError.value = ''
   if (!newPasswordInput.value || newPasswordInput.value.length < 6) {
-    passwordResetError.value = 'Mật khẩu mới phải có ít nhất 6 ký tự'
+    passwordResetError.value = 'Mật khẩu mới phải tối thiểu 6 ký tự'
     return
   }
+
+  isResettingPassword.value = true
   try {
     await adminApi.resetUserPassword(userForPasswordReset.value.id, newPasswordInput.value)
-  } catch (_) {}
-  notify(`Đã đặt lại mật khẩu mới cho tài khoản @${userForPasswordReset.value.username}`)
-  userForPasswordReset.value = null
+    notify(`Đã đặt lại mật khẩu thành công cho tài khoản @${userForPasswordReset.value.username}`)
+    isResetPasswordOpen.value = false
+    userForPasswordReset.value = null
+  } catch (err) {
+    passwordResetError.value = err?.message || 'Lỗi khi đặt lại mật khẩu'
+  } finally {
+    isResettingPassword.value = false
+  }
 }
 
 // =========================================================================
-// 4. ROLE CRUD & 7 MODULES x 26 APIs PERMISSION MATRIX MODAL
+// 5. ROLE CRUD & MATRIX
 // =========================================================================
 const isRoleModalOpen = ref(false)
+const isSavingRole = ref(false)
 const editingRole = ref(null)
 const roleForm = ref({
   code: '',
   name: '',
   description: '',
+  category: 'SYSTEM',
   permissions: []
 })
 const roleFormError = ref('')
-
-function normalizeRoleCodeInput(raw) {
-  if (!raw) return ''
-  let clean = raw.trim().toUpperCase().replace(/[\s-]+/g, '_').replace(/[^A-Z0-9_]/g, '')
-  if (clean && !clean.startsWith('ROLE_')) {
-    clean = 'ROLE_' + clean
-  }
-  return clean
-}
 
 function openCreateRoleModal() {
   editingRole.value = null
   roleFormError.value = ''
   roleForm.value = {
-    code: 'ROLE_',
+    code: '',
     name: '',
     description: '',
-    permissions: ['PAYMENT_REPORT_VIEW', 'PAYMENT_LIST_VIEW']
+    category: 'SYSTEM',
+    permissions: []
   }
   isRoleModalOpen.value = true
 }
 
-function openEditRoleModal(roleItem) {
-  if (roleItem.systemDefault) {
-    notify(`Role mặc định gốc (${roleItem.code}) được bảo vệ bởi hệ thống, không thể sửa mã quyền.`, 'error')
+function openEditRoleModal(role) {
+  if (role.systemDefault) {
+    notify('Không thể chỉnh sửa 3 Role mặc định gốc của hệ thống (SYSTEM_ROLE_PROTECTED)', 'error')
     return
   }
-  if (!isSuperAdmin.value && customRole.value === roleItem.code) {
-    notify('Bạn không được phép tự chỉnh sửa quyền hạn của chính Role mình đang mang (CANNOT_MODIFY_OWN_ROLE)', 'error')
-    return
-  }
-  editingRole.value = roleItem
+  editingRole.value = role
   roleFormError.value = ''
   roleForm.value = {
-    code: roleItem.code,
-    name: roleItem.name,
-    description: roleItem.description || '',
-    permissions: [...roleItem.permissions]
+    code: role.code,
+    name: role.name,
+    description: role.description || '',
+    category: role.category || 'SYSTEM',
+    permissions: [...(role.permissions || [])]
   }
   isRoleModalOpen.value = true
 }
 
-function closeRoleModal() {
-  isRoleModalOpen.value = false
-  editingRole.value = null
-}
-
-/**
- * PC-07: Khi Admin tick một quyền thao tác trong Module (VD: OPERATOR_APPROVE_REJECT),
- * tự động tick luôn quyền xem tương ứng của Module đó (OPERATOR_VIEW) để tránh tạo Role không thấy giao diện.
- */
-function togglePermissionInMatrix(moduleItem, permItem) {
-  const list = roleForm.value.permissions
-  const idx = list.indexOf(permItem.code)
+function togglePermission(permCode) {
+  const perms = roleForm.value.permissions
+  const idx = perms.indexOf(permCode)
   if (idx >= 0) {
-    list.splice(idx, 1)
+    perms.splice(idx, 1)
   } else {
-    list.push(permItem.code)
-    if (!permItem.viewPermission && moduleItem.viewPermissionCode && !list.includes(moduleItem.viewPermissionCode)) {
-      list.push(moduleItem.viewPermissionCode)
-    }
+    perms.push(permCode)
   }
 }
 
-function isModuleFullySelected(moduleItem) {
-  return moduleItem.permissions.every(p => roleForm.value.permissions.includes(p.code))
+function isModuleFullySelected(module) {
+  const codes = module.permissions.map(p => p.code)
+  return codes.every(c => roleForm.value.permissions.includes(c))
 }
 
-function toggleWholeModule(moduleItem) {
-  const allCodes = moduleItem.permissions.map(p => p.code)
-  if (isModuleFullySelected(moduleItem)) {
-    roleForm.value.permissions = roleForm.value.permissions.filter(c => !allCodes.includes(c))
+function toggleModulePermissions(module) {
+  const codes = module.permissions.map(p => p.code)
+  const allSelected = isModuleFullySelected(module)
+  if (allSelected) {
+    roleForm.value.permissions = roleForm.value.permissions.filter(p => !codes.includes(p))
   } else {
-    for (const c of allCodes) {
-      if (!roleForm.value.permissions.includes(c)) {
-        roleForm.value.permissions.push(c)
-      }
-    }
+    const toAdd = codes.filter(c => !roleForm.value.permissions.includes(c))
+    roleForm.value.permissions.push(...toAdd)
   }
-}
-
-function selectAll26Permissions() {
-  roleForm.value.permissions = [...ALL_ADMIN_PERMISSION_CODES]
-}
-
-function selectReadOnlyPermissions() {
-  const viewCodes = permissionCatalog.value.flatMap(m =>
-    m.permissions.filter(p => p.viewPermission || p.httpMethod === 'GET').map(p => p.code)
-  )
-  roleForm.value.permissions = [...new Set(viewCodes)]
-}
-
-function clearAllPermissions() {
-  roleForm.value.permissions = []
 }
 
 async function handleSaveRole() {
   roleFormError.value = ''
-  const normalizedCode = normalizeRoleCodeInput(roleForm.value.code)
-  if (!normalizedCode || !/^ROLE_[A-Z0-9_]{2,45}$/.test(normalizedCode)) {
-    roleFormError.value = 'Mã Role không hợp lệ (Ví dụ hợp lệ: ROLE_ACCOUNTANT, ROLE_CSKH, ROLE_CONTENT_MOD)'
-    return
-  }
   if (!roleForm.value.name.trim()) {
-    roleFormError.value = 'Vui lòng nhập Tên hiển thị của Role'
+    roleFormError.value = 'Vui lòng nhập tên hiển thị cho Role'
     return
   }
 
-  if (!editingRole.value) {
-    if (systemRoles.value.some(r => r.code === normalizedCode)) {
-      roleFormError.value = `Mã Role ${normalizedCode} đã tồn tại trên hệ thống`
-      return
-    }
-    const newRole = {
-      id: Date.now(),
-      code: normalizedCode,
-      name: roleForm.value.name.trim(),
-      description: roleForm.value.description.trim() || 'Role tùy chỉnh phía hệ thống quản trị',
-      category: 'SYSTEM',
-      permissions: [...roleForm.value.permissions],
-      systemDefault: false
-    }
-    systemRoles.value.push(newRole)
-    notify(`Đã tạo Role mới "${newRole.name} (${newRole.code})" với ${newRole.permissions.length}/26 quyền API!`)
-    adminApi.createRole(newRole).then(res => {
-      if (res?.data?.id) newRole.id = res.data.id
-    }).catch(() => {})
-  } else {
-    editingRole.value.name = roleForm.value.name.trim()
-    editingRole.value.description = roleForm.value.description.trim()
-    editingRole.value.permissions = [...roleForm.value.permissions]
-    adminApi.updateRole(editingRole.value.id, {
-      code: editingRole.value.code,
-      name: editingRole.value.name,
-      description: editingRole.value.description,
-      category: 'SYSTEM',
-      permissions: editingRole.value.permissions
-    }).catch(() => {})
+  isSavingRole.value = true
+  try {
+    if (!editingRole.value) {
+      if (!roleForm.value.code.trim()) {
+        throw new Error('Vui lòng nhập mã định danh Role (code)')
+      }
+      let cleanCode = roleForm.value.code.trim().toUpperCase()
+      if (!cleanCode.startsWith('ROLE_')) {
+        cleanCode = `ROLE_${cleanCode}`
+      }
 
-    // Nếu đang ở chế độ Preview chính Role này thì cập nhật tức thì
-    if (previewRole.value?.code === editingRole.value.code) {
-      startRolePreview(editingRole.value)
+      await adminApi.createRole({
+        code: cleanCode,
+        name: roleForm.value.name.trim(),
+        description: roleForm.value.description.trim(),
+        category: 'SYSTEM',
+        permissions: roleForm.value.permissions
+      })
+
+      notify(`Đã tạo Role mới "${cleanCode}" với ${roleForm.value.permissions.length}/26 quyền API!`)
+      isRoleModalOpen.value = false
+      await fetchRoles()
+    } else {
+      await adminApi.updateRole(editingRole.value.id, {
+        code: editingRole.value.code,
+        name: roleForm.value.name.trim(),
+        description: roleForm.value.description.trim(),
+        category: 'SYSTEM',
+        permissions: roleForm.value.permissions
+      })
+
+      if (previewRole.value?.code === editingRole.value.code) {
+        startRolePreview({ ...editingRole.value, permissions: roleForm.value.permissions })
+      }
+
+      notify(`Đã cập nhật Role "${editingRole.value.name}"`)
+      isRoleModalOpen.value = false
+      await fetchRoles()
     }
-    notify(`Đã cập nhật ma trận phân quyền cho Role "${editingRole.value.name}" (${editingRole.value.permissions.length}/26 APIs)`)
+  } catch (err) {
+    roleFormError.value = err?.message || 'Lỗi khi lưu vai trò'
+  } finally {
+    isSavingRole.value = false
   }
-
-  closeRoleModal()
 }
 
-async function handleDeleteRole(roleItem) {
+const roleToDelete = ref(null)
+const isConfirmDeleteRoleOpen = ref(false)
+const isDeletingRole = ref(false)
+
+function openDeleteRoleModal(roleItem) {
   if (roleItem.systemDefault) {
-    notify('Không thể xóa 3 Role mặc định gốc của hệ thống (SYSTEM_ROLE_PROTECTED)', 'error')
+    notify('Không thể xóa các Role mặc định gốc của hệ thống (SYSTEM_ROLE_PROTECTED)', 'error')
     return
   }
   if (!isSuperAdmin.value && customRole.value === roleItem.code) {
@@ -695,12 +678,27 @@ async function handleDeleteRole(roleItem) {
     )
     return
   }
-  adminApi.deleteRole(roleItem.id).catch(() => {})
-  if (previewRole.value?.code === roleItem.code) {
-    stopRolePreview()
+  roleToDelete.value = roleItem
+  isConfirmDeleteRoleOpen.value = true
+}
+
+async function confirmDeleteRole() {
+  if (!roleToDelete.value) return
+  isDeletingRole.value = true
+  try {
+    await adminApi.deleteRole(roleToDelete.value.id)
+    if (previewRole.value?.code === roleToDelete.value.code) {
+      stopRolePreview()
+    }
+    notify(`Đã xóa Role tùy chỉnh ${roleToDelete.value.code}`)
+    isConfirmDeleteRoleOpen.value = false
+    roleToDelete.value = null
+    await fetchRoles()
+  } catch (err) {
+    notify(err?.message || 'Lỗi khi xóa vai trò', 'error')
+  } finally {
+    isDeletingRole.value = false
   }
-  systemRoles.value = systemRoles.value.filter(r => r.code !== roleItem.code)
-  notify(`Đã xóa Role tùy chỉnh ${roleItem.code}`)
 }
 
 function handlePreviewRole(roleItem) {
@@ -709,45 +707,15 @@ function handlePreviewRole(roleItem) {
     return
   }
   startRolePreview(roleItem)
-  notify(`Đang bật chế độ Xem thử giao diện với Role: ${roleItem.name} (${roleItem.permissions.length}/26 quyền API)`)
-}
-
-function getHttpMethodBadgeClass(method) {
-  if (method.includes('DELETE')) return 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30'
-  if (method.includes('POST')) return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
-  if (method.includes('PUT') || method.includes('PATCH')) return 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30'
-  return 'bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30'
+  notify(`Đang bật chế độ Xem thử giao diện với Role: ${roleItem.name} (${roleItem.permissions?.length || 0}/26 quyền API)`)
 }
 
 // =========================================================================
-// 5. ALL BOOKINGS LIST FOR ADMIN FORCED REFUND
+// 6. FINANCIAL FORCED REFUND MUTATION
 // =========================================================================
-const allBookings = ref([
-  {
-    id: 'BKG-20261123-9988',
-    customerName: 'Phan Văn Thành',
-    customerPhone: '0912345678',
-    route: 'Hà Nội → Đà Nẵng',
-    operatorName: 'Hoàng Long Limousine',
-    seats: ['A05', 'A06'],
-    totalAmount: 700000,
-    status: 'CONFIRMED',
-    refundReason: ''
-  },
-  {
-    id: 'BKG-20261120-4411',
-    customerName: 'Trần Minh Quân',
-    customerPhone: '0988776655',
-    route: 'Sài Gòn → Đà Lạt',
-    operatorName: 'Phương Trang Velo',
-    seats: ['B01'],
-    totalAmount: 380000,
-    status: 'CANCELLED',
-    refundReason: ''
-  }
-])
-
 const selectedBookingForRefund = ref(null)
+const isRefundModalOpen = ref(false)
+const isRefunding = ref(false)
 const refundReasonInput = ref('')
 const refundError = ref('')
 
@@ -755,27 +723,276 @@ function openRefundModal(booking) {
   selectedBookingForRefund.value = booking
   refundReasonInput.value = ''
   refundError.value = ''
+  isRefundModalOpen.value = true
 }
 
-function closeRefundModal() {
-  selectedBookingForRefund.value = null
-}
-
-function confirmAdminRefund() {
+async function confirmAdminRefund() {
   refundError.value = ''
   if (!refundReasonInput.value || refundReasonInput.value.trim().length < 10) {
     refundError.value = 'Lý do hoàn tiền cưỡng chế phải rõ ràng (tối thiểu 10 ký tự) để lưu Audit Log'
     return
   }
 
-  const targetBooking = selectedBookingForRefund.value
-  const reason = refundReasonInput.value.trim()
-  targetBooking.status = 'REFUNDED'
-  targetBooking.refundReason = reason
-  adminApi.refundBooking(targetBooking.id, { reason }).catch(() => {})
-  notify(`Đã hoàn tiền cưỡng chế 100% cho đơn vé ${targetBooking.id}`)
-  closeRefundModal()
+  const target = selectedBookingForRefund.value
+  if (!target) return
+  const bookingRef = target.bookingReference || target.id
+
+  isRefunding.value = true
+  try {
+    // Contract: reason, refundPercentage: 100
+    const res = await adminApi.refundBooking(bookingRef, {
+      reason: refundReasonInput.value.trim(),
+      refundPercentage: 100
+    })
+
+    const data = res?.data || res
+    notify(`Đã hoàn tiền cưỡng chế 100% cho đơn vé #${bookingRef}!`)
+    isRefundModalOpen.value = false
+    selectedBookingForRefund.value = null
+
+    // Authoritative state refetch
+    await fetchBookings()
+  } catch (err) {
+    refundError.value = err?.message || 'Máy chủ từ chối yêu cầu hoàn tiền cưỡng chế'
+  } finally {
+    isRefunding.value = false
+  }
 }
+
+// =========================================================================
+// 7. COLUMNS FOR USERS & BOOKINGS DATATABLE
+// =========================================================================
+const userColumns = [
+  {
+    accessorKey: 'username',
+    header: 'Người Dùng',
+    cell: ({ row }) => {
+      const u = row.original
+      const self = isSelfUser(u)
+      return h('div', { class: 'space-y-0.5' }, [
+        h('div', { class: 'flex items-center gap-1.5' }, [
+          h('span', { class: 'font-mono font-bold text-foreground text-xs' }, `@${u.username}`),
+          self ? h(Badge, { variant: 'outline', class: 'border-primary/40 bg-primary/10 text-primary text-[10px] px-1 py-0 font-bold', 'data-testid': 'self-admin-guard' }, () => 'Tài khoản hiện tại (Không thể tự khóa)') : null
+        ]),
+        h('span', { class: 'text-[11px] text-muted-foreground block' }, u.email)
+      ])
+    }
+  },
+  {
+    accessorKey: 'fullName',
+    header: 'Họ Tên & Liên Hệ',
+    cell: ({ row }) => {
+      const u = row.original
+      return h('div', { class: 'space-y-0.5' }, [
+        h('span', { class: 'font-semibold text-foreground text-xs block' }, u.fullName),
+        h('span', { class: 'font-mono text-[11px] text-muted-foreground block' }, u.phone || '—')
+      ])
+    }
+  },
+  {
+    accessorKey: 'category',
+    header: 'Phân Mục',
+    cell: ({ row }) => {
+      const cat = row.original.category || 'SYSTEM'
+      const label = cat === 'CUSTOMER' ? 'Khách hàng' : cat === 'OPERATOR' ? 'Chủ xe' : 'Hệ thống'
+      const variantClass = cat === 'CUSTOMER'
+        ? 'bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/30'
+        : cat === 'OPERATOR'
+        ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
+        : 'bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30'
+
+      return h(Badge, { variant: 'outline', class: `${variantClass} font-semibold text-[11px]` }, () => label)
+    }
+  },
+  {
+    accessorKey: 'role',
+    header: 'Vai Trò (Role)',
+    cell: ({ row }) => {
+      const roleCode = row.original.role
+      const meta = getRoleInfo(roleCode)
+      return h('div', { class: 'space-y-0.5' }, [
+        h('span', { class: 'font-mono text-[11px] font-bold text-foreground block' }, roleCode),
+        h('span', { class: 'text-[11px] text-muted-foreground block' }, meta.name)
+      ])
+    }
+  },
+  {
+    accessorKey: 'status',
+    header: 'Trạng Thái',
+    cell: ({ row }) => {
+      const status = row.original.status || 'ACTIVE'
+      return h(StatusBadge, { status })
+    }
+  },
+  {
+    id: 'actions',
+    header: () => h('div', { class: 'text-right' }, 'Thao Tác'),
+    cell: ({ row }) => {
+      const u = row.original
+      const self = isSelfUser(u)
+
+      return h('div', { class: 'flex items-center justify-end gap-1.5' }, [
+        // Edit button
+        h(
+          Button,
+          {
+            variant: 'ghost',
+            size: 'sm',
+            class: 'h-8 w-8 p-0',
+            'data-testid': `btn-edit-user-${u.username}`,
+            onClick: () => openEditUserModal(u)
+          },
+          () => h(Pencil, { class: 'h-3.5 w-3.5' })
+        ),
+        // Toggle Lock
+        h(
+          Button,
+          {
+            variant: 'ghost',
+            size: 'sm',
+            class: 'h-8 w-8 p-0',
+            disabled: self,
+            'data-testid': `btn-toggle-lock-${u.username}`,
+            onClick: () => toggleUserLock(u)
+          },
+          () => h(u.status === 'LOCKED' ? Unlock : Lock, { class: 'h-3.5 w-3.5' })
+        ),
+        // Dropdown for more actions (Reset password, delete)
+        h(
+          DropdownMenu,
+          {},
+          {
+            default: () => [
+              h(DropdownMenuTrigger, { asChild: true }, () =>
+                h(Button, { variant: 'ghost', size: 'sm', class: 'h-8 w-8 p-0' }, () =>
+                  h(MoreHorizontal, { class: 'h-3.5 w-3.5' })
+                )
+              ),
+              h(DropdownMenuContent, { align: 'end', class: 'w-44' }, () => [
+                h(
+                  DropdownMenuItem,
+                  {
+                    onClick: () => openResetPasswordModal(u),
+                    class: 'cursor-pointer'
+                  },
+                  () => [h(KeyRound, { class: 'h-3.5 w-3.5 mr-2' }), 'Đặt lại mật khẩu']
+                ),
+                h(DropdownMenuSeparator),
+                h(
+                  DropdownMenuItem,
+                  {
+                    disabled: self,
+                    onClick: () => openDeleteUserModal(u),
+                    class: 'text-destructive focus:bg-destructive/10 cursor-pointer'
+                  },
+                  () => [h(Trash2, { class: 'h-3.5 w-3.5 mr-2' }), 'Xóa người dùng']
+                )
+              ])
+            ]
+          }
+        )
+      ])
+    }
+  }
+]
+
+const bookingColumns = [
+  {
+    accessorKey: 'bookingReference',
+    header: 'Mã Đơn Vé',
+    cell: ({ row }) => {
+      const b = row.original
+      const ref = b.bookingReference || `BKG-${b.bookingId || b.id}`
+      return h('span', { class: 'font-mono font-bold text-foreground text-xs' }, ref)
+    }
+  },
+  {
+    accessorKey: 'userId',
+    header: 'Khách Hàng / User ID',
+    cell: ({ row }) => {
+      const b = row.original
+      return h('div', { class: 'space-y-0.5' }, [
+        h('span', { class: 'font-semibold text-foreground text-xs block' }, b.customerName || `User #${b.userId}`),
+        h('span', { class: 'font-mono text-[11px] text-muted-foreground block' }, b.customerPhone || '—')
+      ])
+    }
+  },
+  {
+    accessorKey: 'tripId',
+    header: 'Chuyến Xe / Tuyến',
+    cell: ({ row }) => {
+      const b = row.original
+      return h('div', { class: 'space-y-0.5' }, [
+        h('span', { class: 'text-xs text-foreground block font-medium' }, b.route || `Chuyến #${b.tripId}`),
+        h('span', { class: 'text-[11px] text-muted-foreground block' }, b.operatorName || '—')
+      ])
+    }
+  },
+  {
+    accessorKey: 'seatNumbers',
+    header: 'Ghế',
+    cell: ({ row }) => {
+      const seats = row.original.seatNumbers || []
+      if (!seats.length) return h('span', { class: 'text-muted-foreground text-xs' }, '—')
+      return h('div', { class: 'flex flex-wrap gap-1' }, seats.map(s =>
+        h(Badge, { variant: 'outline', class: 'font-mono text-[10px] px-1 py-0' }, () => s)
+      ))
+    }
+  },
+  {
+    accessorKey: 'totalAmount',
+    header: () => h('div', { class: 'text-right' }, 'Tổng Tiền'),
+    cell: ({ row }) => {
+      const amt = row.original.totalAmount
+      return h('div', { class: 'text-right font-mono font-bold tabular-nums whitespace-nowrap text-xs' }, [
+        formatVnd(amt),
+        h('span', { class: 'text-muted-foreground ml-1 font-normal text-[11px]' }, 'đ')
+      ])
+    }
+  },
+  {
+    accessorKey: 'status',
+    header: 'Trạng Thái',
+    cell: ({ row }) => {
+      const s = row.original.status || 'CONFIRMED'
+      return h(StatusBadge, { status: s })
+    }
+  },
+  {
+    id: 'actions',
+    header: () => h('div', { class: 'text-right' }, 'Thao Tác'),
+    cell: ({ row }) => {
+      const b = row.original
+      const ref = b.bookingReference || b.id
+      const canRefund = hasPermission('BOOKING_FORCE_REFUND')
+      const isEligible = b.status === 'CONFIRMED'
+
+      if (!canRefund) {
+        return h('div', { class: 'text-right text-[11px] text-muted-foreground' }, 'Chỉ xem (Thiếu quyền hoàn vé)')
+      }
+
+      if (!isEligible) {
+        return h('div', { class: 'text-right text-[11px] text-muted-foreground' }, b.status === 'REFUNDED' ? 'Đã hoàn tiền' : 'Không khả dụng')
+      }
+
+      return h(
+        'div',
+        { class: 'text-right' },
+        h(
+          Button,
+          {
+            variant: 'destructive',
+            size: 'sm',
+            class: 'h-8 px-2.5 text-xs font-semibold shadow-xs gap-1',
+            'data-testid': `btn-admin-refund-${ref}`,
+            onClick: () => openRefundModal(b)
+          },
+          () => [h(Banknote, { class: 'h-3.5 w-3.5' }), 'Hoàn Tiền 100%']
+        )
+      )
+    }
+  }
+]
 </script>
 
 <template>
@@ -783,980 +1000,700 @@ function confirmAdminRefund() {
     <!-- Header -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
       <div>
-        <h1 class="text-xl sm:text-2xl font-bold text-foreground tracking-tight">Quản Trị Người Dùng & Hoàn Tiền Cưỡng Chế (Admin Refund)</h1>
+        <h1 class="text-xl sm:text-2xl font-bold text-foreground tracking-tight">
+          Quản Trị Người Dùng & Hoàn Tiền Cưỡng Chế (Admin Refund)
+        </h1>
         <p class="text-xs text-muted-foreground mt-1">
-          Quản lý người dùng theo 3 phân mục (1. Khách hàng • 2. Chủ xe • 3. Phía hệ thống), tạo Role tùy chỉnh theo ma trận 7 Modules × 26 APIs và thực thi lệnh hoàn tiền vé.
+          Quản lý tài khoản 3 phân mục, ma trận phân quyền 7 Modules × 26 APIs và thực thi hoàn tiền cưỡng chế có kiểm toán.
         </p>
       </div>
 
-      <div class="flex flex-wrap items-center gap-2">
-        <button
-          v-if="hasPermission('ROLE_MANAGE_CRUD')"
-          type="button"
-          data-testid="open-create-role-modal-btn"
-          @click="activeTab = 'ROLES'; openCreateRoleModal()"
-          class="px-3 py-2 rounded-lg border border-border bg-card hover:bg-muted text-foreground font-semibold text-xs transition-all shadow-xs flex items-center gap-1.5"
-        >
-          <Shield class="w-4 h-4 text-primary" />
-          <span>Tạo Role Mới</span>
-        </button>
-
-        <button
-          v-if="hasPermission('USER_CREATE_UPDATE_DELETE')"
-          type="button"
-          data-testid="open-create-user-modal-btn"
-          @click="activeTab = 'USERS'; openCreateUserModal()"
-          class="px-3.5 py-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs transition-all shadow-xs flex items-center gap-1.5"
-        >
-          <Users class="w-4 h-4" />
-          <span>Tạo Tài Khoản</span>
-        </button>
+      <!-- Preview Mode Banner -->
+      <div v-if="previewRole" class="flex items-center gap-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs">
+        <Zap class="w-4 h-4 text-amber-500 flex-shrink-0" />
+        <span class="text-amber-800 dark:text-amber-300 font-medium">
+          Đang xem thử với: <strong>{{ previewRole.name }}</strong>
+        </span>
+        <Button size="sm" variant="outline" class="h-6 px-2 text-[11px]" data-testid="btn-stop-preview" @click="stopRolePreview">
+          Tắt xem thử
+        </Button>
       </div>
     </div>
 
-    <!-- Feedback Toast Banner -->
-    <div
-      v-if="feedbackMessage"
-      data-testid="iam-feedback-banner"
-      class="px-4 py-3 rounded-xl border text-xs font-semibold flex items-center justify-between shadow-xs"
-      :class="feedbackType === 'error' ? 'bg-destructive/10 border-destructive/20 text-destructive' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'"
-    >
-      <div class="flex items-center gap-2">
-        <AlertTriangle v-if="feedbackType === 'error'" class="w-4 h-4 text-destructive flex-shrink-0" />
-        <Check v-else class="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
-        <span>{{ feedbackMessage }}</span>
-      </div>
-      <button type="button" @click="feedbackMessage = ''" class="text-muted-foreground hover:text-foreground">
-        <X class="w-4 h-4" />
-      </button>
-    </div>
+    <!-- Inline Feedback Notification -->
+    <Alert v-if="feedbackMessage" :variant="feedbackType === 'error' ? 'destructive' : 'default'" class="py-2.5 text-xs border" data-testid="admin-feedback-msg">
+      <AlertDescription>{{ feedbackMessage }}</AlertDescription>
+    </Alert>
 
-    <!-- Top Main Tabs: USERS | ROLES | BOOKINGS -->
-    <div class="flex overflow-x-auto gap-2 border-b border-border pb-2 text-xs font-semibold">
+    <!-- Main Navigation Tabs -->
+    <div class="flex items-center border-b border-border space-x-2">
       <button
         v-if="hasPermission('USER_VIEW')"
-        type="button"
-        @click="activeTab = 'USERS'"
+        class="px-4 py-2 text-xs font-semibold border-b-2 transition-colors flex items-center gap-1.5"
+        :class="activeTab === 'USERS' ? 'border-primary text-primary font-bold' : 'border-transparent text-muted-foreground hover:text-foreground'"
         data-testid="tab-admin-users"
-        class="px-4 py-2.5 rounded-lg transition-all flex items-center gap-2 font-medium whitespace-nowrap shrink-0"
-        :class="activeTab === 'USERS' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted/60'"
+        @click="activeTab = 'USERS'"
       >
         <Users class="w-4 h-4" />
-        <span>Quản Lý Người Dùng (3 Phân Mục)</span>
-        <span class="px-1.5 py-0.5 rounded-full text-[10px]" :class="activeTab === 'USERS' ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-muted text-muted-foreground'">
-          {{ users.length }}
-        </span>
+        <span>Người Dùng</span>
       </button>
 
       <button
         v-if="hasPermission('ROLE_MANAGE_CRUD')"
-        type="button"
-        @click="activeTab = 'ROLES'"
+        class="px-4 py-2 text-xs font-semibold border-b-2 transition-colors flex items-center gap-1.5"
+        :class="activeTab === 'ROLES' ? 'border-primary text-primary font-bold' : 'border-transparent text-muted-foreground hover:text-foreground'"
         data-testid="tab-admin-roles"
-        class="px-4 py-2.5 rounded-lg transition-all flex items-center gap-2 font-medium whitespace-nowrap shrink-0"
-        :class="activeTab === 'ROLES' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted/60'"
+        @click="activeTab = 'ROLES'"
       >
         <Shield class="w-4 h-4" />
-        <span>Quản Lý Role & Phân Quyền 26 APIs</span>
-        <span class="px-1.5 py-0.5 rounded-full text-[10px]" :class="activeTab === 'ROLES' ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-purple-500/15 text-purple-700 dark:text-purple-300'">
-          {{ systemRoles.length }} Roles
-        </span>
+        <span>Vai Trò & Phân Quyền (7x26)</span>
       </button>
 
       <button
         v-if="hasPermission('BOOKING_VIEW')"
-        type="button"
-        @click="activeTab = 'BOOKINGS'"
+        class="px-4 py-2 text-xs font-semibold border-b-2 transition-colors flex items-center gap-1.5"
+        :class="activeTab === 'BOOKINGS' ? 'border-primary text-primary font-bold' : 'border-transparent text-muted-foreground hover:text-foreground'"
         data-testid="tab-admin-bookings"
-        class="px-4 py-2.5 rounded-lg transition-all flex items-center gap-2 font-medium whitespace-nowrap shrink-0"
-        :class="activeTab === 'BOOKINGS' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted/60'"
+        @click="activeTab = 'BOOKINGS'"
       >
         <Ticket class="w-4 h-4" />
-        <span>Đơn Vé Toàn Sàn & Hoàn Tiền</span>
-        <span class="px-1.5 py-0.5 rounded-full text-[10px]" :class="activeTab === 'BOOKINGS' ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-muted text-muted-foreground'">
-          {{ allBookings.length }}
-        </span>
+        <span>Đơn Vé & Hoàn Tiền</span>
       </button>
     </div>
 
-    <!-- =========================================================================
-         TAB 1: QUẢN LÝ NGƯỜI DÙNG (3 PHÂN MỤC: CUSTOMER, OPERATOR, SYSTEM STAFF)
-         ========================================================================= -->
-    <div v-if="activeTab === 'USERS' && hasPermission('USER_VIEW')" class="space-y-4">
-      <!-- 3 Category Cards & Filter Bar -->
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
-        <button
-          type="button"
-          data-testid="category-tab-ALL"
-          @click="activeUserCategory = 'ALL'"
-          class="p-3 sm:p-4 rounded-xl border text-left transition-all"
-          :class="activeUserCategory === 'ALL' ? 'bg-primary/10 text-primary border-primary ring-1 ring-primary/30 shadow-xs' : 'bg-card border-border hover:border-primary/40 text-card-foreground'"
-        >
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-bold uppercase tracking-wider" :class="activeUserCategory === 'ALL' ? 'text-primary' : 'text-muted-foreground'">Tất Cả Tài Khoản</span>
-            <span class="text-base sm:text-lg font-black tabular-nums">{{ categoryCounts.ALL }}</span>
-          </div>
-          <p class="text-[11px] mt-1 text-muted-foreground line-clamp-1 sm:line-clamp-none">
-            Tổng hợp cả 3 phân mục người dùng toàn sàn
-          </p>
-        </button>
-
-        <button
-          type="button"
-          data-testid="category-tab-CUSTOMER"
-          @click="activeUserCategory = 'CUSTOMER'"
-          class="p-3 sm:p-4 rounded-xl border text-left transition-all"
-          :class="activeUserCategory === 'CUSTOMER' ? 'bg-sky-500/15 text-sky-800 dark:text-sky-200 border-sky-500 ring-1 ring-sky-500/30 shadow-xs' : 'bg-card border-border hover:border-sky-400 text-card-foreground'"
-        >
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-bold uppercase tracking-wider" :class="activeUserCategory === 'CUSTOMER' ? 'text-sky-700 dark:text-sky-300' : 'text-sky-600 dark:text-sky-400'">1. Khách Hàng (Customer)</span>
-            <span class="text-base sm:text-lg font-black tabular-nums">{{ categoryCounts.CUSTOMER }}</span>
-          </div>
-          <p class="text-[11px] mt-1 text-muted-foreground line-clamp-1 sm:line-clamp-none">
-            Hành khách đặt vé (`ROLE_CUSTOMER`)
-          </p>
-        </button>
-
-        <button
-          type="button"
-          data-testid="category-tab-OPERATOR"
-          @click="activeUserCategory = 'OPERATOR'"
-          class="p-3 sm:p-4 rounded-xl border text-left transition-all"
-          :class="activeUserCategory === 'OPERATOR' ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-200 border-emerald-500 ring-1 ring-emerald-500/30 shadow-xs' : 'bg-card border-border hover:border-emerald-400 text-card-foreground'"
-        >
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-bold uppercase tracking-wider" :class="activeUserCategory === 'OPERATOR' ? 'text-emerald-700 dark:text-emerald-300' : 'text-emerald-600 dark:text-emerald-400'">2. Chủ Xe (Operator)</span>
-            <span class="text-base sm:text-lg font-black tabular-nums">{{ categoryCounts.OPERATOR }}</span>
-          </div>
-          <p class="text-[11px] mt-1 text-muted-foreground line-clamp-1 sm:line-clamp-none">
-            Đối tác vận tải / Nhà xe (`ROLE_OPERATOR`)
-          </p>
-        </button>
-
-        <button
-          type="button"
-          data-testid="category-tab-SYSTEM"
-          @click="activeUserCategory = 'SYSTEM'"
-          class="p-3 sm:p-4 rounded-xl border text-left transition-all"
-          :class="activeUserCategory === 'SYSTEM' ? 'bg-purple-500/15 text-purple-800 dark:text-purple-200 border-purple-500 ring-1 ring-purple-500/30 shadow-xs' : 'bg-card border-border hover:border-purple-400 text-card-foreground'"
-        >
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-bold uppercase tracking-wider" :class="activeUserCategory === 'SYSTEM' ? 'text-purple-700 dark:text-purple-300' : 'text-purple-600 dark:text-purple-400'">3. Phía Hệ Thống (Admin)</span>
-            <span class="text-base sm:text-lg font-black tabular-nums">{{ categoryCounts.SYSTEM }}</span>
-          </div>
-          <p class="text-[11px] mt-1 text-muted-foreground line-clamp-1 sm:line-clamp-none">
-            Super Admin & Nhân sự gắn Custom Role
-          </p>
-        </button>
-      </div>
-
-      <!-- Search & Action Toolbar -->
-      <div class="bg-card p-4 rounded-xl border border-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
-        <div class="flex-1 max-w-md">
-          <input
-            v-model="userSearchKeyword"
-            type="text"
-            data-testid="input-search-users"
-            placeholder="Tìm theo username, họ tên, email hoặc mã Role..."
-            class="w-full h-10 px-3.5 rounded-lg border border-input bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-          />
+    <!-- ================================================================= -->
+    <!-- TAB 1: USERS MANAGEMENT                                           -->
+    <!-- ================================================================= -->
+    <div v-if="activeTab === 'USERS'" class="space-y-4">
+      <!-- Toolbar & Category filters -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <Button
+            size="sm"
+            :variant="activeUserCategory === 'ALL' ? 'default' : 'outline'"
+            class="h-8 text-xs font-semibold"
+            data-testid="category-tab-ALL"
+            @click="handleCategoryChange('ALL')"
+          >
+            Tất cả
+          </Button>
+          <Button
+            size="sm"
+            :variant="activeUserCategory === 'CUSTOMER' ? 'default' : 'outline'"
+            class="h-8 text-xs font-semibold"
+            data-testid="category-tab-CUSTOMER"
+            @click="handleCategoryChange('CUSTOMER')"
+          >
+            Khách hàng
+          </Button>
+          <Button
+            size="sm"
+            :variant="activeUserCategory === 'OPERATOR' ? 'default' : 'outline'"
+            class="h-8 text-xs font-semibold"
+            data-testid="category-tab-OPERATOR"
+            @click="handleCategoryChange('OPERATOR')"
+          >
+            Chủ xe
+          </Button>
+          <Button
+            size="sm"
+            :variant="activeUserCategory === 'SYSTEM' ? 'default' : 'outline'"
+            class="h-8 text-xs font-semibold"
+            data-testid="category-tab-SYSTEM"
+            @click="handleCategoryChange('SYSTEM')"
+          >
+            Phía hệ thống
+          </Button>
         </div>
 
-        <div class="flex items-center gap-2 text-xs">
-          <span class="text-muted-foreground">Đang hiển thị: <strong class="text-foreground">{{ filteredUsers.length }}</strong> tài khoản</span>
-          <button
-            v-if="hasPermission('USER_CREATE_UPDATE_DELETE') && activeUserCategory !== 'ALL'"
-            type="button"
-            @click="openCreateUserModal(activeUserCategory)"
-            class="px-3 py-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs transition-all shadow-sm flex items-center gap-1.5"
+        <div class="flex items-center gap-2">
+          <div class="relative w-full sm:w-64">
+            <Search class="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              v-model="userSearchKeyword"
+              placeholder="Tìm username, email, họ tên..."
+              class="h-8 pl-8 text-xs"
+              data-testid="input-user-search"
+              @keydown.enter="handleSearchUsers"
+            />
+          </div>
+          <Button
+            v-if="hasPermission('USER_CREATE_UPDATE_DELETE')"
+            size="sm"
+            class="h-8 px-3 text-xs font-semibold gap-1 shadow-xs"
+            data-testid="btn-open-create-user"
+            @click="openCreateUserModal(null)"
           >
             <Plus class="w-3.5 h-3.5" />
-            <span>Thêm vào {{ getCategoryLabel(activeUserCategory) }}</span>
-          </button>
+            <span>Thêm</span>
+          </Button>
         </div>
       </div>
 
-      <!-- Users Table -->
-      <div class="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-        <div class="overflow-x-auto">
-          <table class="w-full min-w-[850px] text-left border-collapse text-xs">
-            <thead>
-              <tr class="bg-muted/50 border-b border-border text-muted-foreground uppercase tracking-wider text-[11px]">
-                <th class="py-3 px-4 font-semibold">Mã User</th>
-                <th class="py-3 px-4 font-semibold">Tài Khoản / Họ Tên</th>
-                <th class="py-3 px-4 font-semibold">Phân Mục</th>
-                <th class="py-3 px-4 font-semibold text-center w-56">Vai Trò RBAC (Gán / Đổi Role)</th>
-                <th class="py-3 px-4 font-semibold text-center">Trạng Thái</th>
-                <th class="py-3 px-4 font-semibold text-right">Thao Tác CRUD</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-border">
-              <tr v-for="u in filteredUsers" :key="u.id" class="hover:bg-muted/30 transition-colors">
-                <td class="py-3.5 px-4 font-bold text-primary tabular-nums">{{ u.id }}</td>
-                <td class="py-3.5 px-4">
-                  <span class="font-bold text-foreground block">{{ u.fullName }}</span>
-                  <span class="text-[11px] text-muted-foreground">@{{ u.username }} • {{ u.email }}</span>
-                </td>
-                <td class="py-3.5 px-4">
-                  <span
-                    class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold border"
-                    :class="getCategoryBadgeClass(u.category || getRoleInfo(u.role).category)"
-                  >
-                    {{ getCategoryLabel(u.category || getRoleInfo(u.role).category) }}
-                  </span>
-                </td>
-                <td class="py-3.5 px-4 text-center">
-                  <div class="inline-flex flex-col items-center gap-1 max-w-[200px]">
-                    <select
-                      v-if="hasPermission('USER_ROLE_ASSIGN') && !u.isSelf && (isSuperAdmin || u.role !== 'ROLE_ADMIN')"
-                      :value="u.role"
-                      :data-testid="`select-role-${u.id}`"
-                      @change="handleQuickRoleChange(u, $event.target.value)"
-                      class="w-full px-2 py-1 rounded-md border border-input text-xs font-semibold bg-background text-foreground focus:ring-2 focus:ring-ring cursor-pointer truncate"
-                    >
-                      <optgroup label="3. Phía hệ thống">
-                        <option
-                          v-for="r in systemRoles.filter(sr => sr.category === 'SYSTEM' && (isSuperAdmin || sr.code !== 'ROLE_ADMIN'))"
-                          :key="r.code"
-                          :value="r.code"
-                        >
-                          {{ r.name }} ({{ r.code }})
-                        </option>
-                      </optgroup>
-                      <optgroup label="2. Chủ xe">
-                        <option
-                          v-for="r in systemRoles.filter(sr => sr.category === 'OPERATOR')"
-                          :key="r.code"
-                          :value="r.code"
-                        >
-                          {{ r.name }} ({{ r.code }})
-                        </option>
-                      </optgroup>
-                      <optgroup label="1. Khách hàng">
-                        <option
-                          v-for="r in systemRoles.filter(sr => sr.category === 'CUSTOMER')"
-                          :key="r.code"
-                          :value="r.code"
-                        >
-                          {{ r.name }} ({{ r.code }})
-                        </option>
-                      </optgroup>
-                    </select>
-                    <span
-                      v-else
-                      class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-muted text-muted-foreground"
-                    >
-                      {{ u.role }}
-                    </span>
-                    <span class="text-[10px] text-muted-foreground truncate max-w-[180px]">{{ getRoleInfo(u.role).name }}</span>
-                  </div>
-                </td>
-                <td class="py-3.5 px-4 text-center">
-                  <StatusBadge :status="u.status" />
-                </td>
-                <td class="py-3.5 px-4 text-right space-x-1.5 whitespace-nowrap">
-                  <span
-                    v-if="u.isSelf"
-                    data-testid="self-admin-guard"
-                    class="text-[11px] font-semibold text-amber-700 bg-amber-50 dark:bg-amber-950/20 dark:text-amber-300 px-2.5 py-1 rounded border border-amber-200 dark:border-amber-800 inline-flex items-center gap-1"
-                  >
-                    <Shield class="w-3.5 h-3.5" />
-                    <span>Tài khoản hiện tại (Không thể tự khóa)</span>
-                  </span>
-                  <template v-else>
-                    <button
-                      v-if="hasPermission('USER_CREATE_UPDATE_DELETE')"
-                      type="button"
-                      :data-testid="`btn-edit-user-${u.id}`"
-                      @click="openEditUserModal(u)"
-                      class="px-2.5 py-1 rounded-md border border-border bg-background hover:bg-muted text-foreground font-semibold text-xs transition-all shadow-xs inline-flex items-center gap-1"
-                    >
-                      <Pencil class="w-3.5 h-3.5 text-muted-foreground" />
-                      <span>Sửa</span>
-                    </button>
+      <!-- Error State -->
+      <Alert v-if="usersError" variant="destructive">
+        <AlertCircle class="h-4 w-4" />
+        <AlertTitle>Lỗi tải danh sách người dùng</AlertTitle>
+        <AlertDescription class="flex items-center justify-between text-xs mt-1">
+          <span>{{ usersError }}</span>
+          <Button size="sm" variant="outline" class="h-6 px-2 text-xs bg-background text-foreground" @click="fetchUsers">
+            Thử lại
+          </Button>
+        </AlertDescription>
+      </Alert>
 
-                    <button
-                      v-if="hasPermission('USER_PASSWORD_RESET')"
-                      type="button"
-                      :data-testid="`reset-pwd-${u.id}`"
-                      @click="openResetPasswordModal(u)"
-                      class="px-2.5 py-1 rounded-md bg-sky-500/10 text-sky-700 dark:text-sky-300 hover:bg-sky-500/20 font-semibold text-xs transition-all border border-sky-500/30 shadow-xs inline-flex items-center gap-1"
-                    >
-                      <KeyRound class="w-3.5 h-3.5" />
-                      <span>Reset MK</span>
-                    </button>
-
-                    <button
-                      v-if="hasPermission('USER_STATUS_LOCK')"
-                      type="button"
-                      @click="toggleUserLock(u)"
-                      :data-testid="`btn-lock-${u.id}`"
-                      class="px-2.5 py-1 rounded-md font-semibold text-xs transition-all border shadow-xs inline-flex items-center gap-1"
-                      :class="u.status === 'ACTIVE' ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30 hover:bg-rose-500/20' : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/20'"
-                    >
-                      <Lock v-if="u.status === 'ACTIVE'" class="w-3.5 h-3.5" />
-                      <Unlock v-else class="w-3.5 h-3.5" />
-                      <span>{{ u.status === 'ACTIVE' ? 'Khóa Tài Khoản' : 'Mở Khóa' }}</span>
-                    </button>
-
-                    <button
-                      v-if="hasPermission('USER_CREATE_UPDATE_DELETE')"
-                      type="button"
-                      :data-testid="`btn-delete-user-${u.id}`"
-                      @click="handleDeleteUser(u)"
-                      class="px-2.5 py-1 rounded-md bg-destructive/10 hover:bg-destructive/20 text-destructive font-semibold text-xs transition-all border border-destructive/30 shadow-xs inline-flex items-center gap-1"
-                    >
-                      <Trash2 class="w-3.5 h-3.5" />
-                      <span>Xóa</span>
-                    </button>
-                  </template>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <!-- Users Reusable TanStack DataTable -->
+      <DataTable
+        :columns="userColumns"
+        :data="users"
+        :loading="isLoadingUsers"
+        :page-size="userPageSize"
+        :manual-pagination="true"
+        :page-index="userPage"
+        :page-count="userTotalPages"
+        :total-elements="userTotalElements"
+        :get-row-id="(row) => String(row.id || row.username)"
+        empty-text="Không tìm thấy người dùng nào phù hợp."
+        @update:page-index="onUserPageChange"
+      />
     </div>
 
-    <!-- =========================================================================
-         TAB 2: QUẢN LÝ ROLE HỆ THỐNG & MA TRẬN PHÂN QUYỀN 7 MODULES x 26 APIs
-         ========================================================================= -->
-    <div v-else-if="activeTab === 'ROLES' && hasPermission('ROLE_MANAGE_CRUD')" class="space-y-4">
-      <div class="bg-purple-500/10 border border-purple-500/20 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
-        <div class="space-y-1">
-          <h2 class="text-sm font-bold text-foreground flex items-center gap-2">
-            <Shield class="w-4 h-4 text-purple-600 dark:text-purple-400" />
-            <span>Phân Quyền Động Theo Ma Trận 7 Modules × 26 APIs (Dynamic Admin RBAC)</span>
+    <!-- ================================================================= -->
+    <!-- TAB 2: SYSTEM ROLES & 7x26 PERMISSION MATRIX                      -->
+    <!-- ================================================================= -->
+    <div v-if="activeTab === 'ROLES'" class="space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 class="text-sm font-bold text-foreground">
+            Phân Quyền Động Theo Ma Trận 7 Modules × 26 APIs
           </h2>
           <p class="text-xs text-muted-foreground">
-            Ngoài 3 Role mặc định (`ROLE_CUSTOMER`, `ROLE_OPERATOR`, `ROLE_ADMIN`), bạn có thể tạo thêm các Role tùy chỉnh cho nhân sự hệ thống và bấm <strong>"Xem thử giao diện với Role này"</strong> để kiểm chứng Sidebar & nút bấm co giãn tức thì.
+            Định nghĩa các Custom Role cho nhân viên hệ thống và cấu hình danh mục API truy cập an toàn.
           </p>
         </div>
 
-        <button
-          type="button"
+        <Button
+          v-if="hasPermission('ROLE_MANAGE_CRUD')"
+          size="sm"
+          class="h-8 px-3 text-xs font-semibold gap-1 shadow-xs self-start sm:self-auto"
           data-testid="btn-create-role-in-tab"
-          @click="openCreateRoleModal()"
-          class="self-start sm:self-auto px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs transition-all shadow-sm whitespace-nowrap flex items-center gap-1.5"
+          @click="openCreateRoleModal"
         >
           <Plus class="w-3.5 h-3.5" />
-          <span>Tạo Role Hệ Thống Mới</span>
-        </button>
+          <span>Tạo Role Mới</span>
+        </Button>
       </div>
 
-      <!-- Roles Cards Grid -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div
-          v-for="roleItem in systemRoles"
-          :key="roleItem.code"
-          :data-testid="`role-card-${roleItem.code}`"
-          class="bg-card rounded-xl border p-5 shadow-sm flex flex-col justify-between space-y-4 transition-all"
-          :class="previewRole?.code === roleItem.code ? 'border-2 border-amber-500 ring-2 ring-amber-200 dark:ring-amber-900/40' : 'border-border'"
+      <!-- Error Alert -->
+      <Alert v-if="rolesError" variant="destructive">
+        <AlertCircle class="h-4 w-4" />
+        <AlertTitle>Lỗi tải danh sách vai trò</AlertTitle>
+        <AlertDescription class="flex items-center justify-between text-xs mt-1">
+          <span>{{ rolesError }}</span>
+          <Button size="sm" variant="outline" class="h-6 px-2 text-xs bg-background text-foreground" @click="fetchRoles">
+            Thử lại
+          </Button>
+        </AlertDescription>
+      </Alert>
+
+      <!-- Roles Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <Card
+          v-for="role in systemRoles"
+          :key="role.code"
+          class="border-border bg-card shadow-xs flex flex-col justify-between"
+          :data-testid="`role-card-${role.code}`"
         >
-          <div class="space-y-2">
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <div class="flex items-center gap-2">
-                <span class="px-2.5 py-1 rounded-md font-mono font-extrabold text-xs bg-foreground text-background">
-                  {{ roleItem.code }}
-                </span>
-                <span
-                  class="px-2 py-0.5 rounded-full text-[10px] font-bold border"
-                  :class="getCategoryBadgeClass(roleItem.category)"
-                >
-                  {{ getCategoryLabel(roleItem.category) }}
-                </span>
-                <span
-                  v-if="roleItem.systemDefault"
-                  class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground border border-border"
-                >
-                  Mặc định gốc
-                </span>
+          <CardHeader class="pb-2">
+            <div class="flex items-start justify-between gap-2">
+              <div>
+                <CardTitle class="text-xs font-bold text-foreground font-mono">
+                  {{ role.code }}
+                </CardTitle>
+                <CardDescription class="text-xs font-semibold text-primary mt-0.5">
+                  {{ role.name }}
+                </CardDescription>
               </div>
+              <Badge
+                variant="outline"
+                :class="role.systemDefault ? 'border-primary/30 bg-primary/10 text-primary' : 'border-purple-500/30 bg-purple-500/10 text-purple-700 dark:text-purple-300'"
+                class="text-[10px] font-bold"
+              >
+                {{ role.systemDefault ? 'Mặc định' : 'Custom Role' }}
+              </Badge>
+            </div>
+          </CardHeader>
 
-              <span class="text-xs font-bold text-muted-foreground flex items-center gap-1">
-                <Users class="w-3.5 h-3.5" />
-                <span>{{ countUsersWithRole(roleItem.code) }} tài khoản</span>
-              </span>
+          <CardContent class="space-y-3 pt-0">
+            <p class="text-xs text-muted-foreground leading-relaxed line-clamp-2">
+              {{ role.description || 'Chưa có mô tả chi tiết cho vai trò này.' }}
+            </p>
+
+            <div class="text-[11px] text-muted-foreground flex items-center justify-between border-t border-border/50 pt-2">
+              <span>Quyền API: <strong>{{ role.permissions?.length || 0 }}/26</strong></span>
+              <span>Gán: <strong>{{ countUsersWithRole(role.code) }}</strong> user</span>
             </div>
 
-            <h3 class="text-base font-bold text-foreground">{{ roleItem.name }}</h3>
-            <p class="text-xs text-muted-foreground leading-relaxed">{{ roleItem.description }}</p>
+            <!-- Role Action Toolbar -->
+            <div class="flex items-center justify-between pt-1">
+              <Button
+                v-if="role.category === 'SYSTEM'"
+                variant="outline"
+                size="sm"
+                class="h-7 px-2 text-[11px] gap-1"
+                :data-testid="`preview-role-${role.code}`"
+                @click="handlePreviewRole(role)"
+              >
+                <Zap class="w-3 h-3 text-amber-500" />
+                <span>Xem thử</span>
+              </Button>
+              <div v-else />
 
-            <!-- Permissions summary for SYSTEM roles -->
-            <div v-if="roleItem.category === 'SYSTEM'" class="pt-2 space-y-2">
-              <div class="flex items-center justify-between text-xs">
-                <span class="font-semibold text-muted-foreground">Quyền hạn API Hệ thống (/admin):</span>
-                <span class="font-extrabold text-primary tabular-nums">
-                  {{ roleItem.permissions.length }} / 26 APIs
-                </span>
-              </div>
-
-              <div class="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-2 rounded-lg bg-muted/40 border border-border">
-                <span
-                  v-for="perm in roleItem.permissions.slice(0, 10)"
-                  :key="perm"
-                  class="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-background border border-border text-foreground"
+              <div v-if="!role.systemDefault" class="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  class="h-7 w-7 p-0"
+                  @click="openEditRoleModal(role)"
                 >
-                  {{ perm }}
-                </span>
-                <span
-                  v-if="roleItem.permissions.length > 10"
-                  class="px-2 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary"
+                  <Pencil class="h-3 w-3" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  class="h-7 w-7 p-0 text-destructive hover:bg-destructive/10"
+                  @click="openDeleteRoleModal(role)"
                 >
-                  +{{ roleItem.permissions.length - 10 }} API khác
-                </span>
-                <span v-if="roleItem.permissions.length === 0" class="text-[11px] text-destructive font-semibold">
-                  Chưa cấp quyền API nào (0/26)
-                </span>
+                  <Trash2 class="h-3 w-3" />
+                </Button>
               </div>
             </div>
-          </div>
-
-          <!-- Role Card Footer Actions -->
-          <div class="pt-3 border-t border-border flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <button
-                v-if="roleItem.category === 'SYSTEM'"
-                type="button"
-                :data-testid="`preview-role-${roleItem.code}`"
-                @click="previewRole?.code === roleItem.code ? stopRolePreview() : handlePreviewRole(roleItem)"
-                class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5"
-                :class="previewRole?.code === roleItem.code
-                  ? 'bg-foreground text-background hover:bg-foreground/90'
-                  : 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 hover:bg-amber-500/25'"
-              >
-                <Zap class="w-3.5 h-3.5" />
-                <span>{{ previewRole?.code === roleItem.code ? 'Thoát Xem Thử Role Này' : 'Xem Thử Giao Diện Với Role Này' }}</span>
-              </button>
-            </div>
-
-            <div class="flex items-center gap-2">
-              <button
-                v-if="!roleItem.systemDefault"
-                type="button"
-                :data-testid="`edit-role-${roleItem.code}`"
-                @click="openEditRoleModal(roleItem)"
-                class="px-3 py-1.5 rounded-lg border border-border hover:bg-muted text-foreground font-semibold text-xs transition-all flex items-center gap-1"
-              >
-                <Pencil class="w-3.5 h-3.5" />
-                <span>Sửa Quyền API</span>
-              </button>
-              <button
-                v-if="!roleItem.systemDefault && (isSuperAdmin || customRole !== roleItem.code)"
-                type="button"
-                :data-testid="`delete-role-${roleItem.code}`"
-                @click="handleDeleteRole(roleItem)"
-                class="px-3 py-1.5 rounded-lg bg-rose-500/15 text-rose-700 dark:text-rose-300 hover:bg-rose-500/25 font-semibold text-xs transition-all border border-rose-500/30 flex items-center gap-1"
-              >
-                <Trash2 class="w-3.5 h-3.5" />
-                <span>Xóa Role</span>
-              </button>
-            </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
 
-    <!-- =========================================================================
-         TAB 3: ĐƠN VÉ TOÀN SÀN & HOÀN TIỀN CƯỠNG CHẾ (ADMIN REFUND)
-         ========================================================================= -->
-    <div v-else-if="hasPermission('BOOKING_VIEW')" class="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-      <div class="overflow-x-auto">
-        <table class="w-full min-w-[850px] text-left border-collapse text-xs">
-          <thead>
-            <tr class="bg-muted/50 border-b border-border text-muted-foreground uppercase tracking-wider text-[11px]">
-              <th class="py-3 px-4 font-semibold">Mã Đơn Vé</th>
-              <th class="py-3 px-4 font-semibold">Hành Khách</th>
-              <th class="py-3 px-4 font-semibold">Chuyến Xe / Nhà Xe</th>
-              <th class="py-3 px-4 font-semibold text-center">Ghế</th>
-              <th class="py-3 px-4 font-semibold text-right">Tổng Tiền</th>
-              <th class="py-3 px-4 font-semibold text-center">Trạng Thái</th>
-              <th class="py-3 px-4 font-semibold text-right">Can Thiệp Quản Trị</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-border">
-            <tr v-for="b in allBookings" :key="b.id" class="hover:bg-muted/30 transition-colors">
-              <td class="py-3.5 px-4 font-bold text-primary tabular-nums">{{ b.id }}</td>
-              <td class="py-3.5 px-4">
-                <span class="font-bold text-foreground block">{{ b.customerName }}</span>
-                <span class="text-[11px] text-muted-foreground tabular-nums">{{ b.customerPhone }}</span>
-              </td>
-              <td class="py-3.5 px-4">
-                <span class="font-bold text-foreground block">{{ b.route }}</span>
-                <span class="text-[11px] text-muted-foreground">{{ b.operatorName }}</span>
-              </td>
-              <td class="py-3.5 px-4 text-center font-bold text-primary tabular-nums">{{ b.seats.join(', ') }}</td>
-              <td class="py-3.5 px-4 text-right font-extrabold text-foreground tabular-nums">
-                {{ b.totalAmount.toLocaleString('vi-VN') }} đ
-              </td>
-              <td class="py-3.5 px-4 text-center">
-                <StatusBadge :status="b.status" />
-              </td>
-              <td class="py-3.5 px-4 text-right">
-                <button
-                  v-if="b.status === 'CONFIRMED' && hasPermission('BOOKING_FORCE_REFUND')"
-                  type="button"
-                  @click="openRefundModal(b)"
-                  :data-testid="`btn-admin-refund-${b.id}`"
-                  class="px-3 py-1.5 bg-destructive hover:bg-destructive/90 text-destructive-foreground font-semibold rounded-lg text-xs transition-all shadow-sm inline-flex items-center gap-1.5"
-                >
-                  <Banknote class="w-3.5 h-3.5" />
-                  <span>Hoàn Tiền Cưỡng Chế</span>
-                </button>
-                <span v-else class="text-muted-foreground text-[11px]">
-                  {{ b.status === 'REFUNDED' ? 'Đã hoàn tiền' : (!hasPermission('BOOKING_FORCE_REFUND') ? 'Chỉ xem (Thiếu quyền hoàn vé)' : 'Không khả dụng') }}
-                </span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+    <!-- ================================================================= -->
+    <!-- TAB 3: BOOKINGS MANAGEMENT & ADMIN FORCED REFUND                  -->
+    <!-- ================================================================= -->
+    <div v-if="activeTab === 'BOOKINGS'" class="space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 class="text-sm font-bold text-foreground">
+            Danh Sách Đơn Vé Toàn Sàn & Hoàn Tiền Cưỡng Chế
+          </h2>
+          <p class="text-xs text-muted-foreground">
+            Tra cứu đơn vé của hành khách và thực thi lệnh hoàn tiền 100% khi có tranh chấp hoặc khiếu nại.
+          </p>
+        </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          class="h-8 px-3 text-xs font-semibold gap-1 shadow-xs self-start sm:self-auto"
+          :disabled="isLoadingBookings"
+          @click="fetchBookings"
+        >
+          <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': isLoadingBookings }" />
+          <span>Làm Mới</span>
+        </Button>
       </div>
+
+      <!-- Error State -->
+      <Alert v-if="bookingsError" variant="destructive">
+        <AlertCircle class="h-4 w-4" />
+        <AlertTitle>Lỗi tải danh sách đơn vé</AlertTitle>
+        <AlertDescription class="flex items-center justify-between text-xs mt-1">
+          <span>{{ bookingsError }}</span>
+          <Button size="sm" variant="outline" class="h-6 px-2 text-xs bg-background text-foreground" @click="fetchBookings">
+            Thử lại
+          </Button>
+        </AlertDescription>
+      </Alert>
+
+      <!-- Bookings Reusable TanStack DataTable -->
+      <DataTable
+        :columns="bookingColumns"
+        :data="allBookings"
+        :loading="isLoadingBookings"
+        :page-size="bookingPageSize"
+        :manual-pagination="true"
+        :page-index="bookingPage"
+        :page-count="bookingTotalPages"
+        :total-elements="bookingTotalElements"
+        :get-row-id="(row) => String(row.bookingReference || row.bookingId || row.id)"
+        empty-text="Hiện không có đơn vé nào trong hệ thống."
+        @update:page-index="onBookingPageChange"
+      />
     </div>
 
-    <!-- =========================================================================
-         MODAL 1: TẠO / SỬA NGƯỜI DÙNG (3 PHÂN MỤC & GÁN ROLE)
-         ========================================================================= -->
-    <div
-      v-if="isUserModalOpen"
-      class="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-    >
-      <div class="bg-card rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-border space-y-4">
-        <div class="flex items-center justify-between pb-2 border-b border-border">
-          <h3 class="text-base font-bold text-foreground">
-            {{ editingUser ? `Chỉnh Sửa Tài Khoản — @${editingUser.username}` : 'Tạo Tài Khoản Người Dùng Mới' }}
-          </h3>
-          <button type="button" @click="closeUserModal" class="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
-            <X class="w-4 h-4" />
-          </button>
-        </div>
+    <!-- ================================================================= -->
+    <!-- DIALOGS & ALERT DIALOGS                                            -->
+    <!-- ================================================================= -->
 
-        <div v-if="userFormError" class="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs font-semibold flex items-center gap-2">
-          <AlertTriangle class="w-4 h-4 flex-shrink-0" />
-          <span>{{ userFormError }}</span>
-        </div>
+    <!-- 1. Create/Edit User Dialog -->
+    <Dialog v-model:open="isUserModalOpen">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{{ editingUser ? 'Chỉnh Sửa Người Dùng' : 'Tạo Tài Khoản Mới' }}</DialogTitle>
+          <DialogDescription class="text-xs">
+            {{ editingUser ? 'Cập nhật thông tin hồ sơ và vai trò của người dùng.' : 'Điền đầy đủ thông tin để khởi tạo tài khoản trong hệ thống.' }}
+          </DialogDescription>
+        </DialogHeader>
 
-        <!-- Bước 1: Chọn 1 trong 3 Phân mục -->
-        <div class="space-y-1.5">
-          <label class="block text-xs font-bold text-foreground">Phân mục người dùng (3 Nhóm):</label>
-          <div class="grid grid-cols-3 gap-2">
-            <button
-              type="button"
-              @click="userForm.category = 'CUSTOMER'; onUserFormCategoryChange()"
-              class="py-2 px-2.5 rounded-lg border text-xs font-bold transition-all"
-              :class="userForm.category === 'CUSTOMER' ? 'bg-sky-700 text-white border-sky-700' : 'bg-muted/50 text-muted-foreground border-border'"
-            >
-              1. Khách hàng
-            </button>
-            <button
-              type="button"
-              @click="userForm.category = 'OPERATOR'; onUserFormCategoryChange()"
-              class="py-2 px-2.5 rounded-lg border text-xs font-bold transition-all"
-              :class="userForm.category === 'OPERATOR' ? 'bg-emerald-600/90 text-white border-emerald-600/90' : 'bg-muted/50 text-muted-foreground border-border'"
-            >
-              2. Chủ xe
-            </button>
-            <button
-              type="button"
-              @click="userForm.category = 'SYSTEM'; onUserFormCategoryChange()"
-              class="py-2 px-2.5 rounded-lg border text-xs font-bold transition-all"
-              :class="userForm.category === 'SYSTEM' ? 'bg-purple-800 text-white border-purple-800' : 'bg-muted/50 text-muted-foreground border-border'"
-            >
-              3. Phía hệ thống
-            </button>
-          </div>
-        </div>
+        <Alert v-if="userFormError" variant="destructive" class="py-2 text-xs">
+          <AlertCircle class="h-4 w-4" />
+          <AlertDescription>{{ userFormError }}</AlertDescription>
+        </Alert>
 
-        <!-- Bước 2: Chọn Role cụ thể trong phân mục -->
-        <FormField label="Vai trò (Role) được gán" required>
-          <select
-            v-model="userForm.role"
-            data-testid="modal-select-user-role"
-            class="w-full h-10 px-3 rounded-lg border border-input text-xs font-bold text-foreground bg-background focus:ring-2 focus:ring-ring"
-          >
-            <option
-              v-for="r in availableRolesForSelectedCategory.filter(sr => isSuperAdmin || sr.code !== 'ROLE_ADMIN')"
-              :key="r.code"
-              :value="r.code"
-            >
-              {{ r.code }} — {{ r.name }} {{ r.category === 'SYSTEM' ? `(${r.permissions.length}/26 APIs)` : '' }}
-            </option>
-          </select>
-        </FormField>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <form @submit.prevent="handleSaveUser" class="space-y-3 text-xs">
           <FormField label="Tên đăng nhập (Username)" required>
-            <input
+            <Input
               v-model="userForm.username"
-              type="text"
-              :disabled="Boolean(editingUser)"
-              data-testid="input-user-username"
-              placeholder="VD: ketoan02"
-              class="w-full h-10 px-3 rounded-lg border border-input text-xs text-foreground bg-background disabled:bg-muted focus:ring-2 focus:ring-ring"
+              :disabled="Boolean(editingUser) || isSavingUser"
+              placeholder="VD: nguyenan"
+              data-testid="input-username"
             />
           </FormField>
 
           <FormField label="Họ và tên" required>
-            <input
+            <Input
               v-model="userForm.fullName"
-              type="text"
-              data-testid="input-user-fullname"
-              placeholder="VD: Nguyễn Văn A"
-              class="w-full h-10 px-3 rounded-lg border border-input text-xs text-foreground bg-background focus:ring-2 focus:ring-ring"
-            />
-          </FormField>
-        </div>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <FormField label="Địa chỉ Email" required>
-            <input
-              v-model="userForm.email"
-              type="email"
-              data-testid="input-user-email"
-              placeholder="user@velobus.vn"
-              class="w-full h-10 px-3 rounded-lg border border-input text-xs text-foreground bg-background focus:ring-2 focus:ring-ring"
+              :disabled="isSavingUser"
+              placeholder="VD: Nguyễn Văn An"
+              data-testid="input-fullname"
             />
           </FormField>
 
-          <FormField label="Số điện thoại">
-            <input
-              v-model="userForm.phone"
-              type="text"
-              data-testid="input-user-phone"
-              placeholder="0901234567"
-              class="w-full h-10 px-3 rounded-lg border border-input text-xs text-foreground bg-background focus:ring-2 focus:ring-ring"
-            />
-          </FormField>
-        </div>
-
-        <FormField v-if="!editingUser" label="Mật khẩu khởi tạo" required>
-          <input
-            v-model="userForm.password"
-            type="password"
-            data-testid="input-user-password"
-            placeholder="Tối thiểu 6 ký tự..."
-            class="w-full h-10 px-3 rounded-lg border border-input text-xs text-foreground bg-background focus:ring-2 focus:ring-ring"
-          />
-        </FormField>
-
-        <div class="flex justify-end gap-3 pt-3 border-t border-border">
-          <button
-            type="button"
-            @click="closeUserModal"
-            class="px-4 py-2 border border-border hover:bg-muted text-muted-foreground text-xs font-semibold rounded-lg"
-          >
-            Hủy Bỏ
-          </button>
-          <Button
-            variant="default"
-            class="px-4 py-2 text-xs font-bold"
-            data-testid="btn-save-user"
-            @click="handleSaveUser"
-          >
-            {{ editingUser ? 'Lưu Cập Nhật' : 'Tạo Tài Khoản' }}
-          </Button>
-        </div>
-      </div>
-    </div>
-
-    <!-- =========================================================================
-         MODAL 2: ĐẶT LẠI MẬT KHẨU (RESET PASSWORD)
-         ========================================================================= -->
-    <div
-      v-if="userForPasswordReset"
-      class="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-    >
-      <div class="bg-card rounded-2xl max-w-md w-full p-6 shadow-2xl border border-border space-y-4">
-        <h3 class="text-base font-bold text-foreground flex items-center gap-2">
-          <KeyRound class="w-4 h-4 text-primary" />
-          <span>Đặt Lại Mật Khẩu — @{{ userForPasswordReset.username }}</span>
-        </h3>
-        <FormField label="Mật khẩu mới" :error="passwordResetError" required>
-          <input
-            v-model="newPasswordInput"
-            type="password"
-            data-testid="input-reset-password"
-            placeholder="Nhập mật khẩu mới (tối thiểu 6 ký tự)..."
-            class="w-full h-10 px-3 rounded-lg border border-input text-xs text-foreground bg-background focus:ring-2 focus:ring-ring"
-          />
-        </FormField>
-        <div class="flex justify-end gap-3 pt-2 border-t border-border">
-          <button
-            type="button"
-            @click="userForPasswordReset = null"
-            class="px-4 py-2 border border-border hover:bg-muted text-muted-foreground text-xs font-semibold rounded-lg"
-          >
-            Hủy Bỏ
-          </button>
-          <Button
-            variant="default"
-            class="px-4 py-2 text-xs font-bold"
-            data-testid="btn-confirm-reset-password"
-            @click="confirmResetPassword"
-          >
-            Xác Nhận Đổi Mật Khẩu
-          </Button>
-        </div>
-      </div>
-    </div>
-
-    <!-- =========================================================================
-         MODAL 3: TẠO / SỬA ROLE HỆ THỐNG & MA TRẬN 7 MODULES x 26 APIs (KIỂU 2)
-         ========================================================================= -->
-    <div
-      v-if="isRoleModalOpen"
-      class="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto"
-    >
-      <div class="bg-card rounded-2xl max-w-5xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-border overflow-hidden">
-        <!-- Modal Header -->
-        <div class="px-6 py-4 bg-muted/80 border-b border-border text-foreground flex items-center justify-between flex-shrink-0">
-          <div>
-            <h3 class="text-base font-bold">
-              {{ editingRole ? `Cấu Hình Ma Trận Phân Quyền API — ${editingRole.code}` : 'Tạo Role Hệ Thống Mới & Phân Quyền Ma Trận 7 Modules × 26 APIs' }}
-            </h3>
-            <p class="text-[11px] text-muted-foreground mt-0.5">
-              Tick chọn từng API endpoint trong từng Module mà bạn muốn cấp quyền cho Role này. Giao diện Sidebar và các nút CRUD sẽ tự động thay đổi theo các API đã chọn.
-            </p>
-          </div>
-          <button type="button" @click="closeRoleModal" class="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
-            <X class="w-4 h-4" />
-          </button>
-        </div>
-
-        <!-- Modal Scrollable Body -->
-        <div class="p-6 overflow-y-auto space-y-5 flex-1">
-          <div v-if="roleFormError" class="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs font-semibold flex items-center gap-2">
-            <AlertTriangle class="w-4 h-4 flex-shrink-0" />
-            <span>{{ roleFormError }}</span>
+          <div class="grid grid-cols-2 gap-2">
+            <FormField label="Email" required>
+              <Input
+                v-model="userForm.email"
+                type="email"
+                :disabled="isSavingUser"
+                placeholder="an@example.com"
+                data-testid="input-email"
+              />
+            </FormField>
+            <FormField label="Số điện thoại">
+              <Input
+                v-model="userForm.phone"
+                :disabled="isSavingUser"
+                placeholder="0912345678"
+                data-testid="input-phone"
+              />
+            </FormField>
           </div>
 
-          <!-- Role Basic Info -->
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-muted/40 p-4 rounded-xl border border-border">
-            <FormField label="Mã Role (Tự động chuẩn hóa ROLE_*)" required>
-              <input
+          <FormField v-if="!editingUser" label="Mật khẩu khởi tạo" required>
+            <PasswordInput
+              v-model="userForm.password"
+              :disabled="isSavingUser"
+              placeholder="Tối thiểu 6 ký tự"
+              data-testid="input-password"
+            />
+          </FormField>
+
+          <div class="grid grid-cols-2 gap-2">
+            <FormField label="Phân mục">
+              <select
+                v-model="userForm.category"
+                :disabled="isSavingUser"
+                class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-xs ring-offset-background"
+                @change="onUserFormCategoryChange"
+              >
+                <option value="CUSTOMER">Khách hàng</option>
+                <option value="OPERATOR">Chủ xe</option>
+                <option value="SYSTEM">Phía hệ thống</option>
+              </select>
+            </FormField>
+
+            <FormField label="Vai trò (Role)">
+              <select
+                v-model="userForm.role"
+                :disabled="isSavingUser"
+                class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-xs ring-offset-background"
+                data-testid="select-user-role"
+              >
+                <option v-for="r in availableRolesForSelectedCategory" :key="r.code" :value="r.code">
+                  {{ r.name }} ({{ r.code }})
+                </option>
+              </select>
+            </FormField>
+          </div>
+
+          <DialogFooter class="pt-3">
+            <Button type="button" variant="outline" :disabled="isSavingUser" @click="closeUserModal">
+              Hủy
+            </Button>
+            <Button type="submit" :disabled="isSavingUser" data-testid="btn-save-user" @click.prevent="handleSaveUser">
+              <RefreshCw v-if="isSavingUser" class="w-3.5 h-3.5 mr-1.5 animate-spin" />
+              <span>{{ isSavingUser ? 'Đang lưu...' : (editingUser ? 'Cập nhật' : 'Tạo mới') }}</span>
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+
+    <!-- 2. Reset Password Dialog -->
+    <Dialog v-model:open="isResetPasswordOpen">
+      <DialogContent class="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Đặt Lại Mật Khẩu</DialogTitle>
+          <DialogDescription class="text-xs">
+            Cấp mật khẩu mới cho tài khoản <strong class="text-foreground">@{{ userForPasswordReset?.username }}</strong>.
+          </DialogDescription>
+        </DialogHeader>
+
+        <Alert v-if="passwordResetError" variant="destructive" class="py-2 text-xs">
+          <AlertCircle class="h-4 w-4" />
+          <AlertDescription>{{ passwordResetError }}</AlertDescription>
+        </Alert>
+
+        <form @submit.prevent="handleConfirmResetPassword" class="space-y-3 text-xs">
+          <FormField label="Mật khẩu mới" required>
+            <PasswordInput
+              v-model="newPasswordInput"
+              :disabled="isResettingPassword"
+              placeholder="Tối thiểu 6 ký tự"
+              data-testid="input-new-password"
+            />
+          </FormField>
+
+          <DialogFooter class="pt-2">
+            <Button type="button" variant="outline" :disabled="isResettingPassword" @click="isResetPasswordOpen = false">
+              Hủy
+            </Button>
+            <Button type="submit" :disabled="isResettingPassword" data-testid="btn-confirm-reset-pwd" @click.prevent="handleConfirmResetPassword">
+              <RefreshCw v-if="isResettingPassword" class="w-3.5 h-3.5 mr-1.5 animate-spin" />
+              <span>Xác nhận</span>
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+
+    <!-- 3. Delete User AlertDialog -->
+    <AlertDialog v-model:open="isConfirmDeleteUserOpen">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle class="flex items-center gap-2">
+            <AlertTriangle class="w-5 h-5 text-destructive" />
+            <span>Xác nhận xóa người dùng</span>
+          </AlertDialogTitle>
+          <AlertDialogDescription class="text-xs mt-2">
+            Bạn có chắc chắn muốn xóa tài khoản <strong class="text-foreground">@{{ userToDelete?.username }}</strong>? Hành động này không thể hoàn tác.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel :disabled="isDeletingUser" @click="isConfirmDeleteUserOpen = false">Hủy</AlertDialogCancel>
+          <AlertDialogAction
+            :disabled="isDeletingUser"
+            class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            @click="confirmDeleteUser"
+          >
+            {{ isDeletingUser ? 'Đang xóa...' : 'Xác nhận xóa' }}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    <!-- 4. Create/Edit Role Dialog & Permission Matrix -->
+    <Dialog v-model:open="isRoleModalOpen">
+      <DialogContent class="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{{ editingRole ? `Sửa Vai Trò: ${editingRole.name}` : 'Tạo Role Mới' }}</DialogTitle>
+          <DialogDescription class="text-xs">
+            Cấu hình mã quyền và gán quyền chi tiết theo ma trận 7 Modules × 26 APIs.
+          </DialogDescription>
+        </DialogHeader>
+
+        <Alert v-if="roleFormError" variant="destructive" class="py-2 text-xs">
+          <AlertCircle class="h-4 w-4" />
+          <AlertDescription>{{ roleFormError }}</AlertDescription>
+        </Alert>
+
+        <form @submit.prevent="handleSaveRole" class="space-y-4 text-xs">
+          <div class="grid grid-cols-2 gap-3">
+            <FormField label="Mã Role (code)" required>
+              <Input
                 v-model="roleForm.code"
-                type="text"
-                :disabled="Boolean(editingRole)"
+                :disabled="Boolean(editingRole) || isSavingRole"
+                placeholder="VD: CONTENT_MOD"
                 data-testid="input-role-code"
-                placeholder="VD: ROLE_CONTENT_MOD"
-                class="w-full h-10 px-3 rounded-lg border border-input text-xs font-mono font-bold uppercase text-foreground bg-background disabled:bg-muted focus:ring-2 focus:ring-ring"
               />
             </FormField>
 
-            <FormField label="Tên hiển thị của Role" required>
-              <input
+            <FormField label="Tên hiển thị" required>
+              <Input
                 v-model="roleForm.name"
-                type="text"
+                :disabled="isSavingRole"
+                placeholder="VD: Kiểm Duyệt Nội Dung"
                 data-testid="input-role-name"
-                placeholder="VD: Kiểm Duyệt Nội Dung & Banner"
-                class="w-full h-10 px-3 rounded-lg border border-input text-xs font-bold text-foreground bg-background focus:ring-2 focus:ring-ring"
-              />
-            </FormField>
-
-            <FormField label="Mô tả chức năng nhiệm vụ">
-              <input
-                v-model="roleForm.description"
-                type="text"
-                data-testid="input-role-description"
-                placeholder="Mô tả phạm vi công việc của Role..."
-                class="w-full h-10 px-3 rounded-lg border border-input text-xs text-foreground bg-background focus:ring-2 focus:ring-ring"
               />
             </FormField>
           </div>
 
-          <!-- Quick Selection Toolbar -->
-          <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-border">
-            <div class="text-xs font-bold text-foreground">
-              Đã chọn: <span class="text-primary text-sm font-black tabular-nums">{{ roleForm.permissions.length }} / 26</span> quyền API
-            </div>
+          <FormField label="Mô tả chức năng">
+            <Input
+              v-model="roleForm.description"
+              :disabled="isSavingRole"
+              placeholder="Mô tả phạm vi trách nhiệm của vai trò này"
+            />
+          </FormField>
 
-            <div class="flex flex-wrap items-center gap-2">
-              <button
+          <!-- 7 Modules x 26 Permissions Matrix -->
+          <div class="space-y-3 border-t border-border pt-3">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-foreground">
+                Ma Trận Phân Quyền (Đã chọn: {{ roleForm.permissions.length }}/26 APIs)
+              </span>
+              <Button
                 type="button"
-                data-testid="btn-role-select-all"
-                @click="selectAll26Permissions"
-                class="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary font-bold text-xs transition-all border border-primary/20 flex items-center gap-1.5"
-              >
-                <Check class="w-3.5 h-3.5" />
-                <span>Chọn Toàn Bộ 26 APIs</span>
-              </button>
-              <button
-                type="button"
-                data-testid="btn-role-select-readonly"
-                @click="selectReadOnlyPermissions"
-                class="px-3 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-700 dark:text-sky-300 font-bold text-xs transition-all border border-sky-500/30 flex items-center gap-1.5"
-              >
-                <Shield class="w-3.5 h-3.5" />
-                <span>Chỉ Chọn Quyền Xem (Read-Only GET)</span>
-              </button>
-              <button
-                type="button"
+                variant="outline"
+                size="sm"
+                class="h-6 px-2 text-[11px]"
                 data-testid="btn-role-clear-all"
-                @click="clearAllPermissions"
-                class="px-3 py-1.5 rounded-lg bg-muted hover:bg-muted/80 text-muted-foreground font-semibold text-xs transition-all border border-border flex items-center gap-1.5"
+                @click="roleForm.permissions = []"
               >
-                <X class="w-3.5 h-3.5" />
-                <span>Bỏ Chọn Tất Cả</span>
-              </button>
+                Bỏ chọn tất cả
+              </Button>
             </div>
-          </div>
 
-          <!-- 7 Modules x 26 APIs Matrix -->
-          <div class="space-y-4">
-            <div
-              v-for="mod in permissionCatalog"
-              :key="mod.moduleCode"
-              class="rounded-xl border border-border overflow-hidden bg-card shadow-sm"
-            >
-              <!-- Module Header -->
-              <div class="px-4 py-3 bg-muted/40 border-b border-border flex flex-wrap items-center justify-between gap-2">
-                <div class="flex items-center gap-2.5">
-                  <span class="font-bold text-xs text-foreground">{{ mod.moduleName }}</span>
-                  <span class="text-[11px] font-mono text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20">
-                    Route: {{ mod.routePath }}
-                  </span>
+            <div class="space-y-3">
+              <div
+                v-for="mod in permissionCatalog"
+                :key="mod.moduleCode"
+                class="rounded-lg border border-border p-3 space-y-2 bg-muted/20"
+              >
+                <div class="flex items-center justify-between border-b border-border/50 pb-2">
+                  <span class="font-bold text-foreground text-xs">{{ mod.moduleName }}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    class="h-6 px-2 text-[11px]"
+                    :data-testid="`toggle-module-${mod.moduleCode}`"
+                    @click="toggleModulePermissions(mod)"
+                  >
+                    {{ isModuleFullySelected(mod) ? 'Bỏ chọn cả nhóm' : 'Chọn cả nhóm' }}
+                  </Button>
                 </div>
 
-                <button
-                  type="button"
-                  :data-testid="`toggle-module-${mod.moduleCode}`"
-                  @click="toggleWholeModule(mod)"
-                  class="px-2.5 py-1 rounded text-[11px] font-bold transition-all"
-                  :class="isModuleFullySelected(mod)
-                    ? 'bg-foreground text-background'
-                    : 'bg-background border border-border text-foreground hover:bg-muted'"
-                >
-                  {{ isModuleFullySelected(mod) ? 'Bỏ chọn Module này' : '+ Chọn cả Module (' + mod.permissions.length + ' APIs)' }}
-                </button>
-              </div>
-
-              <!-- Module APIs Table -->
-              <div class="divide-y divide-border">
-                <label
-                  v-for="perm in mod.permissions"
-                  :key="perm.code"
-                  class="px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-muted/30 cursor-pointer transition-colors"
-                >
-                  <div class="flex items-start gap-3">
-                    <input
-                      type="checkbox"
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                  <label
+                    v-for="perm in mod.permissions"
+                    :key="perm.code"
+                    class="flex items-start gap-2 p-1.5 rounded hover:bg-muted/40 cursor-pointer"
+                  >
+                    <Checkbox
                       :checked="roleForm.permissions.includes(perm.code)"
-                      :data-testid="`checkbox-perm-${perm.code}`"
-                      @change="togglePermissionInMatrix(mod, perm)"
-                      class="mt-0.5 w-4 h-4 rounded text-primary focus:ring-ring"
+                      @update:checked="togglePermission(perm.code)"
                     />
-                    <div>
-                      <div class="flex flex-wrap items-center gap-2">
-                        <span class="font-bold text-xs text-foreground">{{ perm.name }}</span>
-                        <span class="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                          {{ perm.code }}
-                        </span>
-                        <span
-                          v-if="perm.viewPermission"
-                          class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30"
-                        >
-                          Quyền Mở Menu Sidebar
-                        </span>
-                      </div>
-                      <p class="text-[11px] text-muted-foreground mt-0.5">{{ perm.description }}</p>
+                    <div class="space-y-0.5">
+                      <span class="font-medium text-foreground block">{{ perm.name }}</span>
+                      <span class="font-mono text-[10px] text-muted-foreground block">{{ perm.code }}</span>
                     </div>
-                  </div>
-
-                  <div class="flex items-center gap-2 sm:justify-end pl-7 sm:pl-0 flex-shrink-0">
-                    <span
-                      class="px-2 py-0.5 rounded text-[10px] font-mono font-extrabold border"
-                      :class="getHttpMethodBadgeClass(perm.httpMethod)"
-                    >
-                      {{ perm.httpMethod }}
-                    </span>
-                    <code class="text-[11px] font-mono text-foreground bg-muted px-2 py-0.5 rounded">
-                      {{ perm.apiPattern }}
-                    </code>
-                  </div>
-                </label>
+                  </label>
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- Modal Footer -->
-        <div class="px-6 py-4 bg-muted/40 border-t border-border flex items-center justify-between flex-shrink-0">
-          <span class="text-xs text-muted-foreground">
-            Khi lưu, cả Backend (`AdminApiPermissionFilter`) và Frontend sẽ áp dụng ngay ma trận quyền này.
-          </span>
-          <div class="flex items-center gap-3">
-            <button
-              type="button"
-              @click="closeRoleModal"
-              class="px-4 py-2 border border-border hover:bg-muted text-muted-foreground text-xs font-semibold rounded-lg"
-            >
-              Hủy Bỏ
-            </button>
-            <Button
-              variant="default"
-              class="px-5 py-2 text-xs font-bold"
-              data-testid="btn-save-role"
-              @click="handleSaveRole"
-            >
-              {{ editingRole ? 'Lưu Phân Quyền Role' : 'Tạo Role & Lưu Ma Trận API' }}
+          <DialogFooter class="pt-3">
+            <Button type="button" variant="outline" :disabled="isSavingRole" @click="isRoleModalOpen = false">
+              Hủy
             </Button>
-          </div>
-        </div>
-      </div>
-    </div>
+            <Button type="submit" :disabled="isSavingRole" data-testid="btn-save-role" @click.prevent="handleSaveRole">
+              <RefreshCw v-if="isSavingRole" class="w-3.5 h-3.5 mr-1.5 animate-spin" />
+              <span>{{ isSavingRole ? 'Đang lưu...' : 'Lưu Thay Đổi' }}</span>
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
 
-    <!-- =========================================================================
-         MODAL 4: LỆNH HOÀN TIỀN CƯỠNG CHẾ (ADMIN FORCED REFUND)
-         ========================================================================= -->
-    <div
-      v-if="selectedBookingForRefund"
-      class="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-    >
-      <div class="bg-card rounded-2xl max-w-md w-full p-6 shadow-2xl border border-border space-y-4">
-        <h3 class="text-base font-bold text-destructive flex items-center gap-2">
-          <AlertTriangle class="w-4 h-4 flex-shrink-0" />
-          <span>Lệnh Hoàn Tiền Cưỡng Chế — {{ selectedBookingForRefund.id }}</span>
-        </h3>
-
-        <div class="bg-muted/40 p-3 rounded-lg border border-border text-xs text-muted-foreground space-y-1">
-          <p>Hành khách: <strong class="text-foreground">{{ selectedBookingForRefund.customerName }}</strong></p>
-          <p>Số tiền hoàn trả 100%: <strong class="text-destructive tabular-nums">{{ selectedBookingForRefund.totalAmount.toLocaleString('vi-VN') }} đ</strong></p>
-          <p class="text-[11px] text-muted-foreground">Hệ thống sẽ khấu trừ lại từ ví ký quỹ của nhà xe {{ selectedBookingForRefund.operatorName }} và giải phóng ghế trên Redis.</p>
-        </div>
-
-        <FormField
-          label="Lý do hoàn tiền cưỡng chế (Ghi nhận vào Audit Log)"
-          :error="refundError"
-          required
-        >
-          <textarea
-            v-model="refundReasonInput"
-            rows="3"
-            data-testid="input-refund-reason"
-            placeholder="Ví dụ: Nhà xe hủy chuyến đột xuất do sự cố kỹ thuật, hoàn 100% cho khách..."
-            class="w-full p-3 rounded-lg border border-input text-xs text-foreground bg-background placeholder:text-muted-foreground focus:ring-2 focus:ring-ring resize-none"
-            :class="{ 'border-destructive': refundError }"
-          ></textarea>
-        </FormField>
-
-        <div class="flex justify-end gap-3 pt-2 border-t border-border">
-          <button
-            type="button"
-            @click="closeRefundModal"
-            class="px-4 py-2 border border-border hover:bg-muted text-muted-foreground text-xs font-semibold rounded-lg"
+    <!-- 5. Delete Role AlertDialog -->
+    <AlertDialog v-model:open="isConfirmDeleteRoleOpen">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle class="flex items-center gap-2">
+            <AlertTriangle class="w-5 h-5 text-destructive" />
+            <span>Xác nhận xóa vai trò</span>
+          </AlertDialogTitle>
+          <AlertDialogDescription class="text-xs mt-2">
+            Bạn có chắc chắn muốn xóa Role <strong class="text-foreground font-mono">{{ roleToDelete?.code }}</strong>? Thao tác này sẽ xóa vĩnh viễn cấu hình phân quyền của Role này.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel :disabled="isDeletingRole" @click="isConfirmDeleteRoleOpen = false">Hủy</AlertDialogCancel>
+          <AlertDialogAction
+            :disabled="isDeletingRole"
+            class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            @click="confirmDeleteRole"
           >
-            Hủy Bỏ
-          </button>
+            {{ isDeletingRole ? 'Đang xóa...' : 'Xác nhận xóa' }}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
 
-          <Button
-            variant="destructive"
-            class="px-4 py-2 text-xs font-bold"
-            data-testid="btn-confirm-refund"
-            @click="confirmAdminRefund"
-          >
-            Xác Nhận Hoàn Tiền
-          </Button>
+    <!-- 6. Admin Forced Refund Dialog (Section 5) -->
+    <Dialog v-model:open="isRefundModalOpen">
+      <DialogContent class="sm:max-w-md">
+        <div data-testid="dialog-refund" class="space-y-4">
+        <DialogHeader>
+          <DialogTitle class="flex items-center gap-2 text-destructive">
+            <Banknote class="w-5 h-5" />
+            <span>Lệnh Hoàn Tiền Cưỡng Chế 100% (Admin Force Refund)</span>
+          </DialogTitle>
+          <DialogDescription class="text-xs space-y-2 mt-2">
+            <p>
+              Đơn vé: <strong class="text-foreground font-mono">{{ selectedBookingForRefund?.bookingReference || selectedBookingForRefund?.id }}</strong>
+            </p>
+            <p>
+              Số tiền hoàn: <strong class="text-destructive font-mono text-sm">{{ formatVnd(selectedBookingForRefund?.totalAmount) }} đ (100%)</strong>
+            </p>
+            <p class="text-muted-foreground">
+              Lệnh này sẽ hoàn tiền 100% về tài khoản của hành khách, thu hồi số dư tương ứng từ ví ký quỹ Escrow của nhà xe, và ghi nhận kiểm toán bắt buộc.
+            </p>
+          </DialogDescription>
+        </DialogHeader>
+
+        <Alert v-if="refundError" variant="destructive" class="py-2 text-xs">
+          <AlertCircle class="h-4 w-4" />
+          <AlertDescription>{{ refundError }}</AlertDescription>
+        </Alert>
+
+        <form @submit.prevent="confirmAdminRefund" class="space-y-3 text-xs">
+          <FormField label="Lý do hoàn tiền kiểm toán (Audit Reason)" required>
+            <Textarea
+              v-model="refundReasonInput"
+              :disabled="isRefunding"
+              placeholder="Nhập lý do chi tiết (tối thiểu 10 ký tự, tối đa 255 ký tự)..."
+              :rows="3"
+              data-testid="input-refund-reason"
+            />
+          </FormField>
+
+          <DialogFooter class="pt-2">
+            <Button type="button" variant="outline" :disabled="isRefunding" @click="isRefundModalOpen = false">
+              Hủy bỏ
+            </Button>
+            <Button
+              type="submit"
+              variant="destructive"
+              :disabled="isRefunding"
+              data-testid="btn-confirm-refund"
+              @click.prevent="confirmAdminRefund"
+            >
+              <RefreshCw v-if="isRefunding" class="w-3.5 h-3.5 mr-1.5 animate-spin" />
+              <span>{{ isRefunding ? 'Đang thực thi...' : 'Xác Nhận Hoàn Tiền' }}</span>
+            </Button>
+          </DialogFooter>
+        </form>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

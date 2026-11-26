@@ -47,6 +47,8 @@ const props = withDefaults(
     getRowId?: (row: TData, index: number) => string
     manualPagination?: boolean
     pageCount?: number
+    pageIndex?: number
+    totalElements?: number
   }>(),
   {
     pageSize: 5,
@@ -54,13 +56,16 @@ const props = withDefaults(
     error: null,
     emptyText: 'Không tìm thấy dữ liệu phù hợp.',
     density: 'default',
-    manualPagination: false
+    manualPagination: false,
+    pageIndex: 0
   }
 )
 
 const emits = defineEmits<{
   (e: 'update:selection', rows: TData[]): void
   (e: 'row-click', row: TData): void
+  (e: 'update:pageIndex', page: number): void
+  (e: 'page-change', page: number): void
 }>()
 
 const sorting = ref<SortingState>([])
@@ -190,16 +195,80 @@ watch(
 )
 
 const currentPageIndex = computed(() => {
+  if (props.manualPagination && props.pageIndex !== undefined) {
+    return props.pageIndex
+  }
   return (table.atoms?.pagination as any)?.value?.pageIndex ?? 0
 })
 
 const totalPages = computed(() => {
+  if (props.manualPagination && props.pageCount !== undefined) {
+    return Math.max(1, props.pageCount)
+  }
   return Math.max(1, table.getPageCount())
 })
 
 const totalRowCount = computed(() => {
+  if (props.manualPagination && props.totalElements !== undefined) {
+    return props.totalElements
+  }
   return table.getFilteredRowModel().rows.length
 })
+
+const canPreviousPage = computed(() => {
+  if (props.manualPagination) {
+    return (props.pageIndex ?? 0) > 0
+  }
+  return table.getCanPreviousPage()
+})
+
+const canNextPage = computed(() => {
+  if (props.manualPagination) {
+    const count = props.pageCount ?? 1
+    return (props.pageIndex ?? 0) + 1 < count
+  }
+  return table.getCanNextPage()
+})
+
+function handleFirstPage() {
+  if (props.manualPagination) {
+    emits('update:pageIndex', 0)
+    emits('page-change', 0)
+  } else {
+    table.firstPage()
+  }
+}
+
+function handlePreviousPage() {
+  if (props.manualPagination) {
+    const prev = Math.max(0, (props.pageIndex ?? 0) - 1)
+    emits('update:pageIndex', prev)
+    emits('page-change', prev)
+  } else {
+    table.previousPage()
+  }
+}
+
+function handleNextPage() {
+  if (props.manualPagination) {
+    const maxPage = Math.max(0, (props.pageCount ?? 1) - 1)
+    const next = Math.min(maxPage, (props.pageIndex ?? 0) + 1)
+    emits('update:pageIndex', next)
+    emits('page-change', next)
+  } else {
+    table.nextPage()
+  }
+}
+
+function handleLastPage() {
+  if (props.manualPagination) {
+    const last = Math.max(0, (props.pageCount ?? 1) - 1)
+    emits('update:pageIndex', last)
+    emits('page-change', last)
+  } else {
+    table.lastPage()
+  }
+}
 
 const selectedCount = computed(() => {
   return table.getSelectedRowModel().rows.length
@@ -313,9 +382,10 @@ defineExpose({
           variant="outline"
           size="sm"
           class="h-8 w-8 p-0"
-          :disabled="!table.getCanPreviousPage()"
+          :disabled="!canPreviousPage"
           title="Trang đầu"
-          @click="table.firstPage()"
+          data-testid="pagination-first"
+          @click="handleFirstPage"
         >
           <ChevronsLeft class="h-3.5 w-3.5" />
         </Button>
@@ -323,8 +393,9 @@ defineExpose({
           variant="outline"
           size="sm"
           class="h-8 px-2.5 text-xs gap-1"
-          :disabled="!table.getCanPreviousPage()"
-          @click="table.previousPage()"
+          :disabled="!canPreviousPage"
+          data-testid="pagination-prev"
+          @click="handlePreviousPage"
         >
           <ChevronLeft class="h-3.5 w-3.5" />
           <span>Trước</span>
@@ -333,8 +404,9 @@ defineExpose({
           variant="outline"
           size="sm"
           class="h-8 px-2.5 text-xs gap-1"
-          :disabled="!table.getCanNextPage()"
-          @click="table.nextPage()"
+          :disabled="!canNextPage"
+          data-testid="pagination-next"
+          @click="handleNextPage"
         >
           <span>Sau</span>
           <ChevronRight class="h-3.5 w-3.5" />
@@ -343,9 +415,10 @@ defineExpose({
           variant="outline"
           size="sm"
           class="h-8 w-8 p-0"
-          :disabled="!table.getCanNextPage()"
+          :disabled="!canNextPage"
           title="Trang cuối"
-          @click="table.lastPage()"
+          data-testid="pagination-last"
+          @click="handleLastPage"
         >
           <ChevronsRight class="h-3.5 w-3.5" />
         </Button>
