@@ -109,6 +109,55 @@ describe('Operator Portal Views & Business Logic Tests (Phase FE-02)', () => {
 
       expect(wrapper.text()).toContain('vượt quá số dư khả dụng')
     })
+
+    it('renders dash instead of fabricated zero when withdrawals API fails', async () => {
+      vi.spyOn(partnerApi, 'getWithdrawals').mockRejectedValue(new Error('Withdrawal service down'))
+      const wrapper = mount(OperatorDashboardView, {
+        global: {
+          stubs: {
+            StatusBadge: true
+          }
+        }
+      })
+      await flushPromises()
+
+      const totalWithdrawnCard = wrapper.find('[data-testid="total-withdrawn"]')
+      expect(totalWithdrawnCard.exists()).toBe(true)
+      expect(totalWithdrawnCard.text()).toBe('—')
+    })
+
+    it('blocks withdrawal when operator has an active debt balance', async () => {
+      vi.spyOn(partnerApi, 'getWallet').mockResolvedValue({
+        success: true,
+        message: 'Wallet with debt',
+        data: {
+          id: 1,
+          operatorId: 10,
+          availableBalance: 42500000,
+          pendingSettlementBalance: 0,
+          lockedBalance: 0,
+          debtBalance: 1500000,
+          currency: 'VND'
+        }
+      })
+      const wrapper = mount(OperatorDashboardView, {
+        global: {
+          stubs: {
+            StatusBadge: true
+          }
+        }
+      })
+      await flushPromises()
+
+      const openBtn = wrapper.find('[data-testid="btn-open-withdraw"]')
+      await openBtn.trigger('click')
+
+      const submitBtn = wrapper.find('[data-testid="btn-submit-withdraw"]')
+      await submitBtn.trigger('click')
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('Không thể tạo lệnh rút khi đang có khoản dư nợ đối soát')
+    })
   })
 
   describe('FleetAndDriversView.vue', () => {

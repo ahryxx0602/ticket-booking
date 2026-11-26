@@ -63,9 +63,11 @@ const transactionsError = ref(null)
 const transactionsList = ref([])
 
 const isLoadingWithdrawals = ref(false)
+const withdrawalsError = ref(null)
 const withdrawalsList = ref([])
 
 const totalWithdrawn = computed(() => {
+  if (isLoadingWithdrawals.value || withdrawalsError.value) return null
   if (!withdrawalsList.value || withdrawalsList.value.length === 0) return 0
   return withdrawalsList.value
     .filter(w => w.status === 'APPROVED')
@@ -136,12 +138,16 @@ async function fetchTransactions() {
 
 async function fetchWithdrawals() {
   isLoadingWithdrawals.value = true
+  withdrawalsError.value = null
   try {
     const res = await partnerApi.getWithdrawals()
     const items = res?.data || res || []
     withdrawalsList.value = Array.isArray(items) ? items : []
-  } catch (_) {
+    return { success: true, items: withdrawalsList.value }
+  } catch (err) {
+    withdrawalsError.value = err?.message || 'Không thể tải danh sách lệnh rút tiền từ máy chủ Backend'
     withdrawalsList.value = []
+    return { success: false, error: withdrawalsError.value }
   } finally {
     isLoadingWithdrawals.value = false
   }
@@ -162,6 +168,7 @@ async function fetchDashboardData() {
 }
 
 onMounted(() => {
+  restoreUnknownWithdrawOutcome()
   fetchDashboardData()
 })
 
@@ -173,6 +180,7 @@ const isConfirmWithdrawOpen = ref(false)
 const isSubmittingWithdraw = ref(false)
 const isUnknownOutcome = ref(false)
 const isVerifyingWalletState = ref(false)
+const pendingMutationContext = ref(null)
 
 const withdrawAmount = ref(1000000)
 const withdrawBank = ref('Vietcombank')
@@ -180,11 +188,66 @@ const withdrawAccountNumber = ref('')
 const withdrawAccountHolder = ref('')
 const withdrawError = ref('')
 
+function getUnknownWithdrawStorageKey() {
+  const opId = walletData.value?.operatorId || 'default'
+  return `velobus_unknown_withdraw_${opId}`
+}
+
+function restoreUnknownWithdrawOutcome() {
+  try {
+    const key = getUnknownWithdrawStorageKey()
+    const stored = sessionStorage.getItem(key)
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      if (parsed && typeof parsed === 'object') {
+        isUnknownOutcome.value = true
+        pendingMutationContext.value = parsed
+        withdrawError.value = 'Hệ thống phát hiện lệnh rút tiền trước đó chưa xác định kết quả do mất kết nối mạng / timeout. Hệ thống đã KHÓA gửi lại để phòng ngừa tạo nhiều lệnh rút trùng lặp. Vui lòng bấm "Kiểm tra trạng thái ví" để đối soát.'
+      }
+    }
+  } catch (_) {}
+}
+
+function recordUnknownOutcome(payload, customReason) {
+  isUnknownOutcome.value = true
+  const context = {
+    operatorId: walletData.value?.operatorId || null,
+    amount: Number(payload.amount),
+    bankName: payload.bankName,
+    maskedAccount: maskAccountNumber(payload.accountNumber),
+    accountHolderName: payload.accountHolderName,
+    timestamp: Date.now()
+  }
+  pendingMutationContext.value = context
+  const prefix = customReason ? `${customReason} ` : 'Yêu cầu rút tiền bị mất kết nối mạng hoặc quá hạn phản hồi (Network Timeout). '
+  withdrawError.value = `${prefix}Kết quả tại máy chủ chưa xác định, hệ thống đã KHÓA gửi lại để phòng ngừa tạo nhiều lệnh rút trùng lặp. Vui lòng bấm "Kiểm tra trạng thái ví" để đối soát.`
+
+  try {
+    const key = getUnknownWithdrawStorageKey()
+    sessionStorage.setItem(key, JSON.stringify(context))
+  } catch (_) {}
+}
+
+function clearUnknownOutcome() {
+  isUnknownOutcome.value = false
+  pendingMutationContext.value = null
+  withdrawError.value = ''
+  try {
+    const key = getUnknownWithdrawStorageKey()
+    sessionStorage.removeItem(key)
+  } catch (_) {}
+}
+
 function openWithdrawModal() {
   if (!isUnknownOutcome.value) {
     withdrawError.value = ''
-    const avail = Number(availableBalance.value) || 0
-    withdrawAmount.value = avail >= 100000 ? Math.min(10000000, avail) : 100000
+    const debt = Number(debtBalance.value) || 0
+    if (debt > 0) {
+      withdrawError.value = `Không thể tạo lệnh rút khi đang có khoản dư nợ đối soát (${formatCurrency(debt)} đ)`
+    } else {
+      const avail = Number(availableBalance.value) || 0
+      withdrawAmount.value = avail >= 100000 ? Math.min(10000000, avail) : 100000
+    }
   }
   showWithdrawDialog.value = true
 }
@@ -253,18 +316,47 @@ async function confirmWithdrawSubmit() {
     const res = await partnerApi.requestWithdrawal(payload)
     const data = res?.data || res
 
+    // PRE-02: Strict response shape & semantics validation
+    if (!data || typeof data !== 'object') {
+      recordUnknownOutcome(payload, 'Máy chủ trả về phản hồi không hợp lệ cho lệnh rút tiền (Malformed WithdrawalResponse).')
+      throw new Error('Malformed WithdrawalResponse')
+    }
+
+    if (!data.id || !data.status) {
+      recordUnknownOutcome(payload, 'Phản hồi rút tiền từ máy chủ thiếu mã định danh (id) hoặc trạng thái (status).')
+      throw new Error('Incomplete WithdrawalResponse')
+    }
+
+    if (data.amount !== undefined && Number(data.amount) !== Number(payload.amount)) {
+      recordUnknownOutcome(payload, 'Số tiền máy chủ ghi nhận không khớp với số tiền đã yêu cầu rút.')
+      throw new Error('Withdrawal amount mismatch')
+    }
+
+    const statusText = data.status === 'PENDING'
+      ? 'Đang chờ Admin duyệt chi (Trạng thái: PENDING)'
+      : data.status === 'APPROVED'
+        ? 'Đã được phê duyệt giải ngân (Trạng thái: APPROVED)'
+        : data.status === 'REJECTED'
+          ? 'Đã bị từ chối (Trạng thái: REJECTED)'
+          : `Trạng thái: ${data.status}`
+
     toast.success('Gửi yêu cầu rút tiền thành công!', {
-      description: `Đã tạo lệnh rút ${formatCurrency(payload.amount)} đ về ${payload.bankName}. Lệnh đang chờ Admin duyệt chi (Trạng thái: PENDING).`
+      description: `Đã tạo lệnh rút #${data.id} số tiền ${formatCurrency(data.amount || payload.amount)} đ về ${data.bankName || payload.bankName}. ${statusText}.`
     })
 
+    // Mutation succeeded: clean up form and outcome
+    clearUnknownOutcome()
     isConfirmWithdrawOpen.value = false
     showWithdrawDialog.value = false
-    isUnknownOutcome.value = false
     withdrawAccountNumber.value = ''
     withdrawAccountHolder.value = ''
 
-    // Refetch authoritative backend data (No optimistic updates)
-    await fetchDashboardData()
+    // Refetch authoritative backend data (Differentiate mutation success from refetch failure)
+    try {
+      await fetchDashboardData()
+    } catch (_) {
+      toast.warning('Lệnh rút tiền đã thành công nhưng không thể tự động làm mới số dư ví. Vui lòng bấm "Làm Mới".')
+    }
   } catch (err) {
     isConfirmWithdrawOpen.value = false
     const errMsg = err?.message || ''
@@ -276,11 +368,15 @@ async function confirmWithdrawSubmit() {
       errMsg.toLowerCase().includes('timeout') ||
       errMsg.toLowerCase().includes('kết nối') ||
       err?.name === 'TimeoutError' ||
-      errMsg.includes('chưa xác định')
+      errMsg.includes('chưa xác định') ||
+      errMsg.includes('Malformed') ||
+      errMsg.includes('Incomplete') ||
+      errMsg.includes('mismatch')
 
     if (isTimeoutOrNetwork) {
-      isUnknownOutcome.value = true
-      withdrawError.value = 'Yêu cầu rút tiền bị mất kết nối mạng hoặc quá hạn phản hồi (Network Timeout). Kết quả tại máy chủ chưa xác định, hệ thống đã KHÓA gửi lại để phòng ngừa tạo nhiều lệnh rút trùng lặp. Vui lòng bấm "Kiểm tra trạng thái ví" để đối soát.'
+      if (!isUnknownOutcome.value) {
+        recordUnknownOutcome(payload)
+      }
     } else {
       withdrawError.value = errMsg || 'Máy chủ từ chối yêu cầu rút tiền'
     }
@@ -292,17 +388,49 @@ async function confirmWithdrawSubmit() {
 async function verifyWalletServerState() {
   isVerifyingWalletState.value = true
   try {
-    await fetchDashboardData()
-    const recentPending = withdrawalsList.value.find(w => w.status === 'PENDING')
-    if (recentPending) {
-      toast.info(`Máy chủ đã ghi nhận lệnh rút #${recentPending.id} số tiền ${formatCurrency(recentPending.amount)} đ (PENDING).`)
-      isUnknownOutcome.value = false
-      showWithdrawDialog.value = false
+    const [wRes, _] = await Promise.all([
+      fetchWithdrawals(),
+      fetchWallet()
+    ])
+
+    // PRE-01: Verification failure MUST preserve unknown outcome lock!
+    if (!wRes.success) {
+      toast.error('Không thể kết nối đến máy chủ để xác minh danh sách lệnh rút. Tiếp tục KHÓA thao tác để đảm bảo an toàn.')
       return
     }
-    isUnknownOutcome.value = false
+
+    const ctx = pendingMutationContext.value
+    // Check if withdrawalsList has a matching item (amount & bankName)
+    const matched = withdrawalsList.value.find(w => {
+      if (!ctx) return false
+      const amountMatches = Number(w.amount) === Number(ctx.amount)
+      const bankMatches = !ctx.bankName || (w.bankName && w.bankName.toLowerCase().trim() === ctx.bankName.toLowerCase().trim())
+      return amountMatches && bankMatches
+    })
+
+    if (matched) {
+      if (matched.status === 'PENDING') {
+        toast.info(`Máy chủ đã ghi nhận lệnh rút #${matched.id} số tiền ${formatCurrency(matched.amount)} đ (PENDING). Lệnh đang chờ Admin duyệt chi.`)
+        clearUnknownOutcome()
+        showWithdrawDialog.value = false
+        return
+      } else if (matched.status === 'APPROVED') {
+        toast.success(`Máy chủ xác nhận lệnh rút #${matched.id} (${formatCurrency(matched.amount)} đ) đã được PHÊ DUYỆT (APPROVED).`)
+        clearUnknownOutcome()
+        showWithdrawDialog.value = false
+        return
+      } else if (matched.status === 'REJECTED') {
+        toast.error(`Máy chủ xác nhận lệnh rút #${matched.id} đã bị TỪ CHỐI (REJECTED): ${matched.adminNote || 'Không có lý do chi tiết'}.`)
+        clearUnknownOutcome()
+        showWithdrawDialog.value = false
+        return
+      }
+    }
+
+    // No matching withdrawal found: authoritative empty or unrelated records
+    clearUnknownOutcome()
     withdrawError.value = ''
-    toast.success('Máy chủ xác nhận chưa có lệnh rút nào được tạo. Đã mở khóa cho phép gửi lại.')
+    toast.success('Máy chủ xác nhận chưa có lệnh rút nào được tạo cho yêu cầu này. Đã mở khóa cho phép gửi lại.')
   } catch (err) {
     toast.error('Lỗi khi kiểm tra trạng thái máy chủ: ' + (err?.message || ''))
   } finally {
@@ -431,6 +559,7 @@ const transactionColumns = [
           type="button"
           @click="openWithdrawModal"
           data-testid="btn-open-withdraw"
+          :disabled="isLoadingWallet || !!walletError || !walletData"
           class="self-start sm:self-auto px-4 py-2 text-xs font-semibold gap-2 shadow-xs"
         >
           <ArrowDownLeft class="w-4 h-4" />
@@ -545,7 +674,15 @@ const transactionColumns = [
             :class="debtBalance && Number(debtBalance) > 0 ? 'text-destructive' : 'text-foreground'"
             data-testid="total-withdrawn"
           >
-            {{ debtBalance && Number(debtBalance) > 0 ? `-${formatCurrency(debtBalance)}` : formatCurrency(totalWithdrawn) }}<span class="text-xs font-bold ml-1" :class="debtBalance && Number(debtBalance) > 0 ? 'text-destructive' : 'text-muted-foreground'">đ</span>
+            <template v-if="debtBalance && Number(debtBalance) > 0">
+              -{{ formatCurrency(debtBalance) }}<span class="text-xs font-bold ml-1 text-destructive">đ</span>
+            </template>
+            <template v-else-if="totalWithdrawn !== null">
+              {{ formatCurrency(totalWithdrawn) }}<span class="text-xs font-bold ml-1 text-muted-foreground">đ</span>
+            </template>
+            <template v-else>
+              <span class="text-muted-foreground font-normal text-xl">—</span>
+            </template>
           </p>
           <p class="text-[11px] text-muted-foreground">
             {{ debtBalance && Number(debtBalance) > 0 ? 'Tự động cấn trừ khi có dòng tiền mới' : 'Lũy kế giải ngân thành công từ khi mở sàn' }}
@@ -704,7 +841,7 @@ const transactionColumns = [
                 type="submit"
                 size="sm"
                 data-testid="btn-submit-withdraw"
-                :disabled="isSubmittingWithdraw || isUnknownOutcome || isVerifyingWalletState"
+                :disabled="isSubmittingWithdraw || isUnknownOutcome || isVerifyingWalletState || !availableBalance || availableBalance < 100000 || (debtBalance && Number(debtBalance) > 0)"
                 class="text-xs font-semibold shadow-xs"
                 @click.prevent="handleOpenConfirmDialog"
               >

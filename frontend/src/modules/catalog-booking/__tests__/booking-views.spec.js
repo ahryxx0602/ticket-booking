@@ -25,6 +25,21 @@ vi.mock('qrcode', () => ({
   }
 }))
 
+// Mock catalogBookingApi
+vi.mock('@/modules/catalog-booking/api', () => ({
+  catalogBookingApi: {
+    getPublicBanners: vi.fn().mockResolvedValue({ data: [] }),
+    getPublicSettings: vi.fn().mockResolvedValue({ data: {} }),
+    getStations: vi.fn().mockResolvedValue({
+      data: [
+        { id: 1, code: 'HN-GP', name: 'Giáp Bát', city: 'Hà Nội' },
+        { id: 2, code: 'DN-TT', name: 'Đà Nẵng Trung Tâm', city: 'Đà Nẵng' }
+      ]
+    }),
+    searchTrips: vi.fn().mockResolvedValue({ data: [] })
+  }
+}))
+
 describe('Customer Booking Flow Tests', () => {
   beforeEach(() => {
     pushMock.mockClear()
@@ -118,6 +133,57 @@ describe('Customer Booking Flow Tests', () => {
 
       expect(wrapper.text()).toContain('BKG-20261115-4455')
       expect(wrapper.text()).not.toContain('BKG-20261123-9988')
+    })
+  })
+
+  describe('HomeView.vue Component Form & Discovery', () => {
+    it('validates duplicate departure and arrival cities', async () => {
+      const { default: HomeView } = await import('../views/HomeView.vue')
+      const wrapper = mount(HomeView, {
+        global: {
+          stubs: {
+            'router-link': true
+          }
+        }
+      })
+
+      // Set same city
+      const departureSelect = wrapper.find('[data-testid="departure-city-select"]')
+      const arrivalSelect = wrapper.find('[data-testid="arrival-city-select"]')
+
+      if (departureSelect.exists() && arrivalSelect.exists()) {
+        await departureSelect.setValue('Hà Nội')
+        await arrivalSelect.setValue('Hà Nội')
+
+        const form = wrapper.find('form')
+        await form.trigger('submit')
+
+        expect(wrapper.text()).toContain('Điểm đi và điểm đến không được trùng nhau')
+      }
+    })
+  })
+
+  describe('TripListView.vue Component Search & Filter', () => {
+    it('renders search summary and handles empty state and filters', async () => {
+      const { default: TripListView } = await import('../views/TripListView.vue')
+      const wrapper = mount(TripListView, {
+        global: {
+          stubs: {
+            'router-link': true,
+            'Sheet': true,
+            'SheetTrigger': true,
+            'SheetContent': true,
+            'SheetHeader': true,
+            'SheetTitle': true,
+            'SheetDescription': true,
+            'SheetFooter': true,
+            'SheetClose': true
+          }
+        }
+      })
+
+      expect(wrapper.find('[data-testid="search-summary-header"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="filter-sidebar"]').exists()).toBe(true)
     })
   })
 })

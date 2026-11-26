@@ -6,10 +6,11 @@ import { loginAsRole } from './helpers/auth'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-const screenshotDir = path.resolve(__dirname, '../../docs/frontend-v2/screenshots-gate-b4')
+const closureScreenshotDir = path.resolve(__dirname, '../../docs/frontend-v2/screenshots-gate-b4-closure')
+const screenshotDir = closureScreenshotDir
 
-if (!fs.existsSync(screenshotDir)) {
-  fs.mkdirSync(screenshotDir, { recursive: true })
+if (!fs.existsSync(closureScreenshotDir)) {
+  fs.mkdirSync(closureScreenshotDir, { recursive: true })
 }
 
 // ---------------------------------------------------------------------------
@@ -336,31 +337,41 @@ test.describe('Gate B4: Controlled Operator Pilot & Financial Contract Integrati
     await expect(drawer).toBeVisible()
 
     // Toggle Dark Mode
-    const darkBtn = drawer.locator('button:has-text("Tối")')
+    const darkBtn = drawer.getByRole('button', { name: 'Tối', exact: true })
     await darkBtn.click()
     await expect(page.locator('html')).toHaveClass(/dark/)
+
+    // Toggle Compact Density directly (non-conditional, strict assertion)
+    const compactOpt = drawer.locator('[data-testid="density-compact"]')
+    await expect(compactOpt).toBeVisible()
+    await compactOpt.click()
+    await expect(page.locator('html')).toHaveAttribute('data-density', 'compact')
+
+    // Close drawer before taking Dark Mode screenshot per PRE-05
+    await drawer.locator('button[aria-label="Đóng tùy biến"]').click()
+    await expect(drawer).toHaveCount(0)
+
+    // Capture dark mode screenshot with drawer closed
     await page.screenshot({
-      path: path.join(screenshotDir, 'operator-dashboard-desktop-dark.png'),
+      path: path.join(closureScreenshotDir, 'operator-dashboard-desktop-dark.png'),
       fullPage: false
     })
 
-    // Toggle Compact Density
-    const compactOpt = drawer.locator('text=Thu gọn')
-    if (await compactOpt.isVisible()) {
-      await compactOpt.click()
-      await page.screenshot({
-        path: path.join(screenshotDir, 'operator-compact-density.png'),
-        fullPage: false
-      })
-    }
+    // Capture compact density screenshot
+    await page.screenshot({
+      path: path.join(closureScreenshotDir, 'operator-compact-density.png'),
+      fullPage: false
+    })
 
-    // Toggle Custom Primary Theme
-    const emeraldOpt = drawer.locator('button:has-text("Ngọc Lục Bảo"), button:has-text("Xanh Lá"), [title*="Emerald"]').first()
+    // Reopen customizer to toggle theme color
+    await customizerBtn.click()
+    await expect(drawer).toBeVisible()
+    const emeraldOpt = drawer.locator('button[title*="Green"], button[title*="Emerald"]').first()
     if (await emeraldOpt.isVisible()) {
       await emeraldOpt.click()
     }
     await page.screenshot({
-      path: path.join(screenshotDir, 'operator-custom-primary-theme.png'),
+      path: path.join(closureScreenshotDir, 'operator-custom-primary-theme.png'),
       fullPage: false
     })
 
@@ -646,5 +657,323 @@ test.describe('Gate B4: Controlled Operator Pilot & Financial Contract Integrati
 
     // Unlocks when server state is verified
     await expect(submitBtn).toBeEnabled()
+  })
+
+  // B4-11: Withdrawal Verification API Failure — Preserves Unknown Outcome Lock
+  test('B4-11: Withdrawal Flow — Verification API Failure Maintains Lock', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await setupOperatorMocks(page, { withdrawTimeout: true })
+    await loginAsRole(page, 'ROLE_OPERATOR', 'operator1')
+
+    await page.goto('/operator')
+    await page.waitForLoadState('networkidle')
+
+    await page.locator('[data-testid="btn-open-withdraw"]').click()
+    await page.locator('[data-testid="input-withdraw-amount"]').fill('5000000')
+    await page.locator('[data-testid="input-withdraw-bank"]').fill('Vietcombank')
+    await page.locator('[data-testid="input-withdraw-account-number"]').fill('0071001234567')
+    await page.locator('[data-testid="input-withdraw-account-holder"]').fill('CONG TY HOANG LONG')
+    await page.locator('[data-testid="btn-submit-withdraw"]').click()
+    await page.locator('[data-testid="btn-confirm-withdraw-action"]').click()
+    await page.waitForTimeout(300)
+
+    const dialog = page.locator('[role="dialog"]')
+    const submitBtn = page.locator('[data-testid="btn-submit-withdraw"]')
+    await expect(dialog).toBeVisible()
+    await expect(submitBtn).toBeDisabled()
+
+    // Mock withdrawals verification API to fail (500 Error)
+    await page.route('**/api/v1/partners/wallet/withdrawals*', async (route) => {
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 'DATABASE_TIMEOUT', message: 'Không thể truy vấn cơ sở dữ liệu' })
+      })
+    })
+
+    const verifyBtn = page.locator('[data-testid="btn-verify-wallet-state"]')
+    await verifyBtn.click()
+    await page.waitForTimeout(300)
+
+    // Verification failed: LOCK MUST STILL BE PRESERVED!
+    await expect(submitBtn).toBeDisabled()
+    await expect(dialog).toContainText('KHÓA gửi lại')
+  })
+
+  // B4-12: Unrelated Older PENDING Withdrawal — Does Not Match Timeout Context
+  test('B4-12: Withdrawal Flow — Unrelated Older Pending Withdrawal Does Not Clear Lock', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await setupOperatorMocks(page, { withdrawTimeout: true })
+    await loginAsRole(page, 'ROLE_OPERATOR', 'operator1')
+
+    // Mock withdrawals to have an unrelated pending withdrawal for 120,000,000 (different amount)
+    await page.route('**/api/v1/partners/wallet/withdrawals*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 88,
+            operatorId: 10,
+            amount: 120000000,
+            bankName: 'Techcombank',
+            accountNumber: '1903001234567',
+            accountHolderName: 'CONG TY KHAC',
+            status: 'PENDING',
+            createdAt: '2026-11-10T10:00:00'
+          }
+        ])
+      })
+    })
+
+    await page.goto('/operator')
+    await page.waitForLoadState('networkidle')
+
+    await page.locator('[data-testid="btn-open-withdraw"]').click()
+    await page.locator('[data-testid="input-withdraw-amount"]').fill('5000000')
+    await page.locator('[data-testid="input-withdraw-bank"]').fill('Vietcombank')
+    await page.locator('[data-testid="input-withdraw-account-number"]').fill('0071001234567')
+    await page.locator('[data-testid="input-withdraw-account-holder"]').fill('CONG TY HOANG LONG')
+    await page.locator('[data-testid="btn-submit-withdraw"]').click()
+    await page.locator('[data-testid="btn-confirm-withdraw-action"]').click()
+    await page.waitForTimeout(300)
+
+    const dialog = page.locator('[role="dialog"]')
+    await expect(dialog).toBeVisible()
+
+    const verifyBtn = page.locator('[data-testid="btn-verify-wallet-state"]')
+    await verifyBtn.click()
+    await page.waitForTimeout(300)
+
+    // Unrelated withdrawal is ignored; server confirms no matching withdrawal for 5,000,000
+    const submitBtn = page.locator('[data-testid="btn-submit-withdraw"]')
+    await expect(submitBtn).toBeEnabled()
+  })
+
+  // B4-13: Matched Withdrawal Transitioned to APPROVED or REJECTED
+  test('B4-13: Withdrawal Flow — Matched Status Transition Cleans Up Modal', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await setupOperatorMocks(page, { withdrawTimeout: true })
+    await loginAsRole(page, 'ROLE_OPERATOR', 'operator1')
+
+    await page.goto('/operator')
+    await page.waitForLoadState('networkidle')
+
+    await page.locator('[data-testid="btn-open-withdraw"]').click()
+    await page.locator('[data-testid="input-withdraw-amount"]').fill('5000000')
+    await page.locator('[data-testid="input-withdraw-bank"]').fill('Vietcombank')
+    await page.locator('[data-testid="input-withdraw-account-number"]').fill('0071001234567')
+    await page.locator('[data-testid="input-withdraw-account-holder"]').fill('CONG TY HOANG LONG')
+    await page.locator('[data-testid="btn-submit-withdraw"]').click()
+    await page.locator('[data-testid="btn-confirm-withdraw-action"]').click()
+    await page.waitForTimeout(300)
+
+    // Re-mock withdrawals to return the matched withdrawal with status REJECTED
+    await page.route('**/api/v1/partners/wallet/withdrawals*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 99,
+            operatorId: 10,
+            amount: 5000000,
+            bankName: 'Vietcombank',
+            accountNumber: '0071001234567',
+            accountHolderName: 'CONG TY HOANG LONG',
+            status: 'REJECTED',
+            adminNote: 'Thông tin tài khoản ngân hàng không hợp lệ',
+            createdAt: '2026-11-26T11:00:00'
+          }
+        ])
+      })
+    })
+
+    const verifyBtn = page.locator('[data-testid="btn-verify-wallet-state"]')
+    await verifyBtn.click()
+    await page.waitForTimeout(300)
+
+    // Handled rejected status: closes modal cleanly
+    const dialog = page.locator('[role="dialog"]')
+    await expect(dialog).toHaveCount(0)
+  })
+
+  // B4-14: Malformed Mutation Response triggers Unknown Outcome Guard
+  test('B4-14: Withdrawal Flow — Malformed Response Triggers Guard Lock', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await setupOperatorMocks(page)
+    await loginAsRole(page, 'ROLE_OPERATOR', 'operator1')
+
+    // Return empty malformed response object without id or status
+    await page.route('**/api/v1/partners/wallet/withdraw', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: {} })
+      })
+    })
+
+    await page.goto('/operator')
+    await page.waitForLoadState('networkidle')
+
+    await page.locator('[data-testid="btn-open-withdraw"]').click()
+    await page.locator('[data-testid="input-withdraw-amount"]').fill('2000000')
+    await page.locator('[data-testid="input-withdraw-bank"]').fill('Vietcombank')
+    await page.locator('[data-testid="input-withdraw-account-number"]').fill('0071001234567')
+    await page.locator('[data-testid="input-withdraw-account-holder"]').fill('CONG TY HOANG LONG')
+    await page.locator('[data-testid="btn-submit-withdraw"]').click()
+    await page.locator('[data-testid="btn-confirm-withdraw-action"]').click()
+    await page.waitForTimeout(300)
+
+    const dialog = page.locator('[role="dialog"]')
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toContainText('KHÓA gửi lại')
+  })
+
+  // B4-15: Duplicate Submission Count — Only 1 POST Sent
+  test('B4-15: Withdrawal Flow — Duplicate Submission Only Sends 1 POST Request', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await setupOperatorMocks(page)
+    await loginAsRole(page, 'ROLE_OPERATOR', 'operator1')
+
+    let postCount = 0
+    await page.route('**/api/v1/partners/wallet/withdraw', async (route) => {
+      postCount++
+      await new Promise(r => setTimeout(r, 200))
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 101,
+          operatorId: 10,
+          amount: 2000000,
+          bankName: 'Vietcombank',
+          accountNumber: '0071001234567',
+          accountHolderName: 'CONG TY HOANG LONG',
+          status: 'PENDING'
+        })
+      })
+    })
+
+    await page.goto('/operator')
+    await page.waitForLoadState('networkidle')
+
+    await page.locator('[data-testid="btn-open-withdraw"]').click()
+    await page.locator('[data-testid="input-withdraw-amount"]').fill('2000000')
+    await page.locator('[data-testid="input-withdraw-bank"]').fill('Vietcombank')
+    await page.locator('[data-testid="input-withdraw-account-number"]').fill('0071001234567')
+    await page.locator('[data-testid="input-withdraw-account-holder"]').fill('CONG TY HOANG LONG')
+    await page.locator('[data-testid="btn-submit-withdraw"]').click()
+
+    const confirmBtn = page.locator('[data-testid="btn-confirm-withdraw-action"]')
+    await expect(confirmBtn).toBeVisible()
+    await confirmBtn.click()
+
+    await page.waitForTimeout(500)
+    expect(postCount).toBe(1)
+  })
+
+  // B4-16: Cancel Dialog does not send POST request
+  test('B4-16: Withdrawal Flow — Cancel Confirmation Does Not Send POST', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await setupOperatorMocks(page)
+    await loginAsRole(page, 'ROLE_OPERATOR', 'operator1')
+
+    let postCalled = false
+    await page.route('**/api/v1/partners/wallet/withdraw', async (route) => {
+      postCalled = true
+      await route.abort()
+    })
+
+    await page.goto('/operator')
+    await page.waitForLoadState('networkidle')
+
+    await page.locator('[data-testid="btn-open-withdraw"]').click()
+    await page.locator('[data-testid="input-withdraw-amount"]').fill('2000000')
+    await page.locator('[data-testid="input-withdraw-bank"]').fill('Vietcombank')
+    await page.locator('[data-testid="input-withdraw-account-number"]').fill('0071001234567')
+    await page.locator('[data-testid="input-withdraw-account-holder"]').fill('CONG TY HOANG LONG')
+    await page.locator('[data-testid="btn-submit-withdraw"]').click()
+
+    // Click Cancel in AlertDialog
+    const cancelBtn = page.locator('button:has-text("Quay lại")')
+    await expect(cancelBtn).toBeVisible()
+    await cancelBtn.click()
+    await page.waitForTimeout(200)
+
+    expect(postCalled).toBe(false)
+  })
+
+  // B4-17: Wallet Unavailable Disables Open Withdrawal Button
+  test('B4-17: Wallet Summary — Wallet Error Disables Withdrawal Button', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await setupOperatorMocks(page, { walletFail: true })
+    await loginAsRole(page, 'ROLE_OPERATOR', 'operator1')
+
+    await page.goto('/operator')
+    await page.waitForLoadState('networkidle')
+
+    const openBtn = page.locator('[data-testid="btn-open-withdraw"]')
+    await expect(openBtn).toBeDisabled()
+  })
+
+  // B4-18: Valid Zero vs API Failure Rendering
+  test('B4-18: Fintech Cards — Valid Zero Is Distinct From API Failure', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await setupOperatorMocks(page, { availableBalance: 0, debtBalance: 0 })
+    await loginAsRole(page, 'ROLE_OPERATOR', 'operator1')
+
+    await page.goto('/operator')
+    await page.waitForLoadState('networkidle')
+
+    const availCard = page.locator('[data-testid="available-balance"]')
+    await expect(availCard).toContainText('0')
+    await expect(availCard).not.toContainText('—')
+  })
+
+  // B4-19: Mutation Success + Refetch Failure
+  test('B4-19: Withdrawal Flow — Mutation Success with Subsequent Refetch Failure', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await setupOperatorMocks(page)
+    await loginAsRole(page, 'ROLE_OPERATOR', 'operator1')
+
+    // Withdraw POST succeeds
+    await page.route('**/api/v1/partners/wallet/withdraw', async (route) => {
+      // Then subsequent GET wallet will fail
+      await page.route('**/api/v1/partners/wallet', async (wRoute) => {
+        if (wRoute.request().method() === 'GET') {
+          await wRoute.fulfill({ status: 500, contentType: 'application/json', body: '{"code":"ERROR"}' })
+        }
+      })
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 555,
+          operatorId: 10,
+          amount: 2000000,
+          bankName: 'Vietcombank',
+          accountNumber: '0071001234567',
+          accountHolderName: 'CONG TY HOANG LONG',
+          status: 'PENDING'
+        })
+      })
+    })
+
+    await page.goto('/operator')
+    await page.waitForLoadState('networkidle')
+
+    await page.locator('[data-testid="btn-open-withdraw"]').click()
+    await page.locator('[data-testid="input-withdraw-amount"]').fill('2000000')
+    await page.locator('[data-testid="input-withdraw-bank"]').fill('Vietcombank')
+    await page.locator('[data-testid="input-withdraw-account-number"]').fill('0071001234567')
+    await page.locator('[data-testid="input-withdraw-account-holder"]').fill('CONG TY HOANG LONG')
+    await page.locator('[data-testid="btn-submit-withdraw"]').click()
+    await page.locator('[data-testid="btn-confirm-withdraw-action"]').click()
+    await page.waitForTimeout(400)
+
+    // Modal closes because mutation succeeded
+    const dialog = page.locator('[role="dialog"]')
+    await expect(dialog).toHaveCount(0)
   })
 })

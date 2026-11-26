@@ -944,8 +944,8 @@ test.describe('Gate B3 Final: Contract & Acceptance Tests', () => {
     let refundExecuted = false
     await page.route('**/api/v1/admin/bookings/BKG-20261123-9988/refund', async (route) => {
       refundExecuted = true
-      // Update local fixture
-      dynamicBookings[0].status = 'REFUNDED'
+      // Update local fixture to authoritative domain status CANCELLED
+      dynamicBookings[0].status = 'CANCELLED'
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -954,7 +954,7 @@ test.describe('Gate B3 Final: Contract & Acceptance Tests', () => {
           message: 'Booking refunded successfully',
           data: {
             bookingReference: 'BKG-20261123-9988',
-            status: 'REFUNDED',
+            status: 'CANCELLED',
             refundPercentage: 100,
             refundAmount: 700000,
             paymentRefunded: true
@@ -978,8 +978,8 @@ test.describe('Gate B3 Final: Contract & Acceptance Tests', () => {
     expect(refundExecuted).toBe(true)
     await expect(page.locator('[data-testid="dialog-refund"]')).toHaveCount(0)
 
-    // Table reflects authoritative state: status is REFUNDED
-    await expect(page.locator('tbody').getByText('REFUNDED', { exact: true })).toBeVisible()
+    // Table reflects authoritative state: status is CANCELLED (domain status from Booking.java)
+    await expect(page.locator('tbody').getByText('CANCELLED', { exact: true })).toBeVisible()
 
     // Capture required evidence: refund-confirmed-success.png
     await page.screenshot({
@@ -1267,7 +1267,7 @@ test.describe('Gate B3 Final: Contract & Acceptance Tests', () => {
     await expect(drawer).toBeVisible()
 
     // Toggle Dark Mode
-    const darkBtn = drawer.locator('button:has-text("Tối")')
+    const darkBtn = drawer.getByRole('button', { name: 'Tối', exact: true })
     await darkBtn.click()
     await expect(page.locator('html')).toHaveClass(/dark/)
     await page.screenshot({

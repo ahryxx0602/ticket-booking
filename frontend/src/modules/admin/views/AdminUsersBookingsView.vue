@@ -1147,7 +1147,7 @@ const bookingColumns = [
       }
 
       if (!isEligible) {
-        return h('div', { class: 'text-right text-[11px] text-muted-foreground' }, b.status === 'REFUNDED' ? 'Đã hoàn tiền' : 'Không khả dụng')
+        return h('div', { class: 'text-right text-[11px] text-muted-foreground' }, b.status === 'CANCELLED' ? 'Đã hủy / Hoàn tiền' : 'Không khả dụng')
       }
 
       return h(

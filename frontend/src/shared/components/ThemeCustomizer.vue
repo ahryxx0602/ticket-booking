@@ -338,12 +338,16 @@ function handleReset() {
           <!-- 4. Density -->
           <div class="space-y-2">
             <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Mật độ hiển thị (Density)</label>
-            <div class="space-y-1.5">
-              <div
+            <div class="space-y-1.5" role="radiogroup" aria-label="Mật độ hiển thị">
+              <button
                 v-for="den in densityOptions"
                 :key="den.value"
+                type="button"
+                role="radio"
+                :aria-checked="draftTheme.density === den.value"
+                :data-testid="'density-' + den.value"
                 :class="[
-                  'p-2.5 rounded-lg border text-xs cursor-pointer transition-all flex items-start gap-3',
+                  'w-full text-left p-2.5 rounded-lg border text-xs cursor-pointer transition-all flex items-start gap-3',
                   draftTheme.density === den.value
                     ? 'border-primary bg-primary/5 ring-1 ring-primary/30'
                     : 'border-border hover:bg-muted/50'
@@ -352,7 +356,7 @@ function handleReset() {
               >
                 <div
                   :class="[
-                    'mt-0.5 h-3.5 w-3.5 rounded-full border flex items-center justify-center',
+                    'mt-0.5 h-3.5 w-3.5 rounded-full border flex items-center justify-center flex-shrink-0',
                     draftTheme.density === den.value ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground'
                   ]"
                 >
@@ -362,7 +366,7 @@ function handleReset() {
                   <div class="font-medium text-foreground">{{ den.label }}</div>
                   <div class="text-[11px] text-muted-foreground">{{ den.desc }}</div>
                 </div>
-              </div>
+              </button>
             </div>
           </div>
 
