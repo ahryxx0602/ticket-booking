@@ -193,6 +193,22 @@ function handleCategoryChange(cat) {
 // =========================================================================
 // 2. REAL API SYSTEM ROLES & 7x26 PERMISSION MATRIX
 // =========================================================================
+function validatePermissionCatalog(cat) {
+  if (!Array.isArray(cat) || cat.length !== 7) return false
+  const uniquePerms = new Set()
+  for (const m of cat) {
+    if (!m || typeof m.moduleCode !== 'string' || !m.moduleCode) return false
+    if (!m || typeof m.moduleName !== 'string' || !m.moduleName) return false
+    if (!Array.isArray(m.permissions) || m.permissions.length === 0) return false
+    for (const p of m.permissions) {
+      if (!p || typeof p.code !== 'string' || !p.code) return false
+      if (typeof p.name !== 'string' || !p.name) return false
+      uniquePerms.add(p.code)
+    }
+  }
+  return uniquePerms.size === 26
+}
+
 const permissionCatalog = ref(ADMIN_PERMISSION_MODULES)
 const systemRoles = ref([])
 const isLoadingRoles = ref(false)
@@ -202,12 +218,15 @@ async function fetchRoles() {
   isLoadingRoles.value = true
   rolesError.value = null
 
-  // 1. Fetch catalog
+  // 1. Fetch catalog with contract validation
   try {
     const catRes = await adminApi.getPermissionsCatalog()
     const cat = catRes?.data || catRes
-    if (Array.isArray(cat) && cat.length > 0) {
+    if (validatePermissionCatalog(cat)) {
       permissionCatalog.value = cat
+    } else {
+      // Validated canonical fallback strictly adhering to AdminPermissionCatalog.java
+      permissionCatalog.value = ADMIN_PERMISSION_MODULES
     }
   } catch (_) {
     permissionCatalog.value = ADMIN_PERMISSION_MODULES
@@ -237,10 +256,6 @@ function getRoleInfo(roleCode) {
       permissions: []
     }
   )
-}
-
-function countUsersWithRole(roleCode) {
-  return users.value.filter(u => u.role === roleCode).length
 }
 
 // =========================================================================
@@ -728,32 +743,62 @@ function openRefundModal(booking) {
 
 async function confirmAdminRefund() {
   refundError.value = ''
-  if (!refundReasonInput.value || refundReasonInput.value.trim().length < 10) {
-    refundError.value = 'Lý do hoàn tiền cưỡng chế phải rõ ràng (tối thiểu 10 ký tự) để lưu Audit Log'
+  if (!hasPermission('BOOKING_FORCE_REFUND')) {
+    refundError.value = 'Bạn không có quyền thực hiện thao tác hoàn tiền cưỡng chế (BOOKING_FORCE_REFUND)'
     return
   }
 
+  if (isRefunding.value) return
+
   const target = selectedBookingForRefund.value
-  if (!target) return
-  const bookingRef = target.bookingReference || target.id
+  if (!target || !target.bookingReference) {
+    refundError.value = 'Định danh đơn vé (bookingReference) không hợp lệ'
+    return
+  }
+  const bookingRef = target.bookingReference
+
+  const trimmedReason = (refundReasonInput.value || '').trim()
+  if (!trimmedReason || trimmedReason.length < 10) {
+    refundError.value = 'Lý do hoàn tiền cưỡng chế phải rõ ràng (tối thiểu 10 ký tự) để lưu Audit Log'
+    return
+  }
+  if (trimmedReason.length > 255) {
+    refundError.value = 'Lý do hoàn tiền không được vượt quá 255 ký tự'
+    return
+  }
 
   isRefunding.value = true
   try {
-    // Contract: reason, refundPercentage: 100
+    // Contract: reason (max 255), refundPercentage: 100
     const res = await adminApi.refundBooking(bookingRef, {
-      reason: refundReasonInput.value.trim(),
+      reason: trimmedReason,
       refundPercentage: 100
     })
 
     const data = res?.data || res
-    notify(`Đã hoàn tiền cưỡng chế 100% cho đơn vé #${bookingRef}!`)
+    // B3-FINAL-05: Inspect RefundResponse
+    if (data?.paymentRefunded === false) {
+      notify(`Đã hoàn tiền đơn #${bookingRef} sang trạng thái ${data.status || 'REFUNDED'}, nhưng hoàn tiền cổng thanh toán cần đối soát bổ sung.`, 'warning')
+    } else {
+      const amountStr = data?.refundAmount ? `${formatVnd(data.refundAmount)} đ` : '100%'
+      notify(`Đã hoàn tiền thành công ${amountStr} cho đơn vé #${bookingRef} (Máy chủ xác nhận)!`)
+    }
+
     isRefundModalOpen.value = false
     selectedBookingForRefund.value = null
 
     // Authoritative state refetch
-    await fetchBookings()
+    try {
+      await fetchBookings()
+    } catch (_) {
+      notify('Hoàn tiền thành công trên máy chủ nhưng làm mới danh sách đơn vé thất bại. Vui lòng bấm làm mới.', 'warning')
+    }
   } catch (err) {
-    refundError.value = err?.message || 'Máy chủ từ chối yêu cầu hoàn tiền cưỡng chế'
+    if (err?.code === 'ECONNABORTED' || err?.message?.includes('timeout')) {
+      refundError.value = 'Yêu cầu hoàn tiền bị quá hạn phản hồi (Network Timeout). Trạng thái giao dịch chưa xác định, không tự động gửi lại. Vui lòng kiểm tra lại danh sách đơn vé trước khi thử lại.'
+    } else {
+      refundError.value = err?.message || 'Máy chủ từ chối yêu cầu hoàn tiền cưỡng chế'
+    }
   } finally {
     isRefunding.value = false
   }
@@ -864,7 +909,7 @@ const userColumns = [
           {
             default: () => [
               h(DropdownMenuTrigger, { asChild: true }, () =>
-                h(Button, { variant: 'ghost', size: 'sm', class: 'h-8 w-8 p-0' }, () =>
+                h(Button, { variant: 'ghost', size: 'sm', class: 'h-8 w-8 p-0', 'data-testid': `btn-more-actions-${u.username}` }, () =>
                   h(MoreHorizontal, { class: 'h-3.5 w-3.5' })
                 )
               ),
@@ -1231,7 +1276,7 @@ const bookingColumns = [
 
             <div class="text-[11px] text-muted-foreground flex items-center justify-between border-t border-border/50 pt-2">
               <span>Quyền API: <strong>{{ role.permissions?.length || 0 }}/26</strong></span>
-              <span>Gán: <strong>{{ countUsersWithRole(role.code) }}</strong> user</span>
+              <span>Gán: <strong>{{ role.userCount ?? 0 }}</strong> user</span>
             </div>
 
             <!-- Role Action Toolbar -->
@@ -1500,7 +1545,7 @@ const bookingColumns = [
 
     <!-- 4. Create/Edit Role Dialog & Permission Matrix -->
     <Dialog v-model:open="isRoleModalOpen">
-      <DialogContent class="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogContent class="sm:max-w-2xl max-h-[90vh] flex flex-col p-6">
         <DialogHeader>
           <DialogTitle>{{ editingRole ? `Sửa Vai Trò: ${editingRole.name}` : 'Tạo Role Mới' }}</DialogTitle>
           <DialogDescription class="text-xs">
@@ -1508,99 +1553,102 @@ const bookingColumns = [
           </DialogDescription>
         </DialogHeader>
 
-        <Alert v-if="roleFormError" variant="destructive" class="py-2 text-xs">
+        <Alert v-if="roleFormError" variant="destructive" class="py-2 text-xs shrink-0 my-2">
           <AlertCircle class="h-4 w-4" />
           <AlertDescription>{{ roleFormError }}</AlertDescription>
         </Alert>
 
-        <form @submit.prevent="handleSaveRole" class="space-y-4 text-xs">
-          <div class="grid grid-cols-2 gap-3">
-            <FormField label="Mã Role (code)" required>
-              <Input
-                v-model="roleForm.code"
-                :disabled="Boolean(editingRole) || isSavingRole"
-                placeholder="VD: CONTENT_MOD"
-                data-testid="input-role-code"
-              />
-            </FormField>
+        <form @submit.prevent="handleSaveRole" class="flex flex-col flex-1 min-h-0 space-y-4 text-xs">
+          <div class="overflow-y-auto max-h-[58vh] pr-2 space-y-4">
+            <div class="grid grid-cols-2 gap-3">
+              <FormField label="Mã Role (code)" required>
+                <Input
+                  v-model="roleForm.code"
+                  :disabled="Boolean(editingRole) || isSavingRole"
+                  placeholder="VD: CONTENT_MOD"
+                  data-testid="input-role-code"
+                />
+              </FormField>
 
-            <FormField label="Tên hiển thị" required>
-              <Input
-                v-model="roleForm.name"
-                :disabled="isSavingRole"
-                placeholder="VD: Kiểm Duyệt Nội Dung"
-                data-testid="input-role-name"
-              />
-            </FormField>
-          </div>
-
-          <FormField label="Mô tả chức năng">
-            <Input
-              v-model="roleForm.description"
-              :disabled="isSavingRole"
-              placeholder="Mô tả phạm vi trách nhiệm của vai trò này"
-            />
-          </FormField>
-
-          <!-- 7 Modules x 26 Permissions Matrix -->
-          <div class="space-y-3 border-t border-border pt-3">
-            <div class="flex items-center justify-between">
-              <span class="font-bold text-foreground">
-                Ma Trận Phân Quyền (Đã chọn: {{ roleForm.permissions.length }}/26 APIs)
-              </span>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                class="h-6 px-2 text-[11px]"
-                data-testid="btn-role-clear-all"
-                @click="roleForm.permissions = []"
-              >
-                Bỏ chọn tất cả
-              </Button>
+              <FormField label="Tên hiển thị" required>
+                <Input
+                  v-model="roleForm.name"
+                  :disabled="isSavingRole"
+                  placeholder="VD: Kiểm Duyệt Nội Dung"
+                  data-testid="input-role-name"
+                />
+              </FormField>
             </div>
 
-            <div class="space-y-3">
-              <div
-                v-for="mod in permissionCatalog"
-                :key="mod.moduleCode"
-                class="rounded-lg border border-border p-3 space-y-2 bg-muted/20"
-              >
-                <div class="flex items-center justify-between border-b border-border/50 pb-2">
-                  <span class="font-bold text-foreground text-xs">{{ mod.moduleName }}</span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    class="h-6 px-2 text-[11px]"
-                    :data-testid="`toggle-module-${mod.moduleCode}`"
-                    @click="toggleModulePermissions(mod)"
-                  >
-                    {{ isModuleFullySelected(mod) ? 'Bỏ chọn cả nhóm' : 'Chọn cả nhóm' }}
-                  </Button>
-                </div>
+            <FormField label="Mô tả chức năng">
+              <Input
+                v-model="roleForm.description"
+                :disabled="isSavingRole"
+                placeholder="Mô tả phạm vi trách nhiệm của vai trò này"
+              />
+            </FormField>
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                  <label
-                    v-for="perm in mod.permissions"
-                    :key="perm.code"
-                    class="flex items-start gap-2 p-1.5 rounded hover:bg-muted/40 cursor-pointer"
-                  >
-                    <Checkbox
-                      :checked="roleForm.permissions.includes(perm.code)"
-                      @update:checked="togglePermission(perm.code)"
-                    />
-                    <div class="space-y-0.5">
-                      <span class="font-medium text-foreground block">{{ perm.name }}</span>
-                      <span class="font-mono text-[10px] text-muted-foreground block">{{ perm.code }}</span>
-                    </div>
-                  </label>
+            <!-- 7 Modules x 26 Permissions Matrix -->
+            <div class="space-y-3 border-t border-border pt-3">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-foreground">
+                  Ma Trận Phân Quyền (Đã chọn: {{ roleForm.permissions.length }}/26 APIs)
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  class="h-6 px-2 text-[11px]"
+                  data-testid="btn-role-clear-all"
+                  @click="roleForm.permissions = []"
+                >
+                  Bỏ chọn tất cả
+                </Button>
+              </div>
+
+              <div class="space-y-3">
+                <div
+                  v-for="mod in permissionCatalog"
+                  :key="mod.moduleCode"
+                  class="rounded-lg border border-border p-3 space-y-2 bg-muted/20"
+                >
+                  <div class="flex items-center justify-between border-b border-border/50 pb-2">
+                    <span class="font-bold text-foreground text-xs" :data-testid="`module-title-${mod.moduleCode}`">{{ mod.moduleName }}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      class="h-6 px-2 text-[11px]"
+                      :data-testid="`toggle-module-${mod.moduleCode}`"
+                      @click="toggleModulePermissions(mod)"
+                    >
+                      {{ isModuleFullySelected(mod) ? 'Bỏ chọn cả nhóm' : 'Chọn cả nhóm' }}
+                    </Button>
+                  </div>
+
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                    <label
+                      v-for="perm in mod.permissions"
+                      :key="perm.code"
+                      class="flex items-start gap-2 p-1.5 rounded hover:bg-muted/40 cursor-pointer"
+                    >
+                      <Checkbox
+                        :checked="roleForm.permissions.includes(perm.code)"
+                        :data-testid="`perm-checkbox-${perm.code}`"
+                        @update:checked="togglePermission(perm.code)"
+                      />
+                      <div class="space-y-0.5">
+                        <span class="font-medium text-foreground block text-xs" :data-testid="`perm-name-${perm.code}`">{{ perm.name }}</span>
+                        <span class="font-mono text-[10px] text-muted-foreground block" :data-testid="`perm-code-${perm.code}`">{{ perm.code }}</span>
+                      </div>
+                    </label>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <DialogFooter class="pt-3">
+          <DialogFooter class="border-t border-border pt-3 shrink-0">
             <Button type="button" variant="outline" :disabled="isSavingRole" @click="isRoleModalOpen = false">
               Hủy
             </Button>
@@ -1649,7 +1697,7 @@ const bookingColumns = [
           </DialogTitle>
           <DialogDescription class="text-xs space-y-2 mt-2">
             <p>
-              Đơn vé: <strong class="text-foreground font-mono">{{ selectedBookingForRefund?.bookingReference || selectedBookingForRefund?.id }}</strong>
+              Đơn vé: <strong class="text-foreground font-mono">{{ selectedBookingForRefund?.bookingReference }}</strong>
             </p>
             <p>
               Số tiền hoàn: <strong class="text-destructive font-mono text-sm">{{ formatVnd(selectedBookingForRefund?.totalAmount) }} đ (100%)</strong>

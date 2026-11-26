@@ -34,8 +34,8 @@ test.describe('E2E: Visual Regression & Layout Responsive Check', () => {
       await page.goto('/admin')
 
       // Đảm bảo các khối KPI render
-      await expect(page.locator('text=Tổng GMV Toàn Sàn')).toBeVisible()
-      await expect(page.locator('text=Nhà Xe Hoạt Động')).toBeVisible()
+      await expect(page.locator('text=Doanh Thu Gộp')).toBeVisible()
+      await expect(page.locator('text=Cần Đối Soát')).toBeVisible()
     })
   }
 

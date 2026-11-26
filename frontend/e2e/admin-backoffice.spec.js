@@ -335,10 +335,10 @@ test.describe('E2E: Phân Hệ Ban Quản Trị (Admin Backoffice)', () => {
     await expect(page.locator('text=Tổng Quan Toàn Sàn & Báo Cáo Đối Soát')).toBeVisible()
 
     // 4 thẻ KPI toàn sàn
-    await expect(page.locator('text=Tổng GMV Toàn Sàn')).toBeVisible()
-    await expect(page.locator('text=Hoa Hồng Thực Thu')).toBeVisible()
-    await expect(page.locator('text=Đơn Vé Thành Công')).toBeVisible()
-    await expect(page.locator('text=Nhà Xe Hoạt Động')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Doanh Thu Gộp' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Doanh Thu Ròng' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Thanh Toán Thành Công' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Cần Đối Soát' })).toBeVisible()
 
     // Khối Cảnh báo Đối Soát VNPay
     await expect(page.locator('text=Nhật Ký Cảnh Báo Đối Soát Tự Động')).toBeVisible()
