@@ -789,8 +789,8 @@ test.describe('Gate B4: Controlled Operator Pilot & Financial Contract Integrati
     await expect(dialog).toContainText('KHÓA')
   })
 
-  // B4-13: Matched Withdrawal Transitioned to APPROVED or REJECTED
-  test('B4-13: Withdrawal Flow — Matched Status Transition Cleans Up Modal', async ({ page }) => {
+  // B4-13: Matching Amount/Bank is Non-Unique — Preserves Fail-Closed Lock (PRE-01)
+  test('B4-13: Withdrawal Flow — Lack of Authoritative Correlation ID Preserves Fail-Closed Lock', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await setupOperatorMocks(page, { withdrawTimeout: true })
     await loginAsRole(page, 'ROLE_OPERATOR', 'operator1')
@@ -807,7 +807,7 @@ test.describe('Gate B4: Controlled Operator Pilot & Financial Contract Integrati
     await page.locator('[data-testid="btn-confirm-withdraw-action"]').click()
     await page.waitForTimeout(300)
 
-    // Re-mock withdrawals to return the matched withdrawal with status REJECTED
+    // Re-mock withdrawals to return a record with the same amount and bank
     await page.route('**/api/v1/partners/wallet/withdrawals*', async (route) => {
       await route.fulfill({
         status: 200,
@@ -832,9 +832,15 @@ test.describe('Gate B4: Controlled Operator Pilot & Financial Contract Integrati
     await verifyBtn.click()
     await page.waitForTimeout(300)
 
-    // Handled rejected status: closes modal cleanly
+    // PRE-01 Fail-Closed Policy:
+    // Without an authoritative backend correlation ID / idempotency key,
+    // frontend cannot guarantee this record is the in-flight request.
+    // Dialog MUST stay open and locked!
     const dialog = page.locator('[role="dialog"]')
-    await expect(dialog).toHaveCount(0)
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toContainText('KHÓA')
+    const submitBtn = page.locator('[data-testid="btn-submit-withdraw"]')
+    await expect(submitBtn).toBeDisabled()
   })
 
   // B4-14: Malformed Mutation Response triggers Unknown Outcome Guard

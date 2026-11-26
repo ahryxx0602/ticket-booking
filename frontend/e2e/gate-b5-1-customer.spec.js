@@ -227,10 +227,11 @@ test.describe('VeloBus Gate B5.1 Corrected — Customer Discovery & Mobility UX'
       const darkBtn = drawer.getByRole('button', { name: 'Tối', exact: true })
       await darkBtn.click()
 
-      // PRE-05: Click "Lưu giao diện" to commit draft theme before closing
-      const saveBtn = drawer.getByRole('button', { name: 'Lưu giao diện' })
+      // PRE-05: Click "Lưu thay đổi" to commit draft theme before closing
+      const saveBtn = drawer.locator('[data-testid="theme-save-btn"]').or(drawer.getByRole('button', { name: /Lưu (thay đổi|giao diện)/i }))
       if (await saveBtn.isVisible()) {
         await saveBtn.click()
+        await drawer.waitFor({ state: 'hidden' })
       } else {
         await page.keyboard.press('Escape')
       }

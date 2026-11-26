@@ -6,7 +6,7 @@ import { loginAsRole } from './helpers/auth.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-const screenshotDir = path.resolve(__dirname, '../../docs/frontend-v2/screenshots-gate-b5-2')
+const screenshotDir = path.resolve(__dirname, '../../docs/frontend-v2/screenshots-gate-b5-2-closure')
 
 if (!fs.existsSync(screenshotDir)) {
   fs.mkdirSync(screenshotDir, { recursive: true })
@@ -14,38 +14,32 @@ if (!fs.existsSync(screenshotDir)) {
 
 // ---------------------------------------------------------------------------
 // 1. Authoritative Backend Seat Matrix Fixtures (SeatDto.java)
+// Zero fake status properties: id, tripId, seatNumber, seatType, priceMultiplier, finalPrice
 // ---------------------------------------------------------------------------
 const createMockSeats = () => {
   const seats = []
   // Lower Deck (A01 - A18)
   for (let i = 1; i <= 18; i++) {
     const num = `A${String(i).padStart(2, '0')}`
-    let status = 'AVAILABLE'
-    if (i === 3 || i === 7) status = 'BOOKED'
-    if (i === 5) status = 'HELD'
     seats.push({
       id: 100 + i,
       tripId: 101,
       seatNumber: num,
       seatType: i <= 6 ? 'VIP' : 'STANDARD',
       priceMultiplier: i <= 6 ? 1.15 : 1.0,
-      finalPrice: i <= 6 ? 400000 : 350000,
-      status
+      finalPrice: i <= 6 ? 400000 : 350000
     })
   }
   // Upper Deck (B01 - B18)
   for (let i = 1; i <= 18; i++) {
     const num = `B${String(i).padStart(2, '0')}`
-    let status = 'AVAILABLE'
-    if (i === 2 || i === 8) status = 'BOOKED'
     seats.push({
       id: 200 + i,
       tripId: 101,
       seatNumber: num,
       seatType: 'STANDARD',
       priceMultiplier: 1.0,
-      finalPrice: 350000,
-      status
+      finalPrice: 350000
     })
   }
   return seats
@@ -66,7 +60,7 @@ const mockTripDetail = {
   departureTime: '2026-11-26T19:00:00',
   arrivalTime: '2026-11-27T09:00:00',
   duration: '14 giờ',
-  transportType: 'VIP Luxury 36 Giường Nằm',
+  transportType: 'VIP 36 Giường Nằm',
   totalSeats: 36,
   basePrice: 350000,
   status: 'SCHEDULED'
@@ -84,7 +78,8 @@ async function setupSeatSelectionMocks(page, options = {}) {
     holdErrorCode = null,
     holdErrorMessage = null,
     malformedHold = false,
-    holdTimeout = false
+    holdTimeout = false,
+    myBookings = []
   } = options
 
   // Mock Settings & Banners
@@ -166,6 +161,42 @@ async function setupSeatSelectionMocks(page, options = {}) {
           expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
           createdAt: new Date().toISOString(),
           seatNumbers: requestedSeats
+        }
+      })
+    })
+  })
+
+  // Mock GET My Bookings (for recovery verification)
+  await page.route('**/api/v1/bookings/my-bookings*', async (route) => {
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: myBookings
+      })
+    })
+  })
+
+  // Mock GET Booking Detail
+  await page.route('**/api/v1/bookings/VB-*', async (route) => {
+    const url = route.request().url()
+    const ref = url.split('/').pop().split('?')[0]
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          bookingId: 991,
+          bookingReference: ref,
+          userId: 1,
+          tripId: 101,
+          status: 'HELD',
+          totalAmount: 400000,
+          expiresAt: new Date(Date.now() + 8 * 60 * 1000).toISOString(),
+          createdAt: new Date().toISOString(),
+          seatNumbers: ['A01']
         }
       })
     })
@@ -257,26 +288,22 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
   })
 
   // -------------------------------------------------------------------------
-  // B52-05: Seat Status Mapping (Available, Booked, Held)
+  // B52-05: Seat Status Mapping (Unverified Catalog Seats & Conflict Transitions)
   // -------------------------------------------------------------------------
-  test('B52-05: Seat status mapping correctly marks available, booked and held seats', async ({ page }) => {
+  test('B52-05: Seat status mapping displays unverified catalog seats and handles conflict transitions', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await setupSeatSelectionMocks(page)
 
     await page.goto('/trips/101/seats')
     await page.waitForLoadState('networkidle')
 
-    // A01 is AVAILABLE: enabled
+    // Catalog seats are unverified: enabled and clickable for selection intent
     const seatA01 = page.locator('[data-testid="seat-A01"]')
     await expect(seatA01).toBeEnabled()
+    await expect(page.locator('[data-testid="seat-contract-notice"]')).toBeVisible()
 
-    // A03 is BOOKED: disabled
-    const seatA03 = page.locator('[data-testid="seat-A03"]')
-    await expect(seatA03).toBeDisabled()
-
-    // A05 is HELD: disabled with lock icon
-    const seatA05 = page.locator('[data-testid="seat-A05"]')
-    await expect(seatA05).toBeDisabled()
+    // Notice that actual availability is verified via distributed lock on hold
+    await expect(page.locator('[data-testid="seat-contract-notice"]')).toContainText('Xác thực tính khả dụng')
   })
 
   // -------------------------------------------------------------------------
@@ -336,22 +363,31 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
   })
 
   // -------------------------------------------------------------------------
-  // B52-08: Unavailable Seats Cannot Be Clicked
+  // B52-08: Conflict Unavailable Seats Cannot Be Clicked
   // -------------------------------------------------------------------------
-  test('B52-08: Sold or held seat click does not add seat to selection', async ({ page }) => {
+  test('B52-08: Conflict rejected seats transition to disabled and cannot be selected', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
-    await setupSeatSelectionMocks(page)
+    await loginAsRole(page, 'ROLE_CUSTOMER', 'customer1')
+    await setupSeatSelectionMocks(page, {
+      holdFail: true,
+      holdErrorCode: 'SEAT_ALREADY_RESERVED',
+      holdErrorMessage: 'Một hoặc nhiều ghế đã bị hành khách khác chọn.'
+    })
 
     await page.goto('/trips/101/seats')
     await page.waitForLoadState('networkidle')
 
-    // Click disabled booked seat A03 (force: true simulation)
-    const seatA03 = page.locator('[data-testid="seat-A03"]')
-    await seatA03.click({ force: true })
+    // Select A01 and attempt hold -> conflict occurs
+    await page.locator('[data-testid="seat-A01"]').click()
+    await page.locator('[data-testid="btn-proceed-booking"]').click()
 
-    // Should still have no seats selected
+    // A01 is now marked as unavailable and disabled
+    const seatA01 = page.locator('[data-testid="seat-A01"]')
+    await expect(seatA01).toBeDisabled()
+
+    // Clicking disabled seat does not add to selection
+    await seatA01.click({ force: true })
     await expect(page.locator('[data-testid="no-seats-selected"]')).toBeVisible()
-    await expect(page.locator('[data-testid="selected-seat-item-A03"]')).toHaveCount(0)
   })
 
   // -------------------------------------------------------------------------
@@ -364,15 +400,15 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
     await page.goto('/trips/101/seats')
     await page.waitForLoadState('networkidle')
 
-    // Select 10 available seats on Lower Deck: A01, A02, A04, A06, A08, A09, A10, A11, A12, A13
-    const seatCodes = ['A01', 'A02', 'A04', 'A06', 'A08', 'A09', 'A10', 'A11', 'A12', 'A13']
+    // Select 10 seats on Lower Deck: A01 to A10
+    const seatCodes = ['A01', 'A02', 'A03', 'A04', 'A05', 'A06', 'A07', 'A08', 'A09', 'A10']
     for (const code of seatCodes) {
       await page.locator(`[data-testid="seat-${code}"]`).click()
     }
     await expect(page.locator('[data-testid="selected-seats-list"]').locator('> div')).toHaveCount(10)
 
-    // Try to select 11th seat (A14)
-    await page.locator('[data-testid="seat-A14"]').click()
+    // Try to select 11th seat (A11)
+    await page.locator('[data-testid="seat-A11"]').click()
 
     // Warning toast
     await expect(page.getByText('Mỗi hành khách được chọn tối đa 10 giường trong một lần đặt vé.')).toBeVisible()
@@ -414,7 +450,6 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
   test('B52-11: Authenticated customer clicking hold sends correct payload { tripId, seatNumbers }', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await loginAsRole(page, 'ROLE_CUSTOMER', 'customer1')
-
     await setupSeatSelectionMocks(page)
 
     await page.goto('/trips/101/seats')
@@ -423,7 +458,6 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
     // Select A01
     await page.locator('[data-testid="seat-A01"]').click()
 
-    // Wait for the actual request triggered by the button click
     const holdRequestPromise = page.waitForRequest('**/api/v1/bookings/hold')
     await page.locator('[data-testid="btn-proceed-booking"]').click()
     const holdRequest = await holdRequestPromise
@@ -558,9 +592,9 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
   })
 
   // -------------------------------------------------------------------------
-  // B52-16: Malformed Hold Response (Missing bookingReference)
+  // B52-16: Malformed Hold Response (Missing bookingReference) Triggers Unknown Outcome Guard
   // -------------------------------------------------------------------------
-  test('B52-16: Malformed hold response missing bookingReference fails closed', async ({ page }) => {
+  test('B52-16: Malformed hold response triggers fail-closed unknown outcome guard', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await loginAsRole(page, 'ROLE_CUSTOMER', 'customer1')
     await setupSeatSelectionMocks(page, { malformedHold: true })
@@ -571,14 +605,16 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
     await page.locator('[data-testid="seat-A01"]').click()
     await page.locator('[data-testid="btn-proceed-booking"]').click()
 
-    await expect(page.getByText('Dữ liệu phản hồi giữ chỗ từ máy chủ không hợp lệ.')).toBeVisible()
+    // Guard alert is visible and Proceed button is disabled
+    await expect(page.locator('[data-testid="hold-unknown-alert"]')).toBeVisible()
+    await expect(page.locator('[data-testid="btn-proceed-booking"]')).toBeDisabled()
     await expect(page.locator('[data-testid="hold-countdown-widget"]')).toHaveCount(0)
   })
 
   // -------------------------------------------------------------------------
-  // B52-17: Network Timeout on Hold Mutation
+  // B52-17: Network Timeout on Hold Mutation Triggers Unknown Outcome Guard (BLOCKER-02)
   // -------------------------------------------------------------------------
-  test('B52-17: Network timeout during hold displays error and retains safe state', async ({ page }) => {
+  test('B52-17: Network timeout during hold triggers persistent guard and disables CTA', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await loginAsRole(page, 'ROLE_CUSTOMER', 'customer1')
     await setupSeatSelectionMocks(page, { holdTimeout: true })
@@ -589,8 +625,20 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
     await page.locator('[data-testid="seat-A01"]').click()
     await page.locator('[data-testid="btn-proceed-booking"]').click()
 
-    await expect(page.getByText(/Không thể giữ chỗ|kết nối|Network Error/)).toBeVisible()
-    await expect(page.locator('[data-testid="hold-countdown-widget"]')).toHaveCount(0)
+    // Unknown outcome alert is displayed
+    const alert = page.locator('[data-testid="hold-unknown-alert"]')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('chưa xác định kết quả')
+
+    // CTA is locked
+    const proceedBtn = page.locator('[data-testid="btn-proceed-booking"]')
+    await expect(proceedBtn).toBeDisabled()
+
+    // Verify recovery button is present
+    await expect(page.locator('[data-testid="btn-verify-hold-state"]')).toBeVisible()
+
+    // B52 Screenshot: Unknown Outcome Guard
+    await page.screenshot({ path: path.join(screenshotDir, 'seatmap-hold-unknown-outcome.png') })
   })
 
   // -------------------------------------------------------------------------
@@ -760,5 +808,90 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
 
     // B52 Screenshot: Desktop Dark
     await page.screenshot({ path: path.join(screenshotDir, 'seatmap-desktop-dark.png') })
+  })
+
+  // -------------------------------------------------------------------------
+  // B52-24: Active Held Booking Restoration on Reload (BLOCKER-03)
+  // -------------------------------------------------------------------------
+  test('B52-24: Reload restores active held booking from storage and backend verification', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await loginAsRole(page, 'ROLE_CUSTOMER', 'customer1')
+    await setupSeatSelectionMocks(page)
+
+    await page.goto('/trips/101/seats')
+    await page.waitForLoadState('networkidle')
+
+    // Perform hold
+    await page.locator('[data-testid="seat-A01"]').click()
+    await page.locator('[data-testid="btn-proceed-booking"]').click()
+    await expect(page.locator('[data-testid="hold-countdown-widget"]')).toBeVisible()
+
+    // Reload page
+    await page.reload()
+    await page.waitForLoadState('networkidle')
+
+    // Countdown and held booking should be restored
+    await expect(page.locator('[data-testid="hold-countdown-widget"]')).toBeVisible()
+    await expect(page.locator('[data-testid="btn-proceed-booking"]')).toContainText('Tiến Hành Thanh Toán')
+    await expect(page.locator('[data-testid="selected-seat-item-A01"]')).toBeVisible()
+  })
+
+  // -------------------------------------------------------------------------
+  // B52-25: Hold State Verification Button Resolves Interrupted Hold (BLOCKER-02)
+  // -------------------------------------------------------------------------
+  test('B52-25: Hold state verification recovers active hold from server my-bookings', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await loginAsRole(page, 'ROLE_CUSTOMER', 'customer1')
+
+    // Setup mocks where hold times out initially, but my-bookings has the authoritative booking
+    await setupSeatSelectionMocks(page, {
+      holdTimeout: true,
+      myBookings: [
+        {
+          bookingId: 991,
+          bookingReference: 'VB-RECOVERED-01',
+          userId: 1,
+          tripId: 101,
+          status: 'HELD',
+          totalAmount: 400000,
+          expiresAt: new Date(Date.now() + 9 * 60 * 1000).toISOString(),
+          seatNumbers: ['A01']
+        }
+      ]
+    })
+
+    await page.goto('/trips/101/seats')
+    await page.waitForLoadState('networkidle')
+
+    await page.locator('[data-testid="seat-A01"]').click()
+    await page.locator('[data-testid="btn-proceed-booking"]').click()
+
+    // Timeout alert is shown
+    await expect(page.locator('[data-testid="hold-unknown-alert"]')).toBeVisible()
+
+    // Click verify hold state button
+    const verifyBtn = page.locator('[data-testid="btn-verify-hold-state"]')
+    await verifyBtn.click()
+
+    // Recovers hold: alert disappears, countdown widget appears
+    await expect(page.locator('[data-testid="hold-unknown-alert"]')).toHaveCount(0)
+    await expect(page.locator('[data-testid="hold-countdown-widget"]')).toBeVisible()
+    await expect(page.locator('[data-testid="btn-proceed-booking"]')).toContainText('Tiến Hành Thanh Toán')
+  })
+
+  // -------------------------------------------------------------------------
+  // B52-26: Neutral Seat Layout (No Fabricated Physical Bus Components)
+  // -------------------------------------------------------------------------
+  test('B52-26: Layout is neutral without fabricated steering wheel or bus tail', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await setupSeatSelectionMocks(page)
+
+    await page.goto('/trips/101/seats')
+    await page.waitForLoadState('networkidle')
+
+    // Assert that fabricated physical texts are NOT present
+    await expect(page.getByText('Khu vực Tài xế')).toHaveCount(0)
+    await expect(page.getByText('Cửa lên xuống')).toHaveCount(0)
+    await expect(page.getByText('Đuôi xe khách')).toHaveCount(0)
   })
 })

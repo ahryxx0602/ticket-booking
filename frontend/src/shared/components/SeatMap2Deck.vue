@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
-import { Bus, Check, Lock, X } from 'lucide-vue-next'
+import { Bus, Check, Lock, X, AlertCircle } from 'lucide-vue-next'
 
 const props = defineProps({
   seats: {
@@ -12,6 +12,10 @@ const props = defineProps({
     default: () => []
   },
   heldSeats: {
+    type: Array,
+    default: () => []
+  },
+  unavailableSeats: {
     type: Array,
     default: () => []
   },
@@ -53,7 +57,7 @@ const normalizedSeats = computed(() => {
       seatType: s.seatType || 'STANDARD',
       priceMultiplier: s.priceMultiplier || 1.0,
       price,
-      status: (s.status || '').toUpperCase()
+      rawStatus: (s.status || '').toUpperCase()
     }
   })
 })
@@ -73,20 +77,30 @@ const upperDeckSeats = computed(() => {
   return normalizedSeats.value.filter(s => s.deck === 'UPPER' || s.code.startsWith('B'))
 })
 
+/**
+ * Seat State Priority Rules:
+ * 1. HELD_BY_ME: In active booking held by current passenger
+ * 2. CONFIRMED_UNAVAILABLE: In unavailableSeats (conflict/hold failure) OR explicit backend status
+ * 3. SELECTED: Current passenger booking intent
+ * 4. UNVERIFIED: Catalog seat existence (availability verified atomically upon hold)
+ */
 function getSeatStatus(seat) {
   const code = seat.code
-  if (props.selectedSeats.includes(code)) return 'SELECTED'
   if (props.heldSeats.includes(code)) return 'HELD_BY_ME'
-  const rawStatus = (seat.status || '').toUpperCase()
-  if (rawStatus === 'HELD' || rawStatus === 'HELD_BY_OTHER') return 'HELD_BY_OTHER'
-  if (rawStatus === 'BOOKED' || rawStatus === 'SOLD' || rawStatus === 'CONFIRMED' || rawStatus === 'UNAVAILABLE') return 'SOLD'
-  return 'AVAILABLE'
+  if (
+    props.unavailableSeats.includes(code) ||
+    ['BOOKED', 'SOLD', 'CONFIRMED', 'UNAVAILABLE', 'HELD_BY_OTHER'].includes(seat.rawStatus)
+  ) {
+    return 'CONFIRMED_UNAVAILABLE'
+  }
+  if (props.selectedSeats.includes(code)) return 'SELECTED'
+  return 'UNVERIFIED'
 }
 
 function handleSeatClick(seat) {
   if (props.readonly) return
   const status = getSeatStatus(seat)
-  if (status === 'SOLD' || status === 'HELD_BY_OTHER') return
+  if (status === 'CONFIRMED_UNAVAILABLE') return
   emit('toggle-seat', seat.code)
 }
 
@@ -106,7 +120,7 @@ function formatCurrency(val) {
           <span>Sơ đồ chỗ ngồi</span>
         </h3>
         <p class="text-xs text-muted-foreground mt-0.5">
-          Chọn giường còn trống trên sơ đồ xe (Tối đa {{ maxSelectable }} giường/vé)
+          Chọn chỗ ngồi danh mục trên sơ đồ xe (Tối đa {{ maxSelectable }} chỗ/lần đặt)
         </p>
       </div>
 
@@ -141,51 +155,46 @@ function formatCurrency(val) {
       </div>
     </div>
 
+    <!-- Informational Verification Alert (Contract Transparency) -->
+    <div class="p-3 bg-muted/40 border border-border rounded-lg flex items-start gap-2.5 text-xs text-muted-foreground" data-testid="seat-contract-notice">
+      <AlertCircle class="w-4 h-4 text-primary shrink-0 mt-0.5" />
+      <div>
+        <span class="font-medium text-foreground">Xác thực tính khả dụng: </span>
+        Danh mục chỗ ngồi được đồng bộ từ lịch trình. Tính khả dụng thực tế của từng chỗ sẽ được xác thực nguyên tử qua khóa phân tán của máy chủ khi quý khách bấm "Giữ Chỗ".
+      </div>
+    </div>
+
     <!-- Visual Status Legend Bar (Accessible with Symbols & Text Labels) -->
     <div class="py-3 px-3.5 bg-muted/30 rounded-lg border border-border flex flex-wrap items-center justify-between gap-3 text-xs">
       <div class="flex items-center gap-2">
         <div class="w-4 h-4 rounded border border-border bg-card shadow-xs"></div>
-        <span class="text-muted-foreground font-medium">Trống</span>
+        <span class="text-muted-foreground font-medium">Chỗ danh mục (Chưa xác minh)</span>
       </div>
       <div class="flex items-center gap-2">
         <div class="w-4 h-4 rounded bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">
           <Check class="w-3 h-3 stroke-[3]" />
         </div>
-        <span class="text-muted-foreground font-medium">Đang chọn</span>
+        <span class="text-muted-foreground font-medium">Đang chọn (Ý định giữ)</span>
       </div>
       <div class="flex items-center gap-2">
-        <div class="w-4 h-4 rounded bg-amber-500/20 border border-amber-500/40 text-amber-600 dark:text-amber-400 flex items-center justify-center text-[10px]">
+        <div class="w-4 h-4 rounded bg-primary/10 border border-primary text-primary flex items-center justify-center text-[10px]">
           <Lock class="w-2.5 h-2.5" />
         </div>
-        <span class="text-muted-foreground font-medium">Đang giữ chỗ</span>
+        <span class="text-muted-foreground font-medium">Đang giữ chỗ (Của bạn)</span>
       </div>
       <div class="flex items-center gap-2">
         <div class="w-4 h-4 rounded bg-muted border border-border text-muted-foreground/60 flex items-center justify-center text-[10px]">
           <X class="w-2.5 h-2.5" />
         </div>
-        <span class="text-muted-foreground font-medium">Đã bán / Khóa</span>
+        <span class="text-muted-foreground font-medium">Không khả dụng (Trùng lặp / Đã bán)</span>
       </div>
     </div>
 
-    <!-- Bus Cabin Visualization Body -->
-    <div class="bg-muted/20 rounded-xl p-4 sm:p-6 border border-border flex flex-col items-center">
-      <!-- Front Cab Header (Driver / Windshield) -->
-      <div class="w-full max-w-md bg-card border border-border rounded-t-2xl p-3 mb-5 shadow-xs flex items-center justify-between text-xs text-muted-foreground">
-        <div class="flex items-center gap-2 font-medium text-foreground">
-          <svg class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="9"/>
-            <path d="M12 3v18M3 12h18"/>
-          </svg>
-          <span>Khu vực Tài xế</span>
-        </div>
-        <span class="text-[11px] bg-muted text-muted-foreground px-2 py-0.5 rounded font-medium border border-border">
-          Cửa lên xuống
-        </span>
-      </div>
-
+    <!-- Neutral Cabin Grid Container (No Fabricated Physical Bus Elements) -->
+    <div class="bg-muted/10 rounded-xl p-4 sm:p-6 border border-border flex flex-col items-center">
       <!-- Empty State if no seats in deck -->
       <div v-if="normalizedSeats.length === 0" class="py-12 text-center text-xs text-muted-foreground" data-testid="deck-empty">
-        Không có dữ liệu ghế cho chuyến xe này.
+        Không có dữ liệu chỗ ngồi cho chuyến xe này.
       </div>
 
       <!-- Berth Grid: Lower Deck (or Single Deck) -->
@@ -200,35 +209,29 @@ function formatCurrency(val) {
             :key="seat.code"
             type="button"
             :data-testid="'seat-' + seat.code"
-            :disabled="getSeatStatus(seat) === 'SOLD' || getSeatStatus(seat) === 'HELD_BY_OTHER' || readonly"
+            :disabled="getSeatStatus(seat) === 'CONFIRMED_UNAVAILABLE' || readonly"
             @click="handleSeatClick(seat)"
             :class="[
               'relative rounded-lg p-3 transition-all select-none border text-center flex flex-col items-center justify-center h-20 w-full focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
-              getSeatStatus(seat) === 'AVAILABLE' && 'bg-card border-border hover:border-primary hover:shadow-xs cursor-pointer text-foreground',
+              getSeatStatus(seat) === 'UNVERIFIED' && 'bg-card border-border hover:border-primary hover:shadow-xs cursor-pointer text-foreground',
               getSeatStatus(seat) === 'SELECTED' && 'bg-primary border-primary text-primary-foreground font-bold shadow-xs cursor-pointer',
               getSeatStatus(seat) === 'HELD_BY_ME' && 'bg-primary/10 border-primary text-primary font-bold shadow-xs cursor-pointer',
-              getSeatStatus(seat) === 'HELD_BY_OTHER' && 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400 cursor-not-allowed opacity-90',
-              getSeatStatus(seat) === 'SOLD' && 'bg-muted/60 border-border/60 text-muted-foreground/60 cursor-not-allowed opacity-60'
+              getSeatStatus(seat) === 'CONFIRMED_UNAVAILABLE' && 'bg-muted/60 border-border/60 text-muted-foreground/60 cursor-not-allowed opacity-60'
             ]"
-            :aria-label="`Giường ${seat.code}, ${getSeatStatus(seat)}`"
+            :aria-label="`Chỗ ${seat.code}, ${getSeatStatus(seat)}`"
           >
-            <!-- Bed Silhouette / Icon -->
-            <svg class="w-4 h-4 mb-1" :class="getSeatStatus(seat) === 'SELECTED' ? 'text-primary-foreground' : 'text-muted-foreground'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M3 10h18M3 14h18M5 18h14M3 6h4v4H3z"/>
-            </svg>
+            <!-- Seat Icon -->
+            <Bus class="w-4 h-4 mb-1" :class="getSeatStatus(seat) === 'SELECTED' ? 'text-primary-foreground' : 'text-muted-foreground'" />
             <span class="text-sm font-semibold tabular-nums">{{ seat.code }}</span>
             <span class="text-[10px] tabular-nums mt-0.5" :class="getSeatStatus(seat) === 'SELECTED' ? 'text-primary-foreground/90' : 'text-muted-foreground'">
-              {{ formatCurrency(seat.price) }}đ
+              {{ formatCurrency(seat.price) }} đ
             </span>
 
             <!-- Status Indicator Overlay -->
-            <span v-if="getSeatStatus(seat) === 'HELD_BY_OTHER'" class="absolute top-1 right-1 text-[10px]" title="Đang trong phiên giữ chỗ">
-              <Lock class="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" />
-            </span>
-            <span v-else-if="getSeatStatus(seat) === 'HELD_BY_ME'" class="absolute top-1 right-1 text-[10px]" title="Ghế của bạn đã giữ">
+            <span v-if="getSeatStatus(seat) === 'HELD_BY_ME'" class="absolute top-1 right-1 text-[10px]" title="Chỗ của bạn đã được giữ">
               <Lock class="w-2.5 h-2.5 text-primary" />
             </span>
-            <span v-else-if="getSeatStatus(seat) === 'SOLD'" class="absolute top-1 right-1 text-[10px]">
+            <span v-else-if="getSeatStatus(seat) === 'CONFIRMED_UNAVAILABLE'" class="absolute top-1 right-1 text-[10px]" title="Không khả dụng">
               <X class="w-2.5 h-2.5 text-muted-foreground/60" />
             </span>
             <span v-else-if="getSeatStatus(seat) === 'SELECTED'" class="absolute top-1 right-1 text-[10px]">
@@ -250,35 +253,29 @@ function formatCurrency(val) {
             :key="seat.code"
             type="button"
             :data-testid="'seat-' + seat.code"
-            :disabled="getSeatStatus(seat) === 'SOLD' || getSeatStatus(seat) === 'HELD_BY_OTHER' || readonly"
+            :disabled="getSeatStatus(seat) === 'CONFIRMED_UNAVAILABLE' || readonly"
             @click="handleSeatClick(seat)"
             :class="[
               'relative rounded-lg p-3 transition-all select-none border text-center flex flex-col items-center justify-center h-20 w-full focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
-              getSeatStatus(seat) === 'AVAILABLE' && 'bg-card border-border hover:border-primary hover:shadow-xs cursor-pointer text-foreground',
+              getSeatStatus(seat) === 'UNVERIFIED' && 'bg-card border-border hover:border-primary hover:shadow-xs cursor-pointer text-foreground',
               getSeatStatus(seat) === 'SELECTED' && 'bg-primary border-primary text-primary-foreground font-bold shadow-xs cursor-pointer',
               getSeatStatus(seat) === 'HELD_BY_ME' && 'bg-primary/10 border-primary text-primary font-bold shadow-xs cursor-pointer',
-              getSeatStatus(seat) === 'HELD_BY_OTHER' && 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400 cursor-not-allowed opacity-90',
-              getSeatStatus(seat) === 'SOLD' && 'bg-muted/60 border-border/60 text-muted-foreground/60 cursor-not-allowed opacity-60'
+              getSeatStatus(seat) === 'CONFIRMED_UNAVAILABLE' && 'bg-muted/60 border-border/60 text-muted-foreground/60 cursor-not-allowed opacity-60'
             ]"
-            :aria-label="`Giường ${seat.code}, ${getSeatStatus(seat)}`"
+            :aria-label="`Chỗ ${seat.code}, ${getSeatStatus(seat)}`"
           >
-            <!-- Bed Silhouette / Icon -->
-            <svg class="w-4 h-4 mb-1" :class="getSeatStatus(seat) === 'SELECTED' ? 'text-primary-foreground' : 'text-muted-foreground'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M3 10h18M3 14h18M5 18h14M3 6h4v4H3z"/>
-            </svg>
+            <!-- Seat Icon -->
+            <Bus class="w-4 h-4 mb-1" :class="getSeatStatus(seat) === 'SELECTED' ? 'text-primary-foreground' : 'text-muted-foreground'" />
             <span class="text-sm font-semibold tabular-nums">{{ seat.code }}</span>
             <span class="text-[10px] tabular-nums mt-0.5" :class="getSeatStatus(seat) === 'SELECTED' ? 'text-primary-foreground/90' : 'text-muted-foreground'">
-              {{ formatCurrency(seat.price) }}đ
+              {{ formatCurrency(seat.price) }} đ
             </span>
 
             <!-- Status Indicator Overlay -->
-            <span v-if="getSeatStatus(seat) === 'HELD_BY_OTHER'" class="absolute top-1 right-1 text-[10px]" title="Đang trong phiên giữ chỗ">
-              <Lock class="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" />
-            </span>
-            <span v-else-if="getSeatStatus(seat) === 'HELD_BY_ME'" class="absolute top-1 right-1 text-[10px]" title="Ghế của bạn đã giữ">
+            <span v-if="getSeatStatus(seat) === 'HELD_BY_ME'" class="absolute top-1 right-1 text-[10px]" title="Chỗ của bạn đã được giữ">
               <Lock class="w-2.5 h-2.5 text-primary" />
             </span>
-            <span v-else-if="getSeatStatus(seat) === 'SOLD'" class="absolute top-1 right-1 text-[10px]">
+            <span v-else-if="getSeatStatus(seat) === 'CONFIRMED_UNAVAILABLE'" class="absolute top-1 right-1 text-[10px]" title="Không khả dụng">
               <X class="w-2.5 h-2.5 text-muted-foreground/60" />
             </span>
             <span v-else-if="getSeatStatus(seat) === 'SELECTED'" class="absolute top-1 right-1 text-[10px]">
@@ -286,11 +283,6 @@ function formatCurrency(val) {
             </span>
           </button>
         </div>
-      </div>
-
-      <!-- Bus Rear Tail -->
-      <div class="w-full max-w-md bg-card border border-border rounded-b-2xl p-2.5 mt-5 text-center text-[11px] text-muted-foreground shadow-xs">
-        Đuôi xe khách · Khoang hành lý phía dưới
       </div>
     </div>
   </div>

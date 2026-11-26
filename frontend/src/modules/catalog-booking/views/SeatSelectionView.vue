@@ -10,13 +10,13 @@ import {
   Bus,
   ArrowLeft,
   Clock,
-  ShieldCheck,
-  Sparkles,
   AlertCircle,
+  AlertTriangle,
   RefreshCw,
   Loader2,
   Trash2,
-  ArrowRight
+  ArrowRight,
+  ShieldAlert
 } from 'lucide-vue-next'
 import {
   AlertDialog,
@@ -39,11 +39,21 @@ const loading = ref(false)
 const error = ref(null)
 const holding = ref(false)
 const cancelling = ref(false)
+const isVerifyingHoldState = ref(false)
 const selectedSeats = ref([])
 const backendSeats = ref([])
+const unavailableSeats = ref([])
+
+// Unknown outcome state for hold mutation
+const isHoldUnknownOutcome = ref(false)
+const holdUnknownContext = ref(null)
 
 // Active booking information after successful hold
 const heldBooking = ref(null)
+
+// Storage keys partitioned by user and trip
+const getHoldUnknownStorageKey = () => `velobus_hold_unknown_${auth.user?.id || 'guest'}_${tripId.value}`
+const getActiveHoldStorageKey = () => `velobus_active_hold_${auth.user?.id || 'guest'}_${tripId.value}`
 
 // Trip Metadata initialized from route history.state or defaults based on tripId
 const initialTrip = history.state?.trip
@@ -53,7 +63,7 @@ const trip = ref(initialTrip ? {
   route: initialTrip.route || `${initialTrip.departureStationName || initialTrip.departureStationCode || 'Điểm đi'} → ${initialTrip.arrivalStationName || initialTrip.arrivalStationCode || 'Điểm đến'}`,
   departureTime: initialTrip.departureTime || '',
   operatorName: initialTrip.operator || initialTrip.operatorName || 'Nhà xe đối tác VeloBus',
-  coachType: initialTrip.transportType || 'Xe khách cao cấp',
+  coachType: initialTrip.transportType || 'Xe khách',
   vehiclePlate: initialTrip.plate || '',
   duration: initialTrip.duration || '',
   basePrice: Number(initialTrip.basePrice) || 0
@@ -63,7 +73,7 @@ const trip = ref(initialTrip ? {
   route: `Chuyến xe #${tripId.value}`,
   departureTime: '',
   operatorName: 'Nhà xe đối tác VeloBus',
-  coachType: 'Xe khách cao cấp',
+  coachType: 'Xe khách',
   vehiclePlate: '',
   duration: '',
   basePrice: 0
@@ -76,11 +86,17 @@ const { remainingSeconds, formattedTime, isRunning, start: startCountdown, stop:
   })
   heldBooking.value = null
   selectedSeats.value = []
+  try {
+    sessionStorage.removeItem(getActiveHoldStorageKey())
+  } catch (_) {}
   fetchTripSeats()
 })
 
-// Calculate total price based on individual seat finalPrice or basePrice
+// Calculate total price: server authoritative amount when held, otherwise client sum
 const totalPrice = computed(() => {
+  if (heldBooking.value?.totalAmount) {
+    return Number(heldBooking.value.totalAmount)
+  }
   if (selectedSeats.value.length === 0) return 0
   return selectedSeats.value.reduce((sum, seatNum) => {
     const seatObj = backendSeats.value.find(s => (s.seatNumber || s.code) === seatNum)
@@ -93,6 +109,70 @@ const heldSeatCodes = computed(() => {
   if (!heldBooking.value?.seatNumbers) return []
   return heldBooking.value.seatNumbers
 })
+
+function recordHoldUnknownOutcome(seats, customReason) {
+  isHoldUnknownOutcome.value = true
+  const ctx = {
+    userId: auth.user?.id || null,
+    tripId: Number(tripId.value),
+    seatNumbers: [...seats],
+    timestamp: Date.now()
+  }
+  holdUnknownContext.value = ctx
+  try {
+    sessionStorage.setItem(getHoldUnknownStorageKey(), JSON.stringify(ctx))
+  } catch (_) {}
+}
+
+function clearHoldUnknownOutcome() {
+  isHoldUnknownOutcome.value = false
+  holdUnknownContext.value = null
+  try {
+    sessionStorage.removeItem(getHoldUnknownStorageKey())
+  } catch (_) {}
+}
+
+async function verifyHoldServerState() {
+  if (isVerifyingHoldState.value) return
+  isVerifyingHoldState.value = true
+  try {
+    const res = await catalogBookingApi.getMyBookings({ page: 0, size: 10 })
+    const bookings = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : (res?.data?.content || []))
+
+    // Look for matching unexpired HELD booking for this trip
+    const matched = bookings.find(b => {
+      const isTripMatch = Number(b.tripId) === Number(tripId.value)
+      const isHeld = b.status === 'HELD'
+      const notExpired = b.expiresAt && new Date(b.expiresAt).getTime() > Date.now()
+      return isTripMatch && isHeld && notExpired
+    })
+
+    if (matched) {
+      heldBooking.value = matched
+      selectedSeats.value = [...(matched.seatNumbers || [])]
+      startCountdown(matched.expiresAt)
+      try {
+        sessionStorage.setItem(getActiveHoldStorageKey(), JSON.stringify({
+          bookingReference: matched.bookingReference,
+          tripId: Number(tripId.value),
+          userId: auth.user?.id
+        }))
+      } catch (_) {}
+      clearHoldUnknownOutcome()
+      toast.success(`Máy chủ đã xác nhận phiên giữ chỗ #${matched.bookingReference} cho ghế ${matched.seatNumbers.join(', ')}.`)
+    } else {
+      // Authoritative list verified, no active hold found
+      clearHoldUnknownOutcome()
+      toast.info('Máy chủ không ghi nhận phiên giữ chỗ nào đang hoạt động. Quý khách có thể chọn lại ghế.')
+      await fetchTripSeats()
+    }
+  } catch (err) {
+    // PRE-01 / BLOCKER-02: Verification failure preserves lock!
+    toast.error('Không thể kết nối đến máy chủ để xác minh giữ chỗ: ' + (err?.message || 'Tiếp tục KHÓA thao tác để đảm bảo an toàn.'))
+  } finally {
+    isVerifyingHoldState.value = false
+  }
+}
 
 async function fetchTripSeats() {
   if (!tripId.value) return
@@ -115,6 +195,10 @@ async function fetchTripSeats() {
 }
 
 function onToggleSeat(seatCode) {
+  if (isHoldUnknownOutcome.value) {
+    toast.warning('Giao dịch giữ chỗ trước đang bị gián đoạn. Vui lòng xác minh trạng thái máy chủ.')
+    return
+  }
   if (isRunning.value && heldBooking.value) {
     toast.info('Phiên giữ chỗ đang kích hoạt. Vui lòng thanh toán hoặc hủy giữ chỗ để đổi ghế.')
     return
@@ -133,6 +217,7 @@ function onToggleSeat(seatCode) {
 }
 
 function removeSeat(seatCode) {
+  if (isHoldUnknownOutcome.value) return
   if (isRunning.value && heldBooking.value) {
     toast.info('Không thể xóa ghế khi đang trong phiên giữ chỗ. Vui lòng hủy phiên nếu muốn chọn lại.')
     return
@@ -142,7 +227,7 @@ function removeSeat(seatCode) {
 }
 
 async function handleHoldSeats() {
-  if (holding.value) return
+  if (holding.value || isHoldUnknownOutcome.value) return
   if (selectedSeats.value.length === 0) {
     toast.warning('Vui lòng chọn ít nhất 1 giường trên sơ đồ xe.')
     return
@@ -171,33 +256,99 @@ async function handleHoldSeats() {
     return
   }
 
+  const requestedSeats = [...selectedSeats.value]
   holding.value = true
+
   try {
     const res = await catalogBookingApi.holdSeats({
       tripId: Number(tripId.value),
-      seatNumbers: selectedSeats.value
+      seatNumbers: requestedSeats
     })
 
     const booking = res?.data || res
-    if (!booking || !booking.bookingReference) {
+
+    // BLOCKER-04: Strict BookingResponse validation
+    if (!booking || typeof booking !== 'object') {
+      recordHoldUnknownOutcome(requestedSeats, 'Dữ liệu phản hồi giữ chỗ từ máy chủ không hợp lệ.')
       throw new Error('Dữ liệu phản hồi giữ chỗ từ máy chủ không hợp lệ.')
     }
 
-    heldBooking.value = booking
-
-    if (booking.expiresAt) {
-      startCountdown(booking.expiresAt)
+    if (!booking.bookingReference) {
+      recordHoldUnknownOutcome(requestedSeats, 'Dữ liệu phản hồi giữ chỗ từ máy chủ không hợp lệ.')
+      throw new Error('Dữ liệu phản hồi giữ chỗ từ máy chủ không hợp lệ.')
     }
+
+    if (booking.tripId !== undefined && String(booking.tripId) !== String(tripId.value)) {
+      recordHoldUnknownOutcome(requestedSeats, 'Mã chuyến xe trong phản hồi giữ chỗ không khớp.')
+      throw new Error('Mã chuyến xe trong phản hồi giữ chỗ không khớp.')
+    }
+
+    if (booking.status && booking.status !== 'HELD') {
+      recordHoldUnknownOutcome(requestedSeats, `Trạng thái giữ chỗ không hợp lệ (${booking.status}).`)
+      throw new Error(`Trạng thái giữ chỗ không hợp lệ (${booking.status}).`)
+    }
+
+    if (!booking.expiresAt || new Date(booking.expiresAt).getTime() <= Date.now()) {
+      recordHoldUnknownOutcome(requestedSeats, 'Thời gian hết hạn giữ chỗ (expiresAt) từ máy chủ không hợp lệ.')
+      throw new Error('Thời gian hết hạn giữ chỗ (expiresAt) từ máy chủ không hợp lệ.')
+    }
+
+    // Success: Server state is authoritative
+    const confirmedSeats = (Array.isArray(booking.seatNumbers) && booking.seatNumbers.length > 0)
+      ? booking.seatNumbers
+      : (Array.isArray(booking.seats) && booking.seats.length > 0 ? booking.seats : requestedSeats)
+
+    heldBooking.value = {
+      ...booking,
+      seatNumbers: confirmedSeats
+    }
+    selectedSeats.value = [...confirmedSeats]
+
+    startCountdown(booking.expiresAt)
+    clearHoldUnknownOutcome()
+
+    try {
+      sessionStorage.setItem(getActiveHoldStorageKey(), JSON.stringify({
+        bookingReference: booking.bookingReference,
+        tripId: Number(tripId.value),
+        userId: auth.user?.id
+      }))
+    } catch (_) {}
 
     toast.success(`Giữ chỗ thành công! Đã khóa ${selectedSeats.value.join(', ')} trong 10 phút. Vui lòng thanh toán!`)
   } catch (err) {
     console.error('Hold seats failed:', err)
-    if (err?.code === 'SEAT_ALREADY_RESERVED' || err?.message?.includes('SEAT_ALREADY_RESERVED')) {
+    const errMsg = err?.message || ''
+    const errCode = err?.code || ''
+    const isConflict = errCode === 'SEAT_ALREADY_RESERVED' || errMsg.includes('SEAT_ALREADY_RESERVED')
+
+    if (isConflict) {
+      // Definitive business rejection: mark as unavailable and refetch
+      unavailableSeats.value = [...new Set([...unavailableSeats.value, ...requestedSeats])]
+      selectedSeats.value = selectedSeats.value.filter(s => !requestedSeats.includes(s))
       toast.error('Một hoặc nhiều ghế đã bị hành khách khác chọn. Vui lòng chọn ghế khác!')
+      await fetchTripSeats()
     } else {
-      toast.error(err?.message ? `Không thể giữ chỗ: ${err.message}` : 'Không thể giữ chỗ do lỗi kết nối hoặc hệ thống bận.')
+      // Ambiguous outcome (timeout, network error, malformed response)
+      const isTimeoutOrNetwork =
+        errCode === 'NETWORK_ERROR' ||
+        errCode === 'ECONNABORTED' ||
+        errCode === 'ERR_NETWORK' ||
+        errMsg.toLowerCase().includes('timeout') ||
+        errMsg.toLowerCase().includes('kết nối') ||
+        errMsg.includes('không hợp lệ') ||
+        errMsg.includes('Malformed') ||
+        err?.name === 'TimeoutError'
+
+      if (isTimeoutOrNetwork) {
+        if (!isHoldUnknownOutcome.value) {
+          recordHoldUnknownOutcome(requestedSeats, errMsg)
+        }
+        toast.error('Không thể xác định kết quả giữ chỗ do lỗi kết nối mạng hoặc timeout. Đã khóa thao tác để bảo vệ giao dịch.')
+      } else {
+        toast.error(errMsg ? `Không thể giữ chỗ: ${errMsg}` : 'Không thể giữ chỗ do hệ thống bận.')
+      }
     }
-    await fetchTripSeats()
   } finally {
     holding.value = false
   }
@@ -206,11 +357,16 @@ async function handleHoldSeats() {
 async function handleCancelBooking() {
   if (!heldBooking.value?.bookingReference || cancelling.value) return
   cancelling.value = true
+  const ref = heldBooking.value.bookingReference
+
   try {
-    await catalogBookingApi.cancelBooking(heldBooking.value.bookingReference)
+    await catalogBookingApi.cancelBooking(ref)
     stopCountdown()
     heldBooking.value = null
     selectedSeats.value = []
+    try {
+      sessionStorage.removeItem(getActiveHoldStorageKey())
+    } catch (_) {}
     toast.success('Đã hủy giữ chỗ thành công.')
     await fetchTripSeats()
   } catch (err) {
@@ -222,6 +378,10 @@ async function handleCancelBooking() {
 }
 
 function proceedToCheckout() {
+  if (isHoldUnknownOutcome.value) {
+    toast.warning('Giao dịch giữ chỗ đang bị gián đoạn. Vui lòng bấm "Kiểm tra trạng thái giữ chỗ".')
+    return
+  }
   if (!heldBooking.value) {
     handleHoldSeats()
     return
@@ -234,10 +394,10 @@ function formatCurrency(val) {
   return Number(val).toLocaleString('vi-VN')
 }
 
-onMounted(() => {
+onMounted(async () => {
   fetchTripSeats()
 
-  // Khôi phục danh sách ghế đã chọn trước khi bị điều hướng đăng nhập (nếu có)
+  // 1. Restore pending seat intent after returning from login
   try {
     const pending = sessionStorage.getItem(`velobus_pending_seats_${tripId.value}`)
     if (pending) {
@@ -245,6 +405,42 @@ onMounted(() => {
       if (Array.isArray(parsed) && parsed.length > 0) {
         selectedSeats.value = parsed
         sessionStorage.removeItem(`velobus_pending_seats_${tripId.value}`)
+      }
+    }
+  } catch (_) {}
+
+  // 2. Restore Hold Unknown Outcome state if previously interrupted
+  try {
+    const storedUnknown = sessionStorage.getItem(getHoldUnknownStorageKey())
+    if (storedUnknown) {
+      const parsed = JSON.parse(storedUnknown)
+      if (parsed && typeof parsed === 'object') {
+        isHoldUnknownOutcome.value = true
+        holdUnknownContext.value = parsed
+      }
+    }
+  } catch (_) {}
+
+  // 3. Restore Active Held Booking from Server
+  try {
+    const storedActiveHold = sessionStorage.getItem(getActiveHoldStorageKey())
+    if (storedActiveHold) {
+      const parsed = JSON.parse(storedActiveHold)
+      if (parsed?.bookingReference && String(parsed.tripId) === String(tripId.value)) {
+        try {
+          const detailRes = await catalogBookingApi.getBookingDetail(parsed.bookingReference)
+          const booking = detailRes?.data || detailRes
+          const notExpired = booking?.expiresAt && new Date(booking.expiresAt).getTime() > Date.now()
+          if (booking && booking.status === 'HELD' && notExpired) {
+            heldBooking.value = booking
+            selectedSeats.value = [...(booking.seatNumbers || [])]
+            startCountdown(booking.expiresAt)
+          } else {
+            sessionStorage.removeItem(getActiveHoldStorageKey())
+          }
+        } catch (_) {
+          // If server check fails, keep client state clean
+        }
       }
     }
   } catch (_) {}
@@ -271,15 +467,11 @@ onMounted(() => {
           <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
             {{ trip.operatorName }}
           </span>
-          <span class="text-xs text-muted-foreground flex items-center gap-1">
-            <ShieldCheck class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            Nhà xe uy tín đã xác thực
-          </span>
           <span v-if="trip.vehiclePlate" class="text-xs text-muted-foreground">
-            • Biển số: <strong class="text-foreground">{{ trip.vehiclePlate }}</strong>
+            Biển số: <strong class="text-foreground">{{ trip.vehiclePlate }}</strong>
           </span>
           <span class="text-xs text-muted-foreground font-mono">
-            • Mã: <strong class="text-foreground">{{ trip.tripCode }}</strong>
+            Mã: <strong class="text-foreground">{{ trip.tripCode }}</strong>
           </span>
         </div>
         <h1 class="text-xl font-bold text-foreground flex items-center gap-2">
@@ -290,8 +482,8 @@ onMounted(() => {
             <Clock class="w-3.5 h-3.5 text-primary" />
             <span>Khởi hành: <strong class="text-foreground">{{ trip.departureTime }}</strong></span>
           </span>
-          <span v-if="trip.duration">⏳ {{ trip.duration }}</span>
-          <span>🚌 {{ trip.coachType }}</span>
+          <span v-if="trip.duration">Thời gian: {{ trip.duration }}</span>
+          <span>Loại xe: {{ trip.coachType }}</span>
         </p>
       </div>
 
@@ -302,6 +494,36 @@ onMounted(() => {
         <ArrowLeft class="w-3.5 h-3.5 mr-1.5" />
         Đổi chuyến xe khác
       </router-link>
+    </div>
+
+    <!-- Unknown Outcome Warning Alert (BLOCKER-02) -->
+    <div
+      v-if="isHoldUnknownOutcome"
+      data-testid="hold-unknown-alert"
+      class="bg-amber-500/10 border-2 border-amber-500/40 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs"
+    >
+      <div class="flex items-start gap-3">
+        <AlertTriangle class="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+        <div class="space-y-1">
+          <p class="font-bold text-amber-900 dark:text-amber-200">
+            Giao dịch giữ chỗ chưa xác định kết quả (Mất kết nối / Timeout)
+          </p>
+          <p class="text-amber-800 dark:text-amber-300">
+            Hệ thống đã tạm KHÓA thao tác để phòng ngừa tạo nhiều phiên giữ chỗ trùng lặp. Vui lòng bấm kiểm tra trạng thái máy chủ để đối soát.
+          </p>
+        </div>
+      </div>
+      <button
+        type="button"
+        data-testid="btn-verify-hold-state"
+        :disabled="isVerifyingHoldState"
+        @click="verifyHoldServerState"
+        class="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs transition-colors shrink-0 disabled:opacity-50"
+      >
+        <Loader2 v-if="isVerifyingHoldState" class="w-3.5 h-3.5 animate-spin" />
+        <RefreshCw v-else class="w-3.5 h-3.5" />
+        <span>Kiểm tra trạng thái giữ chỗ</span>
+      </button>
     </div>
 
     <!-- Loading Skeleton State -->
@@ -343,24 +565,11 @@ onMounted(() => {
           :seats="backendSeats"
           :selected-seats="selectedSeats"
           :held-seats="heldSeatCodes"
+          :unavailable-seats="unavailableSeats"
           :base-price="trip.basePrice"
           :max-selectable="10"
           @toggle-seat="onToggleSeat"
         />
-
-        <!-- Amenities Info Card -->
-        <div class="bg-card text-card-foreground rounded-xl border border-border p-4 shadow-xs">
-          <h4 class="text-xs font-semibold text-foreground mb-2 flex items-center gap-1.5">
-            <Sparkles class="w-3.5 h-3.5 text-primary" />
-            <span>Tiện ích khoang giường VIP bao gồm:</span>
-          </h4>
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-muted-foreground">
-            <div class="flex items-center gap-1.5">✓ Rèm che riêng tư</div>
-            <div class="flex items-center gap-1.5">✓ Cổng sạc Type-C & USB</div>
-            <div class="flex items-center gap-1.5">✓ Nước suối & khăn lạnh</div>
-            <div class="flex items-center gap-1.5">✓ Wifi tốc độ cao miễn phí</div>
-          </div>
-        </div>
       </div>
 
       <!-- Right Column: Sticky Booking Summary Card (35% / 4 cols) -->
@@ -373,12 +582,12 @@ onMounted(() => {
             class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3.5 flex items-center justify-between"
           >
             <div class="flex items-center gap-2">
-              <span class="text-lg animate-pulse">⏳</span>
+              <Clock class="w-4 h-4 text-amber-600 dark:text-amber-400 animate-pulse" />
               <div>
                 <p class="text-[11px] font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wide">
                   Thời gian giữ chỗ của bạn
                 </p>
-                <p class="text-xs text-amber-700 dark:text-amber-400">Ghế đang được khóa trên hệ thống</p>
+                <p class="text-xs text-amber-700 dark:text-amber-400">Chỗ đang được khóa trên máy chủ</p>
               </div>
             </div>
             <span
@@ -396,13 +605,13 @@ onMounted(() => {
                 Chỗ ngồi đã chọn ({{ selectedSeats.length }})
               </h3>
               <span class="text-xs text-primary font-medium tabular-nums">
-                {{ selectedSeats.length }}/10 giường
+                {{ selectedSeats.length }}/10 chỗ
               </span>
             </div>
 
             <div v-if="selectedSeats.length === 0" class="py-6 text-center text-xs text-muted-foreground" data-testid="no-seats-selected">
-              <p>Chưa có giường nào được chọn</p>
-              <p class="text-[11px] mt-1 text-muted-foreground/80">Vui lòng nhấp vào giường trống ở sơ đồ xe bên trái</p>
+              <p>Chưa có chỗ nào được chọn</p>
+              <p class="text-[11px] mt-1 text-muted-foreground/80">Vui lòng nhấp vào chỗ ngồi ở sơ đồ bên trái</p>
             </div>
 
             <div v-else class="divide-y divide-border max-h-48 overflow-y-auto" data-testid="selected-seats-list">
@@ -417,7 +626,7 @@ onMounted(() => {
                     {{ seatCode }}
                   </span>
                   <div>
-                    <span class="font-medium text-foreground">Giường {{ seatCode }}</span>
+                    <span class="font-medium text-foreground">Chỗ {{ seatCode }}</span>
                     <span class="text-[11px] text-muted-foreground ml-1">
                       ({{ seatCode.startsWith('A') ? 'Tầng 1' : 'Tầng 2' }})
                     </span>
@@ -429,7 +638,7 @@ onMounted(() => {
                     {{ formatCurrency(backendSeats.find(s => (s.seatNumber || s.code) === seatCode)?.finalPrice || trip.basePrice) }} đ
                   </span>
                   <button
-                    v-if="!isRunning"
+                    v-if="!isRunning && !isHoldUnknownOutcome"
                     type="button"
                     :data-testid="'remove-seat-' + seatCode"
                     @click="removeSeat(seatCode)"
@@ -446,18 +655,10 @@ onMounted(() => {
           <!-- Section: Price Breakdown -->
           <div class="space-y-1.5 text-xs text-muted-foreground pt-2 border-t border-border">
             <div class="flex justify-between">
-              <span>Giá vé giường nằm (x{{ selectedSeats.length }}):</span>
+              <span>Đơn giá danh mục (x{{ selectedSeats.length }}):</span>
               <span class="tabular-nums font-medium text-foreground" data-testid="subtotal-amount">
                 {{ formatCurrency(totalPrice) }} đ
               </span>
-            </div>
-            <div class="flex justify-between">
-              <span>Bảo hiểm hành khách:</span>
-              <span class="text-emerald-600 dark:text-emerald-400 font-medium">Miễn phí (0 đ)</span>
-            </div>
-            <div class="flex justify-between">
-              <span>Phí tiện ích & dịch vụ:</span>
-              <span class="text-emerald-600 dark:text-emerald-400 font-medium">0 đ</span>
             </div>
           </div>
 
@@ -465,7 +666,6 @@ onMounted(() => {
           <div class="pt-3 border-t border-border flex items-baseline justify-between">
             <div>
               <span class="text-xs text-muted-foreground block">Tổng tiền thanh toán</span>
-              <span class="text-[10px] text-muted-foreground/70">(Đã bao gồm VAT & bảo hiểm)</span>
             </div>
             <span class="text-2xl font-bold text-primary tabular-nums" data-testid="total-price-display">
               {{ formatCurrency(totalPrice) }} <span class="text-sm font-semibold">đ</span>
@@ -478,7 +678,7 @@ onMounted(() => {
               type="button"
               data-testid="btn-proceed-booking"
               @click="proceedToCheckout"
-              :disabled="selectedSeats.length === 0 || holding"
+              :disabled="selectedSeats.length === 0 || holding || isHoldUnknownOutcome"
               class="w-full h-12 bg-primary hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground disabled:cursor-not-allowed text-primary-foreground font-semibold rounded-lg shadow-xs transition-all flex items-center justify-center gap-2 text-sm"
             >
               <Loader2 v-if="holding" class="w-4 h-4 animate-spin text-primary-foreground" />
@@ -503,7 +703,7 @@ onMounted(() => {
                 <AlertDialogHeader>
                   <AlertDialogTitle>Hủy giữ chỗ hiện tại?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Hành động này sẽ giải phóng toàn bộ giường {{ selectedSeats.join(', ') }} đang được khóa cho quý khách để người khác có thể chọn. Quý khách có chắc chắn muốn hủy?
+                    Hành động này sẽ giải phóng toàn bộ chỗ ngồi {{ selectedSeats.join(', ') }} đang được khóa cho quý khách để người khác có thể chọn. Quý khách có chắc chắn muốn hủy?
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -519,20 +719,6 @@ onMounted(() => {
               </AlertDialogContent>
             </AlertDialog>
           </div>
-
-          <!-- Trust & Security Badges -->
-          <div class="pt-2 text-center text-[11px] text-muted-foreground space-y-1">
-            <p class="flex items-center justify-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-medium">
-              <ShieldCheck class="w-3.5 h-3.5" />
-              Thanh toán bảo mật chuẩn VNPay Sandbox
-            </p>
-            <p>Hỗ trợ đổi trả & hoàn tiền 100% trước 24h xuất bến</p>
-          </div>
-        </div>
-
-        <!-- Hotline Support -->
-        <div class="text-center text-xs text-muted-foreground">
-          Cần hỗ trợ chọn giường? Hotline <strong class="text-foreground">1900 6868</strong> (24/7)
         </div>
       </div>
     </div>

@@ -399,38 +399,12 @@ async function verifyWalletServerState() {
       return
     }
 
-    const ctx = pendingMutationContext.value
-    // Check if withdrawalsList has a matching item (amount & bankName)
-    const matched = withdrawalsList.value.find(w => {
-      if (!ctx) return false
-      const amountMatches = Number(w.amount) === Number(ctx.amount)
-      const bankMatches = !ctx.bankName || (w.bankName && w.bankName.toLowerCase().trim() === ctx.bankName.toLowerCase().trim())
-      return amountMatches && bankMatches
-    })
-
-    if (matched) {
-      if (matched.status === 'PENDING') {
-        toast.info(`Máy chủ đã ghi nhận lệnh rút #${matched.id} số tiền ${formatCurrency(matched.amount)} đ (PENDING). Lệnh đang chờ Admin duyệt chi.`)
-        clearUnknownOutcome()
-        showWithdrawDialog.value = false
-        return
-      } else if (matched.status === 'APPROVED') {
-        toast.success(`Máy chủ xác nhận lệnh rút #${matched.id} (${formatCurrency(matched.amount)} đ) đã được PHÊ DUYỆT (APPROVED).`)
-        clearUnknownOutcome()
-        showWithdrawDialog.value = false
-        return
-      } else if (matched.status === 'REJECTED') {
-        toast.error(`Máy chủ xác nhận lệnh rút #${matched.id} đã bị TỪ CHỐI (REJECTED): ${matched.adminNote || 'Không có lý do chi tiết'}.`)
-        clearUnknownOutcome()
-        showWithdrawDialog.value = false
-        return
-      }
-    }
-
-    // No matching authoritative withdrawal found: PRE-01 Fail-Closed Policy
-    // Empty list or non-match is NOT evidence that mutation didn't happen on backend/gateway!
-    withdrawError.value = 'Không tìm thấy bản ghi rút tiền trùng khớp đã hoàn tất trên máy chủ. Do thiếu mã định danh duy nhất (Idempotency Key), hệ thống tiếp tục KHÓA lệnh rút để phòng ngừa trừ tiền trùng lặp. Vui lòng đối soát thủ công với Ban quản trị.'
-    toast.warning('Chưa có bằng chứng giao dịch trước đã kết thúc. Tiếp tục KHÓA thao tác để bảo vệ số dư ví.')
+    // PRE-01 Fail-Closed Policy:
+    // Backend Withdrawal API does not provide an authoritative Idempotency Key or Request Correlation ID.
+    // Matching purely on amount/bankName is non-unique and unsafe.
+    // Empty list or non-match is also NOT evidence that the mutation was not committed on the server.
+    withdrawError.value = 'Hệ thống máy chủ chưa cung cấp Idempotency Key hoặc Correlation ID để xác định duy nhất kết quả của lệnh rút vừa bị gián đoạn. Để bảo vệ an toàn số dư ví và ngăn ngừa trừ tiền trùng lặp, hệ thống duy trì KHÓA thao tác rút tiền (fail-closed). Vui lòng liên hệ Ban quản trị để đối soát thủ công.'
+    toast.warning('Chưa có bằng chứng xác thực giao dịch trước đã kết thúc. Tiếp tục KHÓA thao tác để bảo vệ số dư ví.')
   } catch (err) {
     toast.error('Lỗi khi kiểm tra trạng thái máy chủ: ' + (err?.message || ''))
   } finally {

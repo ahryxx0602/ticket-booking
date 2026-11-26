@@ -405,7 +405,7 @@ function handleReset() {
             <Button variant="outline" size="sm" class="text-xs" @click="handleCancel">
               Hủy
             </Button>
-            <Button size="sm" class="text-xs gap-1" @click="handleSave">
+            <Button size="sm" class="text-xs gap-1" data-testid="theme-save-btn" @click="handleSave">
               <Check class="h-3.5 w-3.5" />
               Lưu thay đổi
             </Button>
