@@ -1,35 +1,139 @@
 package com.ticket.payment.infrastructure.service;
 
+import com.ticket.payment.application.dto.CustomerPaymentStatusResponse;
 import com.ticket.payment.application.dto.PaymentDetailResponse;
 import com.ticket.payment.application.dto.PaymentReportResponse;
 import com.ticket.payment.application.usecase.AdminGetPaymentsUseCase;
 import com.ticket.payment.application.usecase.AdminReconcilePaymentUseCase;
+import com.ticket.payment.application.usecase.GetCustomerPaymentStatusUseCase;
 import com.ticket.payment.application.usecase.GetPaymentReportUseCase;
+import com.ticket.payment.application.usecase.HandleVnPayBrowserReturnUseCase;
 import com.ticket.payment.domain.model.Payment;
 import com.ticket.payment.domain.model.PaymentMethod;
 import com.ticket.payment.domain.model.PaymentRevenueReport;
 import com.ticket.payment.domain.model.PaymentStatus;
+import com.ticket.payment.domain.port.PaymentBookingPort;
+import com.ticket.payment.domain.port.PaymentIdentityPort;
 import com.ticket.payment.domain.repository.PaymentRepository;
+import com.ticket.payment.infrastructure.config.VnPayProperties;
+import com.ticket.payment.infrastructure.crypto.VnPaySignUtil;
 import com.ticket.shared.dto.PageResponse;
 import com.ticket.shared.exception.BusinessException;
 import com.ticket.shared.exception.EntityNotFoundException;
+import com.ticket.shared.exception.ForbiddenException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
-public class PaymentQueryServiceImpl implements GetPaymentReportUseCase, AdminGetPaymentsUseCase, AdminReconcilePaymentUseCase {
+public class PaymentQueryServiceImpl implements GetPaymentReportUseCase, AdminGetPaymentsUseCase, AdminReconcilePaymentUseCase, GetCustomerPaymentStatusUseCase, HandleVnPayBrowserReturnUseCase {
 
     private final PaymentRepository paymentRepository;
+    private final PaymentBookingPort paymentBookingPort;
+    private final PaymentIdentityPort paymentIdentityPort;
+    private final VnPayProperties vnPayProperties;
+
+    @Override
+    @Transactional(readOnly = true)
+    public CustomerPaymentStatusResponse execute(String bookingReference, String authenticatedUsername) {
+        if (bookingReference == null || bookingReference.isBlank()) {
+            throw new BusinessException("INVALID_BOOKING_REFERENCE", "Mã tham chiếu đơn đặt chỗ không hợp lệ");
+        }
+        Long userId = paymentIdentityPort.findActiveUserIdByUsername(authenticatedUsername)
+                .orElseThrow(() -> new ForbiddenException("User not found or inactive"));
+
+        PaymentBookingPort.BookingSnapshot booking = paymentBookingPort.findBookingByReference(bookingReference.trim())
+                .orElseThrow(() -> new EntityNotFoundException("Booking", bookingReference));
+
+        if (!userId.equals(booking.userId())) {
+            throw new ForbiddenException("Access denied: You do not own this booking");
+        }
+
+        Optional<Payment> paymentOpt = paymentRepository.findLatestByBookingId(booking.id());
+
+        if (paymentOpt.isEmpty()) {
+            return CustomerPaymentStatusResponse.builder()
+                    .bookingReference(booking.bookingReference())
+                    .bookingStatus(booking.status())
+                    .hasPaymentAttempt(false)
+                    .amount(booking.totalAmount())
+                    .currency("VND")
+                    .reconciliationRequired(false)
+                    .build();
+        }
+
+        Payment payment = paymentOpt.get();
+        return CustomerPaymentStatusResponse.builder()
+                .bookingReference(booking.bookingReference())
+                .bookingStatus(booking.status())
+                .hasPaymentAttempt(true)
+                .paymentReference(payment.getPaymentReference())
+                .paymentStatus(payment.getStatus())
+                .paymentMethod(payment.getPaymentMethod())
+                .amount(payment.getAmount())
+                .currency(payment.getCurrency() != null ? payment.getCurrency() : "VND")
+                .reconciliationRequired(payment.isReconciliationRequired())
+                .createdAt(payment.getCreatedAt())
+                .updatedAt(payment.getPaymentTime() != null ? payment.getPaymentTime() : payment.getCreatedAt())
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public String execute(Map<String, String> allParams) {
+        if (allParams == null || allParams.isEmpty()) {
+            return vnPayProperties.getFrontendReturnUrl() + "?vnp_Error=EMPTY_CALLBACK";
+        }
+
+        boolean validSignature = VnPaySignUtil.verifySignature(allParams, vnPayProperties.getHashSecret());
+        String txnRef = allParams.get("vnp_TxnRef");
+        String responseCode = allParams.get("vnp_ResponseCode");
+
+        // Correlation to booking reference
+        String targetBookingReference = "";
+        if (txnRef != null && !txnRef.isBlank()) {
+            Optional<Payment> paymentOpt = paymentRepository.findByPaymentReference(txnRef.trim());
+            if (paymentOpt.isPresent()) {
+                Optional<PaymentBookingPort.BookingSnapshot> bookingOpt = paymentBookingPort.findBookingById(paymentOpt.get().getBookingId());
+                if (bookingOpt.isPresent()) {
+                    targetBookingReference = bookingOpt.get().bookingReference();
+                }
+            }
+        }
+
+        StringBuilder redirectUrl = new StringBuilder(vnPayProperties.getFrontendReturnUrl());
+        if (!targetBookingReference.isBlank()) {
+            if (!redirectUrl.toString().endsWith("/")) {
+                redirectUrl.append("/");
+            }
+            redirectUrl.append(URLEncoder.encode(targetBookingReference, StandardCharsets.UTF_8));
+        }
+
+        redirectUrl.append("?");
+        if (!validSignature) {
+            log.warn("[VNPAY BROWSER RETURN] Invalid signature detected for txnRef: {}", txnRef);
+            redirectUrl.append("vnp_Error=INVALID_SIGNATURE");
+        } else {
+            redirectUrl.append("vnp_ResponseCode=").append(responseCode != null ? responseCode : "")
+                    .append("&vnp_TxnRef=").append(txnRef != null ? txnRef : "");
+        }
+
+        return redirectUrl.toString();
+    }
 
     @Override
     @Transactional(readOnly = true)

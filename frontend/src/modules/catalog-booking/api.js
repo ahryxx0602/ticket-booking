@@ -38,9 +38,15 @@ export const catalogBookingApi = {
   getBookingDetail(bookingReference) {
     return httpClient.get(`/bookings/${bookingReference}`)
   },
+  getElectronicTicket(bookingReference) {
+    return httpClient.get(`/bookings/${bookingReference}/ticket`)
+  },
 
   // Payment
   createVnPayCheckout(payload) {
     return httpClient.post('/payments/checkout', payload)
+  },
+  getPaymentStatus(bookingReference) {
+    return httpClient.get(`/payments/bookings/${bookingReference}/status`)
   },
 }

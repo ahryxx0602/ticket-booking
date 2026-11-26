@@ -1,13 +1,15 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import { useAuthStore } from '@/modules/auth/store'
 import { catalogBookingApi } from '../api'
 import { validateBookingResponse, parseIsoDate } from '../utils/booking-validator'
-import { useCountdown } from '@/shared/composables/useCountdown'
-import FormField from '@/shared/components/FormField.vue'
-import AppButton from '@/shared/components/AppButton.vue'
+import { useBookingOperationGuard } from '../composables/useBookingOperationGuard'
+import { Button } from '@/components/ui/button'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
 import StatusBadge from '@/shared/components/StatusBadge.vue'
 import {
   Clock,
@@ -25,13 +27,14 @@ import {
   Phone,
   Mail,
   FileText,
-  ChevronRight,
-  ExternalLink
+  ExternalLink,
+  ShieldAlert
 } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const operationGuard = useBookingOperationGuard()
 
 const bookingReference = computed(() => {
   return String(route.params.bookingId || route.params.reference || '').trim()
@@ -45,19 +48,11 @@ const isSubmittingPayment = ref(false)
 const isVerifyingPayment = ref(false)
 const verifyPollCount = ref(0)
 const paymentGatewayError = ref('')
+const isReconciliationRequired = ref(false)
 
-// Passenger contact state (for customer confirmation & contact)
-const passengerForm = ref({
-  fullName: authStore.user?.fullName || '',
-  phone: authStore.user?.phone || '',
-  email: authStore.user?.email || '',
-  note: ''
-})
-
-const formErrors = ref({
-  fullName: '',
-  phone: '',
-  email: ''
+// PRE-03: Cancellation block guard
+const isBlockedByCancel = computed(() => {
+  return operationGuard.isCheckoutBlocked(bookingReference.value)
 })
 
 // Server-synced countdown
@@ -127,29 +122,40 @@ async function pollAuthoritativeConfirmation(attempt = 1) {
   isVerifyingPayment.value = true
 
   try {
-    const res = await catalogBookingApi.getBookingDetail(bookingReference.value)
-    const data = res.data?.data || res.data
-    const validation = validateBookingResponse(data, {
-      expectedUserId: authStore.user?.id,
-      allowTerminalReplay: true,
-      allowPastExpiry: true
-    })
+    // 1. Authoritative booking status
+    const resBooking = await catalogBookingApi.getBookingDetail(bookingReference.value)
+    const bookingData = resBooking.data?.data || resBooking.data
 
-    if (validation.valid && data) {
-      booking.value = data
-      if (data.status === 'CONFIRMED') {
+    if (bookingData && bookingData.status === 'CONFIRMED') {
+      booking.value = bookingData
+      stopPolling()
+      toast.success('Xác nhận thanh toán thành công! Vé của bạn đã được đảm bảo.')
+      return
+    }
+
+    // 2. Authoritative payment status query
+    const resPayment = await catalogBookingApi.getPaymentStatus(bookingReference.value)
+    const payData = resPayment.data?.data || resPayment.data
+
+    if (payData) {
+      if (payData.reconciliationRequired) {
+        isReconciliationRequired.value = true
+      }
+      if (payData.paymentStatus === 'SUCCESS' || payData.bookingStatus === 'CONFIRMED') {
+        booking.value.status = 'CONFIRMED'
         stopPolling()
-        toast.success('Xác nhận thanh toán thành công! Vé của bạn đã được đảm bảo.')
+        toast.success('Xác nhận thanh toán thành công từ cổng VNPay!')
         return
       }
-      if (data.status === 'CANCELLED' || data.status === 'EXPIRED') {
+      if (payData.paymentStatus === 'FAILED') {
         stopPolling()
-        toast.error(`Đơn đặt chỗ đã ở trạng thái ${data.status}.`)
+        paymentGatewayError.value = 'Giao dịch thanh toán đã bị cổng VNPay từ chối hoặc hết hạn.'
+        toast.error('Thanh toán không thành công')
         return
       }
     }
   } catch (err) {
-    console.warn('[Checkout] Confirmation poll error:', err)
+    console.warn('[Checkout] Confirmation poll warning:', err)
   }
 
   pollTimer = setTimeout(() => {
@@ -195,9 +201,14 @@ async function fetchBookingDetail() {
 
     // Inspect route query for VNPay return redirect
     const vnpCode = route.query.vnp_ResponseCode
-    if (vnpCode !== undefined && vnpCode !== null) {
+    const vnpError = route.query.vnp_Error
+
+    if (vnpError === 'INVALID_SIGNATURE') {
+      paymentGatewayError.value = 'Phát hiện phản hồi không hợp lệ từ cổng thanh toán (Chữ ký điện tử không khớp). Vui lòng đối soát lại trạng thái.'
+      toast.error('Lỗi chữ ký cổng thanh toán')
+    } else if (vnpCode !== undefined && vnpCode !== null) {
       if (vnpCode === '00') {
-        // Returned with success code: poll authoritative backend state
+        // Returned with 00: poll authoritative backend state
         pollAuthoritativeConfirmation(1)
       } else {
         paymentGatewayError.value = `Giao dịch thanh toán qua VNPay không thành công hoặc đã bị hủy bởi khách hàng (Mã kết quả: ${vnpCode}).`
@@ -212,33 +223,47 @@ async function fetchBookingDetail() {
   }
 }
 
-// Form Validation
-function validateForm() {
-  let isValid = true
-  formErrors.value = { fullName: '', phone: '', email: '' }
-
-  if (!passengerForm.value.fullName.trim()) {
-    formErrors.value.fullName = 'Vui lòng nhập họ và tên hành khách'
-    isValid = false
+// PRE-04: Strict Redirect Security Validation
+function validateRedirectUrl(redirectUrl) {
+  if (!redirectUrl || typeof redirectUrl !== 'string') {
+    throw new Error('Máy chủ không cung cấp đường dẫn chuyển tiếp VNPay hợp lệ.')
   }
 
-  const phoneRegex = /(84|0[3|5|7|8|9])+([0-9]{8})\b/
-  if (!passengerForm.value.phone.trim() || !phoneRegex.test(passengerForm.value.phone)) {
-    formErrors.value.phone = 'Số điện thoại không đúng định dạng Việt Nam (10 số)'
-    isValid = false
+  let parsed
+  try {
+    parsed = new URL(redirectUrl)
+  } catch {
+    throw new Error('Đường dẫn chuyển tiếp cổng thanh toán không đúng định dạng URL.')
   }
 
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  if (!passengerForm.value.email.trim() || !emailRegex.test(passengerForm.value.email)) {
-    formErrors.value.email = 'Email không hợp lệ để nhận thông báo xác nhận vé'
-    isValid = false
+  const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+
+  // Require HTTPS except local testing
+  if (parsed.protocol !== 'https:' && (!isLocal || parsed.protocol !== 'http:')) {
+    throw new Error('Giao thức chuyển tiếp thanh toán không an toàn (Yêu cầu HTTPS).')
   }
 
-  return isValid
+  // Reject embedded credentials
+  if (parsed.username || parsed.password) {
+    throw new Error('URL chuyển tiếp chứa thông tin đăng nhập không được phép.')
+  }
+
+  // Trusted host verification (sandbox or live vnpayment.vn)
+  const trustedHosts = ['sandbox.vnpayment.vn', 'vnpayment.vn', 'pay.vnpay.vn']
+  if (!trustedHosts.includes(parsed.hostname) && !isLocal) {
+    throw new Error(`Cổng thanh toán không thuộc danh sách tin cậy: ${parsed.hostname}`)
+  }
+
+  return parsed.toString()
 }
 
 // Payment Action
 async function handleProceedPayment() {
+  if (isBlockedByCancel.value) {
+    toast.error('Đơn đặt chỗ này đang trong tiến trình hủy. Không thể thực hiện thanh toán.')
+    return
+  }
+
   if (isExpired.value) {
     toast.error('Phiên giữ chỗ đã hết hạn. Vui lòng quay lại sơ đồ chọn ghế mới.')
     return
@@ -254,11 +279,6 @@ async function handleProceedPayment() {
     return
   }
 
-  if (!validateForm()) {
-    toast.warning('Vui lòng kiểm tra lại thông tin người liên hệ nhận vé.')
-    return
-  }
-
   isSubmittingPayment.value = true
   paymentGatewayError.value = ''
 
@@ -269,20 +289,15 @@ async function handleProceedPayment() {
     })
 
     const data = res.data?.data || res.data
-    const redirectUrl = data?.redirectPaymentUrl
+    const redirectUrl = validateRedirectUrl(data?.redirectPaymentUrl)
 
-    if (!redirectUrl || typeof redirectUrl !== 'string') {
-      throw new Error('Máy chủ không cung cấp đường dẫn chuyển tiếp VNPay hợp lệ.')
-    }
-
-    // Validate URL scheme
-    if (!redirectUrl.startsWith('http://') && !redirectUrl.startsWith('https://')) {
-      throw new Error('Đường dẫn chuyển tiếp cổng thanh toán không an toàn.')
-    }
+    // Save unresolved payment state before navigating away
+    operationGuard.setUnresolvedPayment(booking.value.bookingReference, {
+      paymentReference: data?.paymentReference,
+      startedAt: Date.now()
+    })
 
     toast.info('Đang chuyển hướng sang cổng thanh toán VNPay...')
-
-    // Navigate to VNPay Gateway
     window.location.href = redirectUrl
   } catch (err) {
     console.error('[Checkout] Payment initialization failed:', err)
@@ -328,6 +343,16 @@ onUnmounted(() => {
       </span>
     </div>
 
+    <!-- Cancellation Guard Warning (PRE-03) -->
+    <Alert v-if="isBlockedByCancel" variant="destructive">
+      <ShieldAlert class="w-4 h-4" />
+      <AlertTitle>Thao Tác Bị Khóa Do Yêu Cầu Hủy Vé</AlertTitle>
+      <AlertDescription>
+        Đơn đặt chỗ này đang trong tiến trình hủy hoặc chưa hoàn tất đối soát kết quả hủy chỗ.
+        Để đảm bảo an toàn giao dịch, tính năng thanh toán tạm thời bị khóa.
+      </AlertDescription>
+    </Alert>
+
     <!-- Loading Skeleton -->
     <div v-if="isLoading" class="p-12 text-center bg-card rounded-xl border border-border space-y-4">
       <Loader2 class="w-8 h-8 animate-spin mx-auto text-primary" />
@@ -343,12 +368,12 @@ onUnmounted(() => {
       <h3 class="text-sm font-bold text-destructive">Không Thể Xác Thực Đơn Đặt Chỗ</h3>
       <p class="text-xs text-muted-foreground max-w-md mx-auto">{{ loadError }}</p>
       <div class="pt-2 flex justify-center gap-3">
-        <AppButton variant="outline" size="sm" @click="fetchBookingDetail">
+        <Button variant="outline" size="sm" @click="fetchBookingDetail">
           <RefreshCw class="w-3.5 h-3.5 mr-1" />
           Thử Lại
-        </AppButton>
+        </Button>
         <router-link to="/search">
-          <AppButton size="sm">Tìm Chuyến Khác</AppButton>
+          <Button size="sm">Tìm Chuyến Khác</Button>
         </router-link>
       </div>
     </div>
@@ -408,11 +433,17 @@ onUnmounted(() => {
         </div>
       </div>
 
+      <!-- Reconciliation Alert -->
+      <Alert v-if="isReconciliationRequired" class="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300">
+        <AlertTriangle class="w-4 h-4 text-amber-600" />
+        <AlertTitle>Đang Đối Soát Giao Dịch</AlertTitle>
+        <AlertDescription>
+          Giao dịch đã được ghi nhận tại cổng thanh toán nhưng hệ thống đang tiến hành đối soát tự động. Chỗ ngồi của bạn vẫn được bảo vệ.
+        </AlertDescription>
+      </Alert>
+
       <!-- 2. CONFIRMED State Screen -->
-      <div
-        v-if="booking.status === 'CONFIRMED'"
-        class="bg-card rounded-xl border border-border p-8 text-center space-y-4 shadow-sm"
-      >
+      <Card v-if="booking.status === 'CONFIRMED'" class="p-8 text-center space-y-4">
         <div class="w-16 h-16 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center mx-auto">
           <CheckCircle2 class="w-10 h-10" />
         </div>
@@ -444,23 +475,23 @@ onUnmounted(() => {
 
         <div class="pt-4 flex flex-wrap justify-center gap-3">
           <router-link to="/my-bookings">
-            <AppButton size="sm">
+            <Button size="sm">
               <FileText class="w-3.5 h-3.5 mr-1" />
               Xem Vé Của Tôi
-            </AppButton>
+            </Button>
           </router-link>
           <router-link to="/">
-            <AppButton variant="outline" size="sm">
+            <Button variant="outline" size="sm">
               Về Trang Chủ
-            </AppButton>
+            </Button>
           </router-link>
         </div>
-      </div>
+      </Card>
 
       <!-- 3. CANCELLED or EXPIRED State Screen -->
-      <div
+      <Card
         v-else-if="booking.status === 'CANCELLED' || booking.status === 'EXPIRED'"
-        class="bg-card rounded-xl border border-border p-8 text-center space-y-4 shadow-sm"
+        class="p-8 text-center space-y-4"
       >
         <div class="w-16 h-16 rounded-full bg-destructive/10 text-destructive flex items-center justify-center mx-auto">
           <XCircle class="w-10 h-10" />
@@ -480,20 +511,20 @@ onUnmounted(() => {
 
         <div class="pt-4 flex justify-center gap-3">
           <router-link :to="`/trips/${booking.tripId}/seats`">
-            <AppButton size="sm">
+            <Button size="sm">
               <Bus class="w-3.5 h-3.5 mr-1" />
               Chọn Lại Ghế Chuyến Xe Này
-            </AppButton>
+            </Button>
           </router-link>
           <router-link to="/search">
-            <AppButton variant="outline" size="sm">Tìm Chuyến Khác</AppButton>
+            <Button variant="outline" size="sm">Tìm Chuyến Khác</Button>
           </router-link>
         </div>
-      </div>
+      </Card>
 
       <!-- 4. HELD: Active Two-Column Checkout Form -->
       <div v-else-if="booking.status === 'HELD'" class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        <!-- Left: Passenger Form & Payment Method -->
+        <!-- Left: Account Info & Payment Gateway Card -->
         <div class="lg:col-span-2 space-y-6">
           <!-- Gateway Return Polling Notice -->
           <div
@@ -508,112 +539,84 @@ onUnmounted(() => {
           </div>
 
           <!-- Gateway Error Notice -->
-          <div
-            v-if="paymentGatewayError"
-            class="bg-destructive/10 border border-destructive/20 rounded-xl p-4 flex items-center gap-3"
-          >
-            <AlertCircle class="w-5 h-5 text-destructive shrink-0" />
-            <div class="text-xs">
-              <strong class="text-destructive block">Thông Báo Thanh Toán</strong>
-              <span class="text-muted-foreground">{{ paymentGatewayError }}</span>
-            </div>
-          </div>
+          <Alert v-if="paymentGatewayError" variant="destructive">
+            <AlertCircle class="w-4 h-4" />
+            <AlertTitle>Thông Báo Thanh Toán</AlertTitle>
+            <AlertDescription>{{ paymentGatewayError }}</AlertDescription>
+          </Alert>
 
-          <!-- Passenger Info Card -->
-          <div class="bg-card rounded-xl border border-border p-6 shadow-xs space-y-4">
-            <div class="flex items-center gap-2 border-b border-border pb-3">
-              <User class="w-5 h-5 text-primary" />
-              <h2 class="text-sm font-bold text-foreground">Thông Tin Người Nhận Xác Nhận Vé</h2>
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <FormField
-                label="Họ và tên hành khách"
-                :error="formErrors.fullName"
-                required
-              >
-                <input
-                  v-model="passengerForm.fullName"
-                  type="text"
-                  placeholder="Ví dụ: Nguyễn Văn A"
-                  class="w-full h-10 px-3 rounded-lg border border-input text-xs text-foreground focus:ring-2 focus:ring-primary bg-background"
-                  :class="{ 'border-destructive': formErrors.fullName }"
-                />
-              </FormField>
-
-              <FormField
-                label="Số điện thoại nhận tin nhắn"
-                :error="formErrors.phone"
-                required
-              >
-                <input
-                  v-model="passengerForm.phone"
-                  type="tel"
-                  placeholder="0912345678"
-                  class="w-full h-10 px-3 rounded-lg border border-input text-xs text-foreground focus:ring-2 focus:ring-primary bg-background"
-                  :class="{ 'border-destructive': formErrors.phone }"
-                />
-              </FormField>
-            </div>
-
-            <FormField
-              label="Email nhận vé điện tử"
-              :error="formErrors.email"
-              required
-            >
-              <input
-                v-model="passengerForm.email"
-                type="email"
-                placeholder="example@gmail.com"
-                class="w-full h-10 px-3 rounded-lg border border-input text-xs text-foreground focus:ring-2 focus:ring-primary bg-background"
-                :class="{ 'border-destructive': formErrors.email }"
-              />
-            </FormField>
-
-            <FormField label="Ghi chú thêm cho nhà xe (Không bắt buộc)">
-              <textarea
-                v-model="passengerForm.note"
-                rows="2"
-                placeholder="Ví dụ: Đón tại điểm dừng hoặc ghi chú hành lý..."
-                class="w-full p-3 rounded-lg border border-input text-xs text-foreground focus:ring-2 focus:ring-primary bg-background resize-none"
-              ></textarea>
-            </FormField>
-          </div>
-
-          <!-- Payment Method Card (Strictly VNPay Gateway) -->
-          <div class="bg-card rounded-xl border border-border p-6 shadow-xs space-y-4">
-            <div class="flex items-center gap-2 border-b border-border pb-3">
-              <CreditCard class="w-5 h-5 text-primary" />
-              <h2 class="text-sm font-bold text-foreground">Phương Thức Thanh Toán Trực Tuyến</h2>
-            </div>
-
-            <div class="border-2 border-primary bg-primary/5 rounded-xl p-4 flex items-center justify-between">
-              <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-lg bg-background border border-border flex items-center justify-center text-primary font-bold text-xs">
-                  VNPAY
+          <!-- PRE-02: Read-Only Customer Contact Information Card -->
+          <Card>
+            <CardHeader class="pb-3 border-b border-border">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <User class="w-4 h-4 text-primary" />
+                  <CardTitle class="text-sm font-bold">Thông Tin Người Nhận Vé</CardTitle>
                 </div>
-                <div>
-                  <span class="text-xs font-bold text-foreground block">Cổng Thanh Toán Trực Tuyến VNPay (Sandbox)</span>
-                  <span class="text-[11px] text-muted-foreground">
-                    Hỗ trợ quét mã QR Ngân hàng (VNPAY-QR), Thẻ ATM Nội địa & Thẻ Quốc tế Visa/Mastercard.
-                  </span>
+                <router-link to="/profile" class="text-xs text-primary hover:underline flex items-center gap-1">
+                  <span>Hồ Sơ Cá Nhân</span>
+                  <ExternalLink class="w-3 h-3" />
+                </router-link>
+              </div>
+            </CardHeader>
+            <CardContent class="pt-4 space-y-3 text-xs">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="space-y-1">
+                  <span class="text-muted-foreground text-[11px] block">Họ và tên hành khách:</span>
+                  <strong class="text-foreground text-sm block">{{ authStore.user?.fullName || 'Hành khách VeloBus' }}</strong>
+                </div>
+                <div class="space-y-1">
+                  <span class="text-muted-foreground text-[11px] block">Số điện thoại nhận tin nhắn:</span>
+                  <strong class="text-foreground text-sm font-mono block">{{ authStore.user?.phone || '0981111222' }}</strong>
                 </div>
               </div>
-              <span class="text-[11px] font-semibold px-2 py-0.5 rounded bg-primary text-primary-foreground">
-                Chính thức
-              </span>
-            </div>
 
-            <div class="p-3 bg-muted/40 rounded-lg text-[11px] text-muted-foreground flex items-center gap-2">
-              <ShieldCheck class="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>Giao dịch được bảo mật SSL qua cổng thanh toán đối tác. Máy chủ VeloBus không lưu trữ thông tin thẻ ngân hàng.</span>
-            </div>
-          </div>
+              <div class="space-y-1 pt-2 border-t border-border/50">
+                <span class="text-muted-foreground text-[11px] block">Email nhận thông báo vé:</span>
+                <strong class="text-foreground block font-mono">{{ authStore.user?.email || 'customer@velobus.vn' }}</strong>
+              </div>
+
+              <p class="text-[11px] text-muted-foreground italic pt-2">
+                * Thông tin liên hệ nhận vé được lấy trực tiếp từ tài khoản đăng nhập của bạn.
+              </p>
+            </CardContent>
+          </Card>
+
+          <!-- Payment Method Card (Strictly VNPay Gateway) -->
+          <Card>
+            <CardHeader class="pb-3 border-b border-border">
+              <div class="flex items-center gap-2">
+                <CreditCard class="w-4 h-4 text-primary" />
+                <CardTitle class="text-sm font-bold">Phương Thức Thanh Toán Trực Tuyến</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent class="pt-4 space-y-4">
+              <div class="border-2 border-primary bg-primary/5 rounded-xl p-4 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-lg bg-background border border-border flex items-center justify-center text-primary font-bold text-xs">
+                    VNPAY
+                  </div>
+                  <div>
+                    <span class="text-xs font-bold text-foreground block">Cổng Thanh Toán Trực Tuyến VNPay (Sandbox)</span>
+                    <span class="text-[11px] text-muted-foreground">
+                      Hỗ trợ quét mã QR Ngân hàng (VNPAY-QR), Thẻ ATM Nội địa & Thẻ Quốc tế Visa/Mastercard.
+                    </span>
+                  </div>
+                </div>
+                <Badge>Chính thức</Badge>
+              </div>
+
+              <div class="p-3 bg-muted/40 rounded-lg text-[11px] text-muted-foreground flex items-center gap-2">
+                <ShieldCheck class="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Giao dịch được bảo mật SSL qua cổng thanh toán đối tác. Máy chủ VeloBus không lưu trữ thông tin thẻ ngân hàng.</span>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         <!-- Right: Order Summary Sticky Card -->
         <div class="space-y-4 lg:sticky lg:top-24">
-          <div class="bg-card rounded-xl border border-border p-5 shadow-xs space-y-4">
+          <Card class="p-5 space-y-4">
             <h2 class="text-xs font-bold text-foreground uppercase tracking-wider pb-3 border-b border-border">
               Tóm Tắt Đơn Vé
             </h2>
@@ -667,31 +670,33 @@ onUnmounted(() => {
               <p>Cổng thanh toán tạm dừng nhận yêu cầu mới do không đủ thời gian xử lý an toàn.</p>
             </div>
 
-            <!-- Submit VNPay Button -->
-            <AppButton
+            <!-- Submit VNPay Button (Shadcn Button) -->
+            <Button
               class="w-full h-11 text-xs font-bold"
-              :disabled="isSubmittingPayment || isVerifyingPayment || isExpiringSoon || isExpired"
+              :disabled="isSubmittingPayment || isVerifyingPayment || isExpiringSoon || isExpired || isBlockedByCancel"
               @click="handleProceedPayment"
             >
               <Loader2 v-if="isSubmittingPayment" class="w-4 h-4 animate-spin mr-1.5" />
               <ExternalLink v-else class="w-4 h-4 mr-1.5" />
               <span>
                 {{
-                  isExpired
-                    ? 'Phiên giữ chỗ đã hết hạn'
-                    : isExpiringSoon
-                      ? 'Thời gian < 60s - Vui lòng chọn lại'
-                      : isSubmittingPayment
-                        ? 'Đang chuyển sang VNPay...'
-                        : 'Thanh Toán Qua VNPay'
+                  isBlockedByCancel
+                    ? 'Đang khóa thanh toán do hủy vé'
+                    : isExpired
+                      ? 'Phiên giữ chỗ đã hết hạn'
+                      : isExpiringSoon
+                        ? 'Thời gian < 60s - Vui lòng chọn lại'
+                        : isSubmittingPayment
+                          ? 'Đang chuyển sang VNPay...'
+                          : 'Thanh Toán Qua VNPay'
                 }}
               </span>
-            </AppButton>
+            </Button>
 
             <p class="text-[10px] text-center text-muted-foreground">
               Bằng việc bấm thanh toán, bạn đồng ý với Điều khoản đặt vé & Chính sách bảo mật của VeloBus.
             </p>
-          </div>
+          </Card>
         </div>
       </div>
     </div>

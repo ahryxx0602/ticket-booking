@@ -7,7 +7,7 @@ const __dirname = path.dirname(__filename)
 
 const srcDir = path.resolve(__dirname, '../src')
 
-// Target scan directories and components for strict Claude+ Design System compliance (REV-08, B3)
+// Target scan directories and components for strict Claude+ Design System compliance (REV-08, B3, B5.3-E)
 export const scanTargets = [
   path.join(srcDir, 'components/ui'),
   path.join(srcDir, 'showcase'),
@@ -16,7 +16,9 @@ export const scanTargets = [
   path.join(srcDir, 'shared/components/feedback'),
   path.join(srcDir, 'app/layouts'),
   path.join(srcDir, 'modules/admin/views/AdminDashboardView.vue'),
-  path.join(srcDir, 'modules/admin/views/AdminUsersBookingsView.vue')
+  path.join(srcDir, 'modules/admin/views/AdminUsersBookingsView.vue'),
+  path.join(srcDir, 'modules/catalog-booking/views/CheckoutView.vue'),
+  path.join(srcDir, 'modules/catalog-booking/views/MyBookingsView.vue')
 ]
 
 // Documented exceptions for legacy or non-migrated components (REV-08)
@@ -41,12 +43,20 @@ export const forbiddenPatterns = [
     id: 'forbidden-hardcoded-color',
     regex: /\bbg-(?:blue|orange|red|green|emerald|indigo|slate|gray)-(?:400|500|600|700|800)(?!\/)\b/,
     message: 'Forbidden hardcoded palette class. Use Claude+ semantic tokens (bg-primary, bg-muted, bg-card, bg-destructive).'
+  },
+  {
+    id: 'forbidden-legacy-components',
+    regex: /import\s+.*\b(AppButton|FormField)\b.*from\s+['"]@\/shared\/components\/(AppButton|FormField)(\.vue)?['"]/,
+    message: 'Forbidden legacy component import in migrated view. Use Shadcn Button / Input / Label instead.'
   }
 ]
+
+export const migratedViews = ['CheckoutView.vue', 'MyBookingsView.vue']
 
 export function scanContent(content, filePath = '') {
   const violations = []
   const lines = content.split('\n')
+  const isMigratedView = migratedViews.some((v) => filePath.endsWith(v))
 
   lines.forEach((line, index) => {
     const trimmed = line.trim()
@@ -55,6 +65,11 @@ export function scanContent(content, filePath = '') {
     }
 
     forbiddenPatterns.forEach(({ id, regex, message }) => {
+      // Rule 'forbidden-legacy-components' applies strictly to migrated production views
+      if (id === 'forbidden-legacy-components' && filePath && !isMigratedView) {
+        return
+      }
+
       // Create a fresh regex check without statefulness
       if (regex.test(line)) {
         violations.push({

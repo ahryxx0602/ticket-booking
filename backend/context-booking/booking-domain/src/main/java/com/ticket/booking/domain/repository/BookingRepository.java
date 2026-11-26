@@ -27,6 +27,15 @@ public interface BookingRepository {
         return java.util.Collections.emptySet();
     }
     PageResponse<Booking> findByUserId(Long userId, int page, int size);
+    default PageResponse<Booking> findByUserIdAndStatus(Long userId, BookingStatus status, int page, int size) {
+        return com.ticket.shared.dto.PageResponse.<Booking>builder()
+                .items(java.util.Collections.emptyList())
+                .page(page)
+                .size(size)
+                .totalElements(0)
+                .totalPages(0)
+                .build();
+    }
     PageResponse<Booking> findAllWithFilters(BookingStatus status, Long tripId, Long userId, int page, int size);
     List<Booking> findExpiredHeldBookings(LocalDateTime now, int limit);
     Booking save(Booking booking);

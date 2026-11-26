@@ -55,6 +55,11 @@ public class PaymentRepositoryImpl implements PaymentRepository {
     }
 
     @Override
+    public Optional<Payment> findLatestByBookingId(Long bookingId) {
+        return springDataPaymentRepository.findFirstByBookingIdOrderByIdDesc(bookingId).map(this::toDomain);
+    }
+
+    @Override
     public PaymentRevenueReport getRevenueReport(LocalDateTime from, LocalDateTime to) {
         BigDecimal gross = springDataPaymentRepository.calculateGrossRevenue(from, to);
         BigDecimal refunded = springDataPaymentRepository.calculateTotalRefunded(from, to);

@@ -31,12 +31,18 @@ class PaymentQueryServiceImplTest {
 
     @Mock
     private PaymentRepository paymentRepository;
+    @Mock
+    private com.ticket.payment.domain.port.PaymentBookingPort paymentBookingPort;
+    @Mock
+    private com.ticket.payment.domain.port.PaymentIdentityPort paymentIdentityPort;
+    @Mock
+    private com.ticket.payment.infrastructure.config.VnPayProperties vnPayProperties;
 
     private PaymentQueryServiceImpl paymentQueryService;
 
     @BeforeEach
     void setUp() {
-        paymentQueryService = new PaymentQueryServiceImpl(paymentRepository);
+        paymentQueryService = new PaymentQueryServiceImpl(paymentRepository, paymentBookingPort, paymentIdentityPort, vnPayProperties);
     }
 
     @Test

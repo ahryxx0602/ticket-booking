@@ -70,6 +70,10 @@ public interface SpringDataBookingRepository extends JpaRepository<BookingJpaEnt
            countQuery = "SELECT COUNT(b.id) FROM BookingJpaEntity b WHERE b.userId = :userId")
     Page<Long> findIdsByUserId(@Param("userId") Long userId, Pageable pageable);
 
+    @Query(value = "SELECT b.id FROM BookingJpaEntity b WHERE b.userId = :userId AND b.status = :status ORDER BY b.createdAt DESC, b.id DESC",
+           countQuery = "SELECT COUNT(b.id) FROM BookingJpaEntity b WHERE b.userId = :userId AND b.status = :status")
+    Page<Long> findIdsByUserIdAndStatus(@Param("userId") Long userId, @Param("status") BookingStatus status, Pageable pageable);
+
     @Query(value = """
             SELECT b.id FROM BookingJpaEntity b
             WHERE (:status IS NULL OR b.status = :status)

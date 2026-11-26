@@ -3,10 +3,12 @@ package com.ticket.booking.presentation.controller;
 import com.ticket.booking.application.dto.BookingResponse;
 import com.ticket.booking.application.dto.HoldSeatCommand;
 import com.ticket.booking.application.dto.SeatAvailabilityResponse;
+import com.ticket.booking.application.dto.TicketResponse;
 import com.ticket.booking.application.usecase.CancelBookingUseCase;
 import com.ticket.booking.application.usecase.GetBookingDetailUseCase;
 import com.ticket.booking.application.usecase.GetMyBookingsUseCase;
 import com.ticket.booking.application.usecase.GetSeatAvailabilityUseCase;
+import com.ticket.booking.application.usecase.GetTicketUseCase;
 import com.ticket.booking.application.usecase.HoldSeatUseCase;
 import com.ticket.shared.dto.ApiResponse;
 import com.ticket.shared.dto.PageResponse;
@@ -35,6 +37,7 @@ public class BookingController {
     private final GetMyBookingsUseCase getMyBookingsUseCase;
     private final GetBookingDetailUseCase getBookingDetailUseCase;
     private final GetSeatAvailabilityUseCase getSeatAvailabilityUseCase;
+    private final GetTicketUseCase getTicketUseCase;
 
     @GetMapping("/trips/{tripId}/availability")
     public ResponseEntity<ApiResponse<SeatAvailabilityResponse>> getSeatAvailability(
@@ -77,8 +80,9 @@ public class BookingController {
     public ResponseEntity<ApiResponse<PageResponse<BookingResponse>>> getMyBookings(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String status,
             Principal principal) {
-        PageResponse<BookingResponse> response = getMyBookingsUseCase.execute(requireUsername(principal), page, size);
+        PageResponse<BookingResponse> response = getMyBookingsUseCase.execute(requireUsername(principal), page, size, status);
         return ResponseEntity.ok(ApiResponse.ok("Bookings retrieved successfully", response));
     }
 
@@ -89,6 +93,15 @@ public class BookingController {
             Principal principal) {
         BookingResponse response = getBookingDetailUseCase.execute(bookingReference, requireUsername(principal));
         return ResponseEntity.ok(ApiResponse.ok("Booking details retrieved successfully", response));
+    }
+
+    @GetMapping("/{bookingReference}/ticket")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<ApiResponse<TicketResponse>> getTicket(
+            @PathVariable String bookingReference,
+            Principal principal) {
+        TicketResponse response = getTicketUseCase.getTicket(bookingReference, requireUsername(principal));
+        return ResponseEntity.ok(ApiResponse.ok("Electronic ticket retrieved successfully", response));
     }
 
     private String requireUsername(Principal principal) {

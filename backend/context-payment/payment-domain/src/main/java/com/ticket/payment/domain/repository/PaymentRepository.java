@@ -15,6 +15,9 @@ public interface PaymentRepository {
     Optional<Payment> findByPaymentReferenceForUpdate(String paymentReference);
     Optional<Payment> findFirstByBookingIdAndStatusOrderByIdDesc(Long bookingId, PaymentStatus status);
     Optional<Payment> findFirstByBookingIdAndStatus(Long bookingId, PaymentStatus status);
+    default Optional<Payment> findLatestByBookingId(Long bookingId) {
+        return Optional.empty();
+    }
     PaymentRevenueReport getRevenueReport(LocalDateTime from, LocalDateTime to);
     PageResponse<Payment> findPaymentsWithFilters(PaymentStatus status, PaymentMethod paymentMethod, String paymentReference, Boolean reconciliationRequired, int page, int size);
 

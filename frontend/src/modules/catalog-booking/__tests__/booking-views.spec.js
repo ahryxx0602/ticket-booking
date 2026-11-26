@@ -96,6 +96,33 @@ vi.mock('@/modules/catalog-booking/api', () => ({
           redirectPaymentUrl: 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html?token=test'
         }
       }
+    }),
+    getPaymentStatus: vi.fn().mockResolvedValue({
+      data: {
+        data: {
+          hasPaymentAttempt: true,
+          paymentReference: 'PAY-12345',
+          paymentStatus: 'COMPLETED',
+          paymentMethod: 'VNPAY',
+          amount: 350000,
+          reconciliationRequired: false,
+          verifiedAt: '2026-11-26T20:00:00'
+        }
+      }
+    }),
+    getElectronicTicket: vi.fn().mockResolvedValue({
+      data: {
+        data: {
+          bookingReference: 'BKG-20261123-9988',
+          tripId: 99,
+          status: 'CONFIRMED',
+          totalAmount: 700000,
+          seatNumbers: ['A05', 'A06'],
+          qrImageBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+          qrPayload: 'v1|BKG-20261123-9988|99|mock-signature',
+          issuedAt: '2026-11-26T20:00:00'
+        }
+      }
     })
   }
 }))
@@ -167,7 +194,7 @@ describe('Customer Booking Flow Tests', () => {
             'router-link': true,
             'StatusBadge': true,
             'EmptyState': true,
-            'AppButton': true
+            'Button': true
           }
         }
       })
@@ -177,14 +204,14 @@ describe('Customer Booking Flow Tests', () => {
       expect(wrapper.text()).toContain('BKG-20261123-9988')
     })
 
-    it('switches tabs and filters bookings list correctly', async () => {
+    it('switches tabs and triggers server-side query with status filter', async () => {
       const wrapper = mount(MyBookingsView, {
         global: {
           stubs: {
             'router-link': true,
             'StatusBadge': true,
             'EmptyState': true,
-            'AppButton': true
+            'Button': true
           }
         }
       })
@@ -195,6 +222,7 @@ describe('Customer Booking Flow Tests', () => {
       const cancelledBtn = buttons.find(b => b.text().includes('Đã hủy'))
       expect(cancelledBtn).toBeDefined()
       await cancelledBtn.trigger('click')
+      await flushPromises()
 
       expect(wrapper.text()).toContain('BKG-20261115-4455')
       expect(wrapper.text()).not.toContain('BKG-20261123-9988')
@@ -208,8 +236,7 @@ describe('Customer Booking Flow Tests', () => {
           stubs: {
             'router-link': true,
             'StatusBadge': true,
-            'AppButton': true,
-            'FormField': true
+            'Button': true
           }
         }
       })

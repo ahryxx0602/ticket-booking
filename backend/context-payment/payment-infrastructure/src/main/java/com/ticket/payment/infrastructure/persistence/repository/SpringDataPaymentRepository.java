@@ -30,6 +30,8 @@ public interface SpringDataPaymentRepository extends JpaRepository<PaymentJpaEnt
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<PaymentJpaEntity> findFirstByBookingIdAndStatus(Long bookingId, PaymentStatus status);
 
+    Optional<PaymentJpaEntity> findFirstByBookingIdOrderByIdDesc(Long bookingId);
+
     @Query("SELECT COALESCE(SUM(CASE WHEN p.status IN (com.ticket.payment.domain.model.PaymentStatus.SUCCESS, com.ticket.payment.domain.model.PaymentStatus.REFUNDED) THEN p.amount ELSE 0 END), 0) " +
            "FROM PaymentJpaEntity p WHERE p.createdAt >= :from AND p.createdAt < :to")
     BigDecimal calculateGrossRevenue(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);

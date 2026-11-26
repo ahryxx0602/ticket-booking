@@ -81,6 +81,12 @@ public class BookingRepositoryImpl implements BookingRepository {
     }
 
     @Override
+    public PageResponse<Booking> findByUserIdAndStatus(Long userId, BookingStatus status, int page, int size) {
+        Page<Long> idPage = springDataBookingRepository.findIdsByUserIdAndStatus(userId, status, PageRequest.of(page, size));
+        return toPageResponse(idPage);
+    }
+
+    @Override
     public PageResponse<Booking> findAllWithFilters(BookingStatus status, Long tripId, Long userId, int page, int size) {
         Page<Long> idPage = springDataBookingRepository.findIdsWithFilters(status, tripId, userId, PageRequest.of(page, size));
         return toPageResponse(idPage);

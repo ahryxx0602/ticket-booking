@@ -43,7 +43,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/auth/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/catalog/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/public/banners/active", "/api/v1/public/settings").permitAll()
-                .requestMatchers("/api/v1/payments/webhook/**").permitAll()
+                .requestMatchers("/api/v1/payments/webhook/**", "/api/v1/payments/vnpay-return").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/notifications/telegram/webhook").permitAll()
 
                 // Health probes: Allow minimal probe endpoint for container healthchecks (both dev /actuator/health and prod /internal/actuator/health)
@@ -68,7 +68,7 @@ public class SecurityConfig {
                 // 4. Customer Role APIs (Public Availability for Guest Discovery)
                 .requestMatchers(HttpMethod.GET, "/api/v1/bookings/trips/*/availability").permitAll()
                 .requestMatchers("/api/v1/bookings/**").hasRole("CUSTOMER")
-                .requestMatchers("/api/v1/payments/checkout").hasRole("CUSTOMER")
+                .requestMatchers("/api/v1/payments/checkout", "/api/v1/payments/bookings/**").hasRole("CUSTOMER")
 
                 // 5. Partner Role APIs (BE-SEC-004: Strictly scope /register to CUSTOMER/OPERATOR and /me GET to OPERATOR or ADMIN with PERM_OPERATOR_VIEW)
                 .requestMatchers(HttpMethod.POST, "/api/v1/partners/register").hasAnyRole("CUSTOMER", "OPERATOR")
