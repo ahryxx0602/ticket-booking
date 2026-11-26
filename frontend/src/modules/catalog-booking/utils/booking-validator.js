@@ -57,6 +57,7 @@ export function validateBookingResponse(booking, options = {}) {
     expectedTripId,
     expectedUserId,
     expectedSeats,
+    expectedClientRequestId,
     allowPastExpiry = false,
     allowTerminalReplay = false
   } = options
@@ -99,6 +100,16 @@ export function validateBookingResponse(booking, options = {}) {
     }
     if (String(booking.userId).trim() !== String(expectedUserId).trim()) {
       return { valid: false, error: 'Phiên giữ chỗ thuộc về người dùng khác' }
+    }
+  }
+
+  // 4b. clientRequestId match: if expectedClientRequestId provided, booking.clientRequestId MUST match
+  if (expectedClientRequestId !== undefined && expectedClientRequestId !== null) {
+    if (booking.clientRequestId === undefined || booking.clientRequestId === null) {
+      return { valid: false, error: 'Phản hồi thiếu mã định danh yêu cầu giữ chỗ (clientRequestId)' }
+    }
+    if (String(booking.clientRequestId).trim() !== String(expectedClientRequestId).trim()) {
+      return { valid: false, error: 'Mã định danh yêu cầu giữ chỗ không khớp (unrelated booking correlation mismatch)' }
     }
   }
 

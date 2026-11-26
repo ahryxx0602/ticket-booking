@@ -536,4 +536,108 @@ class RealRedisAndMySqlIdempotencyIT {
                 ======================================================
                 """, concurrency, replayCount.get(), totalBurstMs, String.format("%.2f", throughput), p50, p95, p99);
     }
+
+    @Test
+    @DisplayName("Scenario 12: Cross-user key isolation - Same clientRequestId used by User 1 and User 2 succeeds independently")
+    void scenario12_crossUserKeyIsolation() {
+        String sharedKey = "shared-idem-key-" + UUID.randomUUID();
+
+        HoldSeatCommand cmd1 = new HoldSeatCommand();
+        cmd1.setTripId(testTripId);
+        cmd1.setSeatNumbers(List.of("01A"));
+        cmd1.setClientRequestId(sharedKey);
+
+        BookingResponse res1 = holdSeatUseCase.execute(cmd1, customer1Username);
+        assertThat(res1.getStatus()).isEqualTo(BookingStatus.HELD);
+        assertThat(res1.getUserId()).isEqualTo(customer1Id);
+
+        HoldSeatCommand cmd2 = new HoldSeatCommand();
+        cmd2.setTripId(testTripId);
+        cmd2.setSeatNumbers(List.of("01B"));
+        cmd2.setClientRequestId(sharedKey); // Same key string!
+
+        BookingResponse res2 = holdSeatUseCase.execute(cmd2, customer2Username);
+        assertThat(res2.getStatus()).isEqualTo(BookingStatus.HELD);
+        assertThat(res2.getUserId()).isEqualTo(customer2Id);
+
+        // Different bookings, distinct seat sets, isolated by (user_id, client_request_id)
+        assertThat(res1.getBookingReference()).isNotEqualTo(res2.getBookingReference());
+    }
+
+    @Test
+    @DisplayName("Scenario 13: In-flight race with same key - Bounded polling resolves in-flight commit to successful replay")
+    void scenario13_inFlightRaceBoundedPollingResolvesWinner() throws Exception {
+        String sharedKey = "inflight-key-" + UUID.randomUUID();
+        CountDownLatch inFlightGate = new CountDownLatch(1);
+        CountDownLatch finishGate = new CountDownLatch(2);
+
+        AtomicInteger successes = new AtomicInteger();
+        Set<String> bookingRefs = ConcurrentHashMap.newKeySet();
+        List<Throwable> errors = Collections.synchronizedList(new ArrayList<>());
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        // Thread 1: Initiates hold
+        executor.submit(() -> {
+            try {
+                HoldSeatCommand cmd = new HoldSeatCommand();
+                cmd.setTripId(testTripId);
+                cmd.setSeatNumbers(List.of("02A"));
+                cmd.setClientRequestId(sharedKey);
+
+                inFlightGate.countDown();
+                BookingResponse res = holdSeatUseCase.execute(cmd, customer1Username);
+                bookingRefs.add(res.getBookingReference());
+                successes.incrementAndGet();
+            } catch (Throwable t) {
+                errors.add(t);
+            } finally {
+                finishGate.countDown();
+            }
+        });
+
+        // Thread 2: Submits exact same key immediately
+        executor.submit(() -> {
+            try {
+                inFlightGate.await();
+                // Minimal jitter so Thread 1 grabs Redis lock first
+                Thread.sleep(10);
+                HoldSeatCommand cmd = new HoldSeatCommand();
+                cmd.setTripId(testTripId);
+                cmd.setSeatNumbers(List.of("02A"));
+                cmd.setClientRequestId(sharedKey);
+
+                BookingResponse res = holdSeatUseCase.execute(cmd, customer1Username);
+                bookingRefs.add(res.getBookingReference());
+                successes.incrementAndGet();
+            } catch (Throwable t) {
+                errors.add(t);
+            } finally {
+                finishGate.countDown();
+            }
+        });
+
+        finishGate.await(5, TimeUnit.SECONDS);
+        executor.shutdown();
+
+        assertThat(errors).isEmpty();
+        assertThat(successes.get()).isEqualTo(2);
+        assertThat(bookingRefs).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("Scenario 14: Schema migration V3 repeated execution is strictly idempotent and verified")
+    void scenario14_schemaMigrationV3IdempotenceAndVerification() throws Exception {
+        com.ticket.config.DatabaseSchemaMigrationConfig.DatabaseSchemaMigrationRunner runner =
+                new com.ticket.config.DatabaseSchemaMigrationConfig.DatabaseSchemaMigrationRunner(dataSource);
+
+        // Repeated execution should succeed cleanly without failing on existing column/constraint
+        runner.executeMigrations();
+
+        Integer v3Count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM schema_version_history WHERE version = 'V3' AND success = TRUE",
+                Integer.class
+        );
+        assertThat(v3Count).isEqualTo(1);
+    }
 }

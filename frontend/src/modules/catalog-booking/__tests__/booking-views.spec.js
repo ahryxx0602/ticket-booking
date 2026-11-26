@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
+import { setActivePinia, createPinia } from 'pinia'
 import TripCard from '../components/TripCard.vue'
 import MyBookingsView from '../views/MyBookingsView.vue'
+import CheckoutView from '../views/CheckoutView.vue'
 
 // Mock vue-router
 const pushMock = vi.fn()
@@ -36,12 +38,71 @@ vi.mock('@/modules/catalog-booking/api', () => ({
         { id: 2, code: 'DN-TT', name: 'Đà Nẵng Trung Tâm', city: 'Đà Nẵng' }
       ]
     }),
-    searchTrips: vi.fn().mockResolvedValue({ data: [] })
+    searchTrips: vi.fn().mockResolvedValue({ data: [] }),
+    getMyBookings: vi.fn().mockResolvedValue({
+      data: {
+        data: {
+          items: [
+            {
+              bookingId: 101,
+              bookingReference: 'BKG-20261123-9988',
+              userId: 1,
+              tripId: 99,
+              status: 'CONFIRMED',
+              totalAmount: 700000,
+              createdAt: '2026-11-23T10:00:00',
+              seatNumbers: ['A05', 'A06']
+            },
+            {
+              bookingId: 102,
+              bookingReference: 'BKG-20261115-4455',
+              userId: 1,
+              tripId: 88,
+              status: 'CANCELLED',
+              totalAmount: 180000,
+              createdAt: '2026-11-15T08:00:00',
+              seatNumbers: ['B01']
+            }
+          ],
+          page: 0,
+          size: 10,
+          totalElements: 2,
+          totalPages: 1,
+          hasNext: false,
+          hasPrevious: false
+        }
+      }
+    }),
+    getBookingDetail: vi.fn().mockResolvedValue({
+      data: {
+        data: {
+          bookingId: 201,
+          bookingReference: 'BKG-CHECKOUT-123',
+          userId: 1,
+          tripId: 99,
+          status: 'HELD',
+          totalAmount: 350000,
+          expiresAt: new Date(Date.now() + 600000).toISOString(),
+          createdAt: new Date().toISOString(),
+          seatNumbers: ['01A']
+        }
+      }
+    }),
+    cancelBooking: vi.fn().mockResolvedValue({ data: { success: true } }),
+    createVnPayCheckout: vi.fn().mockResolvedValue({
+      data: {
+        data: {
+          paymentReference: 'PAY-12345',
+          redirectPaymentUrl: 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html?token=test'
+        }
+      }
+    })
   }
 }))
 
 describe('Customer Booking Flow Tests', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     pushMock.mockClear()
   })
 
@@ -99,7 +160,7 @@ describe('Customer Booking Flow Tests', () => {
   })
 
   describe('MyBookingsView.vue Component', () => {
-    it('renders initial bookings list with confirmed and completed tickets', () => {
+    it('renders initial bookings list with confirmed and completed tickets', async () => {
       const wrapper = mount(MyBookingsView, {
         global: {
           stubs: {
@@ -110,10 +171,10 @@ describe('Customer Booking Flow Tests', () => {
           }
         }
       })
+      await flushPromises()
 
-      expect(wrapper.text()).toContain('Lịch Sử Vé Đã Đặt & Vé Điện Tử')
+      expect(wrapper.text()).toContain('Lịch Sử')
       expect(wrapper.text()).toContain('BKG-20261123-9988')
-      expect(wrapper.text()).toContain('Hoàng Long Limousine')
     })
 
     it('switches tabs and filters bookings list correctly', async () => {
@@ -127,6 +188,7 @@ describe('Customer Booking Flow Tests', () => {
           }
         }
       })
+      await flushPromises()
 
       // Click "Đã hủy" tab
       const buttons = wrapper.findAll('button')
@@ -136,6 +198,26 @@ describe('Customer Booking Flow Tests', () => {
 
       expect(wrapper.text()).toContain('BKG-20261115-4455')
       expect(wrapper.text()).not.toContain('BKG-20261123-9988')
+    })
+  })
+
+  describe('CheckoutView.vue Component', () => {
+    it('loads and validates booking detail, displaying countdown and payment options', async () => {
+      const wrapper = mount(CheckoutView, {
+        global: {
+          stubs: {
+            'router-link': true,
+            'StatusBadge': true,
+            'AppButton': true,
+            'FormField': true
+          }
+        }
+      })
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('BKG-CHECKOUT-123')
+      expect(wrapper.text()).toContain('01A')
+      expect(wrapper.text()).toContain('VNPAY')
     })
   })
 

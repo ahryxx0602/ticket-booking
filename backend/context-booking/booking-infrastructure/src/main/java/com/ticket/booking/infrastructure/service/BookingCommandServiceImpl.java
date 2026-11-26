@@ -100,13 +100,23 @@ public class BookingCommandServiceImpl implements HoldSeatUseCase, CancelBooking
         );
 
         if (!locked) {
-            // If lock rejected, verify if a concurrent request with same clientRequestId already succeeded and committed
+            // PRE-02: If lock rejected, verify if a concurrent in-flight request with same clientRequestId is committing
             if (clientRequestId != null && user != null) {
-                java.util.Optional<Booking> existingOpt = bookingRepository.findByUserIdAndClientRequestId(user.userId(), clientRequestId);
-                if (existingOpt.isPresent()) {
-                    Booking existing = existingOpt.get();
-                    validateCanonicalPayloadEquality(existing, command.getTripId(), normalizedSeats);
-                    return BookingMapper.toResponse(existing);
+                for (int attempt = 0; attempt < 8; attempt++) {
+                    java.util.Optional<Booking> existingOpt = bookingRepository.findByUserIdAndClientRequestId(user.userId(), clientRequestId);
+                    if (existingOpt.isPresent()) {
+                        Booking existing = existingOpt.get();
+                        validateCanonicalPayloadEquality(existing, command.getTripId(), normalizedSeats);
+                        log.info("[HOLD IDEMPOTENCY] Resolved in-flight race after wait for user [{}] and clientRequestId [{}], replaying [{}]",
+                                user.userId(), clientRequestId, existing.getBookingReference());
+                        return BookingMapper.toResponse(existing);
+                    }
+                    try {
+                        Thread.sleep(50);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
                 }
             }
             throw new BusinessException("SEAT_ALREADY_RESERVED", "One or more selected seats are currently held or reserved");
@@ -161,10 +171,8 @@ public class BookingCommandServiceImpl implements HoldSeatUseCase, CancelBooking
         Throwable cause = ex;
         while (cause != null) {
             String msg = cause.getMessage() != null ? cause.getMessage().toLowerCase() : "";
-            if (cause instanceof org.springframework.dao.DataIntegrityViolationException
-                    || cause instanceof java.sql.SQLIntegrityConstraintViolationException
-                    || msg.contains("duplicate entry")
-                    || msg.contains("uk_booking_user_client_request")) {
+            if (msg.contains("uk_booking_user_client_request")
+                    || (msg.contains("duplicate entry") && msg.contains("client_request"))) {
                 return true;
             }
             cause = cause.getCause();

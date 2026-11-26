@@ -102,17 +102,99 @@ public class DatabaseSchemaMigrationConfig {
 
         private void applyV3AddBookingClientRequestIdIfAbsent(Connection conn) throws Exception {
             if (isVersionApplied(conn, "V3")) {
+                if (!verifyV3SchemaState(conn)) {
+                    throw new IllegalStateException("Migration V3 recorded as applied in schema_version_history, but required schema (column or unique index) is missing or corrupted");
+                }
                 return;
             }
-            if (tableExists(conn, "bookings") && !columnExists(conn, "bookings", "client_request_id")) {
+
+            if (!tableExists(conn, "bookings")) {
+                log.warn("[DB MIGRATION] Table 'bookings' does not exist; skipping V3");
+                return;
+            }
+
+            // 1. Check and add column independently
+            if (!columnExists(conn, "bookings", "client_request_id")) {
                 try (Statement stmt = conn.createStatement()) {
                     stmt.execute("ALTER TABLE bookings ADD COLUMN client_request_id VARCHAR(64) NULL");
-                    stmt.execute("ALTER TABLE bookings ADD CONSTRAINT uk_booking_user_client_request UNIQUE (user_id, client_request_id)");
-                    log.info("[DB MIGRATION] Applied V3: Added column client_request_id and constraint uk_booking_user_client_request to bookings table");
+                    log.info("[DB MIGRATION] Applied V3: Added column client_request_id to bookings table");
                 }
             }
+
+            // 2. Validate existing data before creating unique constraint
+            validateNoDuplicateClientRequests(conn);
+
+            // 3. Check and add unique constraint independently
+            if (!uniqueIndexExists(conn, "bookings", "uk_booking_user_client_request", java.util.List.of("user_id", "client_request_id"))) {
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.execute("ALTER TABLE bookings ADD CONSTRAINT uk_booking_user_client_request UNIQUE (user_id, client_request_id)");
+                    log.info("[DB MIGRATION] Applied V3: Added constraint uk_booking_user_client_request to bookings table");
+                }
+            }
+
+            // 4. Strict Post-Verification of MySQL metadata before recording version
+            if (!verifyV3SchemaState(conn)) {
+                throw new IllegalStateException("[DB MIGRATION] Verification failed for V3: client_request_id or uk_booking_user_client_request is not properly established in MySQL metadata");
+            }
+
             recordVersion(conn, "V3", "Add client_request_id and unique constraint to bookings", "v3-bookings-client-request-id-sha256");
             log.info("[DB MIGRATION] Recorded V3 migration in schema_version_history");
+        }
+
+        private void validateNoDuplicateClientRequests(Connection conn) throws Exception {
+            String checkSql = """
+                    SELECT COUNT(*) FROM (
+                        SELECT user_id, client_request_id, COUNT(*) as cnt
+                        FROM bookings
+                        WHERE client_request_id IS NOT NULL
+                        GROUP BY user_id, client_request_id
+                        HAVING cnt > 1
+                    ) duplicates
+                    """;
+            try (Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery(checkSql)) {
+                if (rs.next() && rs.getInt(1) > 0) {
+                    throw new IllegalStateException("Cannot apply V3 migration: found duplicate non-null (user_id, client_request_id) entries in bookings table");
+                }
+            }
+        }
+
+        private boolean uniqueIndexExists(Connection conn, String tableName, String indexName, java.util.List<String> expectedOrderedColumns) throws Exception {
+            String sql = """
+                    SELECT LOWER(column_name), seq_in_index, non_unique
+                    FROM information_schema.statistics
+                    WHERE table_schema = DATABASE()
+                      AND LOWER(table_name) = LOWER(?)
+                      AND LOWER(index_name) = LOWER(?)
+                    ORDER BY seq_in_index ASC
+                    """;
+            java.util.List<String> actualColumns = new java.util.ArrayList<>();
+            boolean isUnique = false;
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setString(1, tableName);
+                ps.setString(2, indexName);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        actualColumns.add(rs.getString(1));
+                        isUnique = (rs.getInt(3) == 0);
+                    }
+                }
+            }
+            if (!isUnique || actualColumns.size() != expectedOrderedColumns.size()) {
+                return false;
+            }
+            for (int i = 0; i < expectedOrderedColumns.size(); i++) {
+                if (!expectedOrderedColumns.get(i).equalsIgnoreCase(actualColumns.get(i))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private boolean verifyV3SchemaState(Connection conn) throws Exception {
+            boolean colOk = columnExists(conn, "bookings", "client_request_id");
+            boolean idxOk = uniqueIndexExists(conn, "bookings", "uk_booking_user_client_request", java.util.List.of("user_id", "client_request_id"));
+            return colOk && idxOk;
         }
 
         private boolean isVersionApplied(Connection conn, String version) throws Exception {

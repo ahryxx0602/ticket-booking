@@ -43,6 +43,7 @@ const cancelling = ref(false)
 const isCancelUnresolved = ref(false)
 const isVerifyingHoldState = ref(false)
 const isRefreshingAvailability = ref(false)
+const isAvailabilityStale = ref(false)
 const selectedSeats = ref([])
 const backendSeats = ref([])
 const unavailableSeats = ref([])
@@ -227,12 +228,13 @@ async function verifyHoldServerState() {
       currentPage++
     }
 
-    // PRE-02 & PRE-03: Strict match against exact requested seats on this trip (supporting terminal replay)
+    // PRE-03: Strict match against exact requested seats and exact clientRequestId on this trip
     const matched = allItems.find(b => {
       const validation = validateBookingResponse(b, {
         expectedTripId: tripId.value,
         expectedUserId: auth.user?.id,
         expectedSeats: targetSeats,
+        expectedClientRequestId: reqKey,
         allowTerminalReplay: true
       })
       return validation.valid
@@ -316,8 +318,10 @@ async function fetchAvailability() {
       }
     })
     availabilityMap.value = newMap
+    isAvailabilityStale.value = false
   } catch (err) {
     console.warn('Seat availability query failed (non-blocking fallback to catalog):', err)
+    isAvailabilityStale.value = true
   } finally {
     isRefreshingAvailability.value = false
   }
@@ -479,15 +483,20 @@ async function handleHoldSeats() {
     const isConflict = errCode === 'SEAT_ALREADY_RESERVED' || errMsg.includes('SEAT_ALREADY_RESERVED')
 
     if (isConflict) {
-      // PRE-05: Definitive business rejection: remove only requested seats from selection,
-      // and refresh authoritative availability rather than permanently disabling all seats.
-      selectedSeats.value = selectedSeats.value.filter(s => !requestedSeats.includes(s))
-      activeClientRequestId.value = null
-      try {
-        sessionStorage.removeItem(getHoldRequestStorageKey())
-      } catch (_) {}
-      toast.error('Một hoặc nhiều ghế đã bị hành khách khác chọn. Vui lòng chọn ghế khác!')
-      await fetchAvailability()
+      if (isHoldUnknownOutcome.value) {
+        // PRE-02: Frontend must NOT clear unresolved request keys when same-key replay encounters an ambiguous seat conflict
+        toast.warning('Máy chủ báo bận hoặc xung đột ghế trong khi giao dịch trước đó đang chờ xác minh. Tiếp tục giữ khóa để đối soát.')
+      } else {
+        // PRE-05: Definitive business rejection on fresh hold: remove only requested seats from selection,
+        // and refresh authoritative availability rather than permanently disabling all seats.
+        selectedSeats.value = selectedSeats.value.filter(s => !requestedSeats.includes(s))
+        activeClientRequestId.value = null
+        try {
+          sessionStorage.removeItem(getHoldRequestStorageKey())
+        } catch (_) {}
+        toast.error('Một hoặc nhiều ghế đã bị hành khách khác chọn. Vui lòng chọn ghế khác!')
+        await fetchAvailability()
+      }
     } else {
       // Ambiguous outcome (timeout, network error, malformed response)
       const isTimeoutOrNetwork =
@@ -670,13 +679,27 @@ onMounted(async () => {
     }
   } catch (_) {}
 
-  // 5. Restore active clientRequestId if previously pending
+  // 5. Restore active clientRequestId and pending hold context if previously interrupted (PRE-04)
   try {
     const storedReq = sessionStorage.getItem(getHoldRequestStorageKey())
     if (storedReq) {
       const parsed = JSON.parse(storedReq)
       if (parsed?.clientRequestId && String(parsed.tripId) === String(tripId.value)) {
         activeClientRequestId.value = parsed.clientRequestId
+        if (Array.isArray(parsed.seatNumbers) && parsed.seatNumbers.length > 0) {
+          selectedSeats.value = [...parsed.seatNumbers]
+        }
+        isHoldUnknownOutcome.value = true
+        if (!holdUnknownContext.value) {
+          holdUnknownContext.value = {
+            userId: auth.user?.id || null,
+            tripId: Number(tripId.value),
+            seatNumbers: [...(parsed.seatNumbers || [])],
+            clientRequestId: parsed.clientRequestId,
+            timestamp: parsed.timestamp || Date.now(),
+            reason: 'Interrupted hold restored from session storage'
+          }
+        }
       }
     }
   } catch (_) {}
@@ -723,7 +746,14 @@ onMounted(async () => {
         </p>
       </div>
 
-      <div class="flex items-center gap-2 self-start md:self-auto">
+      <div class="flex items-center gap-2 self-start md:self-auto flex-wrap">
+        <span
+          v-if="isAvailabilityStale"
+          data-testid="stale-availability-badge"
+          class="inline-flex items-center text-[11px] font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20"
+        >
+          Dữ liệu chỗ trống có thể bị trễ
+        </span>
         <button
           type="button"
           data-testid="btn-refresh-availability"

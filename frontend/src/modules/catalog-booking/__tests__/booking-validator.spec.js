@@ -118,6 +118,19 @@ describe('booking-validator.js unit tests', () => {
       expect(validateBookingResponse(expiredBooking, { allowTerminalReplay: true }).valid).toBe(true)
     })
 
+    it('enforces exact clientRequestId match when expectedClientRequestId is specified (PRE-03)', () => {
+      const bookingWithKey = { ...validBooking, clientRequestId: 'req-uuid-1234' }
+      expect(validateBookingResponse(bookingWithKey, { expectedClientRequestId: 'req-uuid-1234' }).valid).toBe(true)
+
+      const mismatchRes = validateBookingResponse(bookingWithKey, { expectedClientRequestId: 'req-other-5678' })
+      expect(mismatchRes.valid).toBe(false)
+      expect(mismatchRes.error).toContain('mismatch')
+
+      const missingKeyRes = validateBookingResponse(validBooking, { expectedClientRequestId: 'req-uuid-1234' })
+      expect(missingKeyRes.valid).toBe(false)
+      expect(missingKeyRes.error).toContain('clientRequestId')
+    })
+
     it('rejects empty or corrupt seatNumbers', () => {
       expect(validateBookingResponse({ ...validBooking, seatNumbers: [] }).valid).toBe(false)
       expect(validateBookingResponse({ ...validBooking, seatNumbers: null }).valid).toBe(false)
