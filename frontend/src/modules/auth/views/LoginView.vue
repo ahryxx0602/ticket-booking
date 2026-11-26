@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/modules/auth/store'
 import { resolveSafeRedirect } from '@/shared/utils/redirect'
@@ -7,7 +7,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Input, PasswordInput } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { AlertCircle, AlertTriangle, Lock, User, LogIn } from 'lucide-vue-next'
+import { AlertCircle, AlertTriangle } from 'lucide-vue-next'
 
 const router = useRouter()
 const route = useRoute()
@@ -17,6 +17,14 @@ const username = ref('')
 const password = ref('')
 const loading = ref(false)
 const errorMsg = ref('')
+
+const errors = ref({
+  username: '',
+  password: ''
+})
+
+const usernameInput = ref(null)
+const passwordInput = ref(null)
 
 // B2: Demo credentials only shown in DEV builds — never in production
 const isDev = import.meta.env.DEV
@@ -31,9 +39,46 @@ const reasonMessage = computed(() => {
   return ''
 })
 
+function validateForm() {
+  errors.value.username = ''
+  errors.value.password = ''
+  let isValid = true
+
+  if (!username.value || !username.value.trim()) {
+    errors.value.username = 'Vui lòng nhập tên đăng nhập'
+    isValid = false
+  }
+
+  if (!password.value || !password.value.trim()) {
+    errors.value.password = 'Vui lòng nhập mật khẩu'
+    isValid = false
+  }
+
+  if (!isValid) {
+    nextTick(() => {
+      if (errors.value.username) {
+        // Focus native input inside Input component or DOM element
+        const el = document.getElementById('username')
+        el?.focus()
+      } else if (errors.value.password) {
+        const el = document.getElementById('password')
+        el?.focus()
+      }
+    })
+  }
+
+  return isValid
+}
+
 async function onSubmit() {
-  loading.value = true
+  if (loading.value) return
+
   errorMsg.value = ''
+  if (!validateForm()) {
+    return
+  }
+
+  loading.value = true
   try {
     await auth.login(username.value, password.value)
     
@@ -46,7 +91,18 @@ async function onSubmit() {
       await router.push(auth.getHomeRoute())
     }
   } catch (err) {
-    errorMsg.value = err?.message || 'Tên đăng nhập hoặc mật khẩu không chính xác'
+    const status = err?.response?.status
+    const message = err?.response?.data?.message || err?.message || ''
+
+    if (status === 401 || message.toLowerCase().includes('bad credentials') || message.toLowerCase().includes('không chính xác')) {
+      errorMsg.value = 'Tên đăng nhập hoặc mật khẩu không chính xác.'
+    } else if (err?.code === 'ERR_NETWORK' || !err?.response) {
+      errorMsg.value = 'Không thể kết nối đến máy chủ. Vui lòng kiểm tra đường truyền mạng.'
+    } else if (status >= 500) {
+      errorMsg.value = 'Đã có lỗi xảy ra từ máy chủ hệ thống. Vui lòng thử lại sau.'
+    } else {
+      errorMsg.value = message || 'Đăng nhập không thành công. Vui lòng thử lại.'
+    }
   } finally {
     loading.value = false
   }
@@ -77,29 +133,47 @@ async function onSubmit() {
         </AlertDescription>
       </Alert>
 
-      <!-- Main Login Form -->
-      <form class="space-y-4" @submit.prevent="onSubmit">
+      <!-- Main Login Form (novalidate to suppress native browser tooltip in favor of inline Vietnamese feedback) -->
+      <form class="space-y-4" novalidate @submit.prevent="onSubmit">
         <div class="space-y-1.5">
-          <label class="block text-xs font-semibold text-foreground">Tên đăng nhập</label>
+          <label for="username" class="block text-xs font-semibold text-foreground">
+            Tên đăng nhập <span class="text-status-danger">*</span>
+          </label>
           <Input
+            id="username"
+            name="username"
             v-model="username"
             type="text"
             placeholder="Nhập tên đăng nhập của bạn"
-            required
             autocomplete="username"
             class="h-10 text-xs"
+            :aria-invalid="!!errors.username"
+            :aria-describedby="errors.username ? 'username-error' : undefined"
+            :class="errors.username ? 'border-status-danger focus-visible:ring-status-danger' : ''"
           />
+          <p v-if="errors.username" id="username-error" class="text-[11px] text-status-danger font-medium mt-1">
+            {{ errors.username }}
+          </p>
         </div>
 
         <div class="space-y-1.5">
-          <label class="block text-xs font-semibold text-foreground">Mật khẩu</label>
+          <label for="password" class="block text-xs font-semibold text-foreground">
+            Mật khẩu <span class="text-status-danger">*</span>
+          </label>
           <PasswordInput
+            id="password"
+            name="password"
             v-model="password"
             placeholder="••••••••"
-            required
             autocomplete="current-password"
             class="h-10 text-xs"
+            :aria-invalid="!!errors.password"
+            :aria-describedby="errors.password ? 'password-error' : undefined"
+            :class="errors.password ? 'border-status-danger focus-visible:ring-status-danger' : ''"
           />
+          <p v-if="errors.password" id="password-error" class="text-[11px] text-status-danger font-medium mt-1">
+            {{ errors.password }}
+          </p>
         </div>
 
         <!-- Error alert -->

@@ -7,14 +7,16 @@ const __dirname = path.dirname(__filename)
 
 const srcDir = path.resolve(__dirname, '../src')
 
-// Target scan directories and components for strict Claude+ Design System compliance (REV-08)
+// Target scan directories and components for strict Claude+ Design System compliance (REV-08, B3)
 export const scanTargets = [
   path.join(srcDir, 'components/ui'),
   path.join(srcDir, 'showcase'),
   path.join(srcDir, 'shared/components/ThemeCustomizer.vue'),
   path.join(srcDir, 'shared/components/NotificationCenter.vue'),
   path.join(srcDir, 'shared/components/feedback'),
-  path.join(srcDir, 'app/layouts')
+  path.join(srcDir, 'app/layouts'),
+  path.join(srcDir, 'modules/admin/views/AdminDashboardView.vue'),
+  path.join(srcDir, 'modules/admin/views/AdminUsersBookingsView.vue')
 ]
 
 // Documented exceptions for legacy or non-migrated components (REV-08)

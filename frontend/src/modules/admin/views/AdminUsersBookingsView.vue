@@ -20,7 +20,11 @@ import {
 } from 'lucide-vue-next'
 import StatusBadge from '@/shared/components/StatusBadge.vue'
 import FormField from '@/shared/components/FormField.vue'
-import AppButton from '@/shared/components/AppButton.vue'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
+import { Badge } from '@/components/ui/badge'
 import { ADMIN_PERMISSION_MODULES, ALL_ADMIN_PERMISSION_CODES } from '@/modules/auth/store'
 import { useAdminPermissions } from '@/modules/admin/composables/useAdminPermissions'
 import { adminApi } from '@/modules/admin/api'
@@ -1347,7 +1351,7 @@ function confirmAdminRefund() {
               type="button"
               @click="userForm.category = 'OPERATOR'; onUserFormCategoryChange()"
               class="py-2 px-2.5 rounded-lg border text-xs font-bold transition-all"
-              :class="userForm.category === 'OPERATOR' ? 'bg-emerald-700 text-white border-emerald-700' : 'bg-muted/50 text-muted-foreground border-border'"
+              :class="userForm.category === 'OPERATOR' ? 'bg-emerald-600/90 text-white border-emerald-600/90' : 'bg-muted/50 text-muted-foreground border-border'"
             >
               2. Chủ xe
             </button>
@@ -1442,14 +1446,14 @@ function confirmAdminRefund() {
           >
             Hủy Bỏ
           </button>
-          <AppButton
-            variant="primary"
+          <Button
+            variant="default"
             class="px-4 py-2 text-xs font-bold"
             data-testid="btn-save-user"
             @click="handleSaveUser"
           >
             {{ editingUser ? 'Lưu Cập Nhật' : 'Tạo Tài Khoản' }}
-          </AppButton>
+          </Button>
         </div>
       </div>
     </div>
@@ -1483,14 +1487,14 @@ function confirmAdminRefund() {
           >
             Hủy Bỏ
           </button>
-          <AppButton
-            variant="primary"
+          <Button
+            variant="default"
             class="px-4 py-2 text-xs font-bold"
             data-testid="btn-confirm-reset-password"
             @click="confirmResetPassword"
           >
             Xác Nhận Đổi Mật Khẩu
-          </AppButton>
+          </Button>
         </div>
       </div>
     </div>
@@ -1687,14 +1691,14 @@ function confirmAdminRefund() {
             >
               Hủy Bỏ
             </button>
-            <AppButton
-              variant="primary"
+            <Button
+              variant="default"
               class="px-5 py-2 text-xs font-bold"
               data-testid="btn-save-role"
               @click="handleSaveRole"
             >
               {{ editingRole ? 'Lưu Phân Quyền Role' : 'Tạo Role & Lưu Ma Trận API' }}
-            </AppButton>
+            </Button>
           </div>
         </div>
       </div>
@@ -1743,14 +1747,14 @@ function confirmAdminRefund() {
             Hủy Bỏ
           </button>
 
-          <AppButton
-            variant="danger"
+          <Button
+            variant="destructive"
             class="px-4 py-2 text-xs font-bold"
             data-testid="btn-confirm-refund"
             @click="confirmAdminRefund"
           >
             Xác Nhận Hoàn Tiền
-          </AppButton>
+          </Button>
         </div>
       </div>
     </div>

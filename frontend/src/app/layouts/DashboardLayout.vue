@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/modules/auth/store'
 import { useLayoutWidth } from '@/shared/composables/useLayoutWidth'
@@ -58,7 +58,8 @@ const auth = useAuthStore()
 const { containerClass } = useLayoutWidth()
 
 // Collapsible sidebar state (Desktop: 256px expanded / 64px collapsed)
-const isCollapsed = ref(false)
+// Responsive default: <1280px defaults to collapsed (64px); >=1280px defaults to expanded (256px)
+const isCollapsed = ref(typeof window !== 'undefined' ? window.innerWidth < 1280 : false)
 // Mobile off-canvas sheet state
 const isMobileOpen = ref(false)
 // Theme Customizer modal/drawer state
@@ -200,13 +201,34 @@ const currentRouteTitle = computed(() => {
   return match?.label || 'Bảng điều khiển'
 })
 
+// B2-REV-01: Responsive sidebar default collapse handler
+function handleResize() {
+  if (typeof window !== 'undefined') {
+    if (window.innerWidth >= 1024 && window.innerWidth < 1280) {
+      isCollapsed.value = true
+    } else if (window.innerWidth >= 1280) {
+      isCollapsed.value = false
+    }
+  }
+}
+
 // FE-SEC-002: Tự động đồng bộ lại role & permissions từ GET /api/v1/auth/me khi khởi tạo/reload trang quản trị
 onMounted(async () => {
+  handleResize()
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', handleResize)
+  }
   if (isAdmin.value && auth.isAuthenticated) {
     const updated = await auth.refreshProfile()
     if (updated && !auth.isAdmin) {
       router.replace(auth.getHomeRoute())
     }
+  }
+})
+
+onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('resize', handleResize)
   }
 })
 
@@ -224,11 +246,12 @@ function handleLogout() {
 <template>
   <div class="min-h-screen flex bg-background text-foreground transition-colors duration-200">
     <!-- Desktop Sidebar (256px expanded / 64px collapsed, Claude+ Warm Minimalist Enterprise) -->
+    <!-- B2-REV-01: Hidden on <1024px (mobile & tablet 768px use Sheet drawer); visible on lg+ (>=1024px) -->
     <aside
       :class="[
         'bg-card border-r border-border flex flex-col transition-all duration-300 z-40 flex-shrink-0 select-none',
         isCollapsed ? 'w-16' : 'w-64',
-        'hidden md:flex'
+        'hidden lg:flex'
       ]"
     >
       <!-- Top Brand Logo — always visible in both expanded/collapsed states -->
@@ -342,23 +365,23 @@ function handleLogout() {
       <!-- Fixed Header (64px height, Claude+ Sticky Navigation with Backdrop Blur) -->
       <header class="h-16 bg-background/95 backdrop-blur-md border-b border-border px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 shadow-xs flex-shrink-0">
         <!-- Left: Sidebar Expand trigger (desktop collapsed) + Mobile Menu + Breadcrumbs -->
-        <div class="flex items-center gap-3">
-          <!-- Desktop: expand sidebar trigger (only shown when collapsed) -->
+        <div class="flex items-center gap-2 sm:gap-3 min-w-0">
+          <!-- Desktop: expand sidebar trigger (only shown when collapsed on lg+) -->
           <button
             v-if="isCollapsed"
             type="button"
             @click="isCollapsed = false"
-            class="hidden md:flex text-muted-foreground hover:text-foreground p-1.5 rounded-md hover:bg-muted/60 transition-colors h-9 w-9 items-center justify-center"
+            class="hidden lg:flex text-muted-foreground hover:text-foreground p-1.5 rounded-md hover:bg-muted/60 transition-colors h-9 w-9 items-center justify-center flex-shrink-0"
             title="Mở rộng menu (256px)"
             aria-label="Mở rộng menu"
           >
             <ChevronRight class="w-4 h-4" />
           </button>
 
-          <!-- Mobile Drawer Trigger (< md) -->
+          <!-- Mobile/Tablet Drawer Trigger (< lg) -->
           <Sheet v-model:open="isMobileOpen">
             <SheetTrigger as-child>
-              <Button variant="ghost" size="sm" class="md:hidden p-1.5 h-9 w-9">
+              <Button variant="ghost" size="sm" class="lg:hidden p-1.5 h-9 w-9 flex-shrink-0">
                 <Menu class="h-5 w-5" />
                 <span class="sr-only">Mở menu điều hướng</span>
               </Button>
@@ -411,22 +434,26 @@ function handleLogout() {
           </Sheet>
 
           <!-- Breadcrumb navigation (Desktop) -->
-          <nav class="hidden sm:flex items-center gap-2 text-xs text-muted-foreground">
-            <span class="font-semibold text-foreground">{{ portalTitle }}</span>
-            <ChevronRight class="w-3.5 h-3.5 text-muted-foreground/50" />
-            <span class="font-medium text-foreground/80 truncate max-w-[200px]">{{ currentRouteTitle }}</span>
+          <nav class="hidden md:flex items-center gap-1.5 text-xs text-muted-foreground min-w-0">
+            <span class="font-semibold text-foreground truncate max-w-[110px] xl:max-w-[150px]">{{ portalTitle }}</span>
+            <ChevronRight class="w-3.5 h-3.5 text-muted-foreground/50 flex-shrink-0" />
+            <span class="font-medium text-foreground/80 truncate max-w-[120px] xl:max-w-[180px]">{{ currentRouteTitle }}</span>
           </nav>
 
-          <!-- Portal Badge -->
-          <span class="text-[10px] sm:text-[11px] px-2.5 py-0.5 rounded-full font-semibold border" :class="roleBadge.class">
+          <!-- Portal Badge (Controlled Truncation B2-REV-01) -->
+          <span
+            class="text-[10px] sm:text-[11px] px-2.5 py-0.5 rounded-full font-semibold border truncate max-w-[120px] sm:max-w-[180px] md:max-w-[240px] flex-shrink-0"
+            :class="roleBadge.class"
+            :title="roleBadge.label"
+          >
             {{ roleBadge.label }}
           </span>
         </div>
 
         <!-- Right: Actions, Layout Width Switcher & User Profile -->
-        <div class="flex items-center gap-2 sm:gap-3">
-          <!-- Width Layout Mode Switcher (Hẹp / Chuẩn / Rộng) -->
-          <div class="hidden sm:block">
+        <div class="flex items-center gap-1.5 sm:gap-2.5 flex-shrink-0">
+          <!-- Width Layout Mode Switcher (Hẹp / Chuẩn / Rộng) - Hidden on smaller screens to prevent header overflow -->
+          <div class="hidden xl:block">
             <LayoutWidthSwitcher />
           </div>
 
@@ -448,7 +475,7 @@ function handleLogout() {
           <!-- User Profile Dropdown Menu -->
           <DropdownMenu>
             <DropdownMenuTrigger as-child>
-              <Button variant="ghost" size="sm" class="flex items-center gap-2.5 pl-2 pr-2 h-9 border border-border/60">
+              <Button variant="ghost" size="sm" class="flex items-center gap-2 pl-2 pr-2 h-9 border border-border/60">
                 <div class="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
                   {{ (auth.user?.username || 'U')[0].toUpperCase() }}
                 </div>
@@ -464,9 +491,9 @@ function handleLogout() {
               </div>
               <DropdownMenuSeparator />
               <DropdownMenuItem as-child>
-                <router-link to="/profile" class="flex items-center gap-2 cursor-pointer">
+                <router-link :to="isAdmin ? '/profile' : '/operator/profile'" class="flex items-center gap-2 cursor-pointer">
                   <User class="w-4 h-4" />
-                  <span>Hồ sơ tài khoản</span>
+                  <span>{{ isAdmin ? 'Hồ sơ tài khoản' : 'Hồ sơ nhà xe' }}</span>
                 </router-link>
               </DropdownMenuItem>
               <DropdownMenuItem as-child>

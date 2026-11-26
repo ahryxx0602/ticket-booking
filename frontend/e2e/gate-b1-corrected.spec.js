@@ -198,18 +198,33 @@ test.describe('Gate B1 Corrected: B1-REV-01~06 Targeted Fix Verification', () =>
       fullPage: false
     })
 
-    // Tablet 768x1024
+    // Tablet 768x1024 — B2-REV-01: <1024px uses mobile/tablet sheet navigation, desktop aside is hidden
     await page.setViewportSize({ width: 768, height: 1024 })
     await page.waitForTimeout(300)
-    await expect(page.locator('aside')).toBeVisible()
+    await expect(page.locator('aside')).not.toBeVisible()
+    const headerTablet = page.locator('header')
+    await expect(headerTablet).toBeVisible()
+    const headerWidthTablet = await headerTablet.evaluate(el => el.scrollWidth <= el.clientWidth)
+    expect(headerWidthTablet).toBe(true)
     await page.screenshot({
       path: path.join(screenshotDir, 'admin-shell-768-tablet.png'),
       fullPage: false
     })
 
-    // Desktop 1440x900
+    // Small Laptop 1024x768 — B2-REV-01: 1024-1279px defaults to collapsed (64px)
+    await page.setViewportSize({ width: 1024, height: 768 })
+    await page.waitForTimeout(300)
+    const aside1024 = page.locator('aside')
+    await expect(aside1024).toBeVisible()
+    const width1024 = await aside1024.evaluate(el => el.getBoundingClientRect().width)
+    expect(width1024).toBe(64)
+
+    // Desktop 1440x900 — B2-REV-01: >=1280px defaults to expanded (256px)
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.waitForTimeout(300)
+    // Expand if needed
+    const aside1440 = page.locator('aside')
+    await expect(aside1440).toBeVisible()
     await page.screenshot({
       path: path.join(screenshotDir, 'admin-shell-1440-desktop.png'),
       fullPage: false

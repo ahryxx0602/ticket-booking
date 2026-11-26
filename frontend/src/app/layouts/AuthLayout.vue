@@ -34,26 +34,26 @@ const isThemeCustomizerOpen = ref(false)
         </h2>
 
         <p class="text-sm text-muted-foreground leading-relaxed">
-          Hàng nghìn chuyến xe liên tỉnh mỗi ngày. Đặt vé trong vài giây, nhận vé điện tử, kiểm tra lịch trình và hoàn vé dễ dàng.
+          Nền tảng kết nối hành khách và đối tác vận tải: Tra cứu tuyến xe liên tỉnh, nhận vé điện tử, theo dõi hành trình và đối soát minh bạch.
         </p>
 
         <!-- Feature Pill Indicators -->
         <div class="grid grid-cols-2 gap-3 pt-2 text-xs text-muted-foreground">
           <div class="flex items-center gap-2">
             <MapPin class="w-4 h-4 text-primary flex-shrink-0" />
-            <span>Hàng trăm tuyến xe toàn quốc</span>
+            <span>Tra cứu tuyến xe trực tuyến</span>
           </div>
           <div class="flex items-center gap-2">
             <Ticket class="w-4 h-4 text-primary flex-shrink-0" />
-            <span>Vé điện tử QR tức thì</span>
+            <span>Vé điện tử QR xác thực</span>
           </div>
           <div class="flex items-center gap-2">
             <CalendarCheck class="w-4 h-4 text-primary flex-shrink-0" />
-            <span>Quản lý vé, hoàn vé dễ dàng</span>
+            <span>Quản lý lịch trình và hoàn vé</span>
           </div>
           <div class="flex items-center gap-2">
             <ShieldCheck class="w-4 h-4 text-primary flex-shrink-0" />
-            <span>Thanh toán an toàn & bảo mật</span>
+            <span>Thanh toán an toàn</span>
           </div>
         </div>
       </div>

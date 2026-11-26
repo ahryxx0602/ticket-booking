@@ -4,7 +4,16 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Button } from '@/components/ui/button'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import StatusBadge from '@/shared/components/StatusBadge.vue'
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction
+} from '@/components/ui/alert-dialog'
 import { useAdminPermissions } from '@/modules/admin/composables/useAdminPermissions'
 import { adminApi } from '@/modules/admin/api'
 import { toast } from 'vue-sonner'
@@ -17,7 +26,7 @@ import {
   ShieldCheck,
   AlertTriangle,
   CheckCircle2,
-  AlertCircle
+  FileCheck
 } from 'lucide-vue-next'
 
 const { hasPermission } = useAdminPermissions()
@@ -59,6 +68,9 @@ const reconciliationAlerts = ref([
 ])
 
 const isRunningReconciliation = ref(false)
+const selectedAlertForConfirm = ref(null)
+const isConfirmResolveOpen = ref(false)
+const isConfirmBatchOpen = ref(false)
 
 function triggerManualReconciliation() {
   isRunningReconciliation.value = true
@@ -67,19 +79,31 @@ function triggerManualReconciliation() {
     toast.success('Đối soát hoàn tất', {
       description: 'Đã đối soát xong 2/2 giao dịch VNPay ↔ Ví Escrow sàn.'
     })
-  }, 800)
+  }, 600)
+}
+
+function openResolveDialog(item) {
+  selectedAlertForConfirm.value = item
+  isConfirmResolveOpen.value = true
 }
 
 async function resolveAlert(alertItem) {
-  if (!hasPermission('PAYMENT_RECONCILE_RESOLVE')) return
-  alertItem.resolved = true
-  alertItem.discrepancy = 0
-  alertItem.issueType = 'RESOLVED_MANUAL'
-  const paymentId = alertItem.paymentId || alertItem.id || 1
+  const target = alertItem || selectedAlertForConfirm.value
+  if (!target || !hasPermission('PAYMENT_RECONCILE_RESOLVE')) return
+
+  target.resolved = true
+  target.discrepancy = 0
+  target.issueType = 'RESOLVED_MANUAL'
+
+  const paymentId = target.paymentId || target.id || 1
   adminApi.reconcilePayment(paymentId, 'Resolved manually by admin').catch(() => {})
+
   toast.success('Đã xác nhận xử lý', {
-    description: `Mã đối soát ${alertItem.id} đã được điều chỉnh về trạng thái khớp.`
+    description: `Mã đối soát ${target.id} đã được điều chỉnh về trạng thái khớp.`
   })
+
+  isConfirmResolveOpen.value = false
+  selectedAlertForConfirm.value = null
 }
 </script>
 
@@ -88,7 +112,9 @@ async function resolveAlert(alertItem) {
     <!-- Header -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-bold tracking-tight text-foreground">Tổng Quan Toàn Sàn & Báo Cáo Đối Soát</h1>
+        <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
+          Tổng Quan Toàn Sàn & Báo Cáo Đối Soát
+        </h1>
         <p class="text-xs text-muted-foreground mt-1">
           Giám sát chỉ số GMV, doanh thu hoa hồng 2 cấp và đối soát tự động dòng tiền VNPay ↔ Ví Ký Quỹ Escrow.
         </p>
@@ -108,75 +134,93 @@ async function resolveAlert(alertItem) {
     </div>
 
     <!-- 4 KPI System Cards (Protected by PAYMENT_REPORT_VIEW) -->
+    <!-- Responsive: 1 col on mobile, 2 cols on tablet, 4 cols on desktop -->
     <div v-if="hasPermission('PAYMENT_REPORT_VIEW')" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       <!-- 1. Total GMV -->
-      <Card class="border-border bg-card shadow-xs space-y-1.5">
+      <Card class="border-border bg-card shadow-xs">
         <CardHeader class="pb-2 flex flex-row items-center justify-between space-y-0">
-          <CardTitle class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Tổng GMV Toàn Sàn</CardTitle>
-          <div class="p-2 rounded-lg bg-primary/10 text-primary">
+          <CardTitle class="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            Tổng GMV Toàn Sàn
+          </CardTitle>
+          <div class="p-2 rounded-lg bg-primary/10 text-primary flex-shrink-0">
             <TrendingUp class="w-4 h-4" />
           </div>
         </CardHeader>
         <CardContent class="space-y-1">
-          <p class="text-2xl font-extrabold text-foreground tabular-nums font-mono" data-testid="kpi-gmv">
-            {{ platformMetrics.totalGmv.toLocaleString('vi-VN') }} <span class="text-xs font-bold text-muted-foreground">đ</span>
+          <p class="text-2xl font-extrabold text-foreground tabular-nums font-mono whitespace-nowrap" data-testid="kpi-gmv">
+            {{ platformMetrics.totalGmv.toLocaleString('vi-VN') }}<span class="text-xs font-bold text-muted-foreground ml-1">đ</span>
           </p>
-          <p class="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">↑ +18.4% so với tháng trước</p>
+          <p class="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+            <span>↑ +18.4%</span>
+            <span class="text-muted-foreground font-normal">so với tháng trước</span>
+          </p>
         </CardContent>
       </Card>
 
       <!-- 2. Total Commission -->
-      <Card class="border-border bg-card shadow-xs border-primary/30 space-y-1.5">
+      <Card class="border-border bg-card shadow-xs border-primary/30">
         <CardHeader class="pb-2 flex flex-row items-center justify-between space-y-0">
-          <CardTitle class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Hoa Hồng Thực Thu</CardTitle>
-          <div class="p-2 rounded-lg bg-primary/10 text-primary">
+          <CardTitle class="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            Hoa Hồng Thực Thu
+          </CardTitle>
+          <div class="p-2 rounded-lg bg-primary/10 text-primary flex-shrink-0">
             <DollarSign class="w-4 h-4" />
           </div>
         </CardHeader>
         <CardContent class="space-y-1">
-          <p class="text-2xl font-extrabold text-primary tabular-nums font-mono" data-testid="kpi-commission">
-            {{ platformMetrics.totalCommission.toLocaleString('vi-VN') }} <span class="text-xs font-bold">đ</span>
+          <p class="text-2xl font-extrabold text-primary tabular-nums font-mono whitespace-nowrap" data-testid="kpi-commission">
+            {{ platformMetrics.totalCommission.toLocaleString('vi-VN') }}<span class="text-xs font-bold ml-1">đ</span>
           </p>
-          <p class="text-[11px] text-muted-foreground">Đã khấu trừ tự động qua Escrow Settlement</p>
+          <p class="text-[11px] text-muted-foreground">
+            Đã khấu trừ tự động qua Escrow Settlement
+          </p>
         </CardContent>
       </Card>
 
       <!-- 3. Confirmed Bookings -->
-      <Card class="border-border bg-card shadow-xs space-y-1.5">
+      <Card class="border-border bg-card shadow-xs">
         <CardHeader class="pb-2 flex flex-row items-center justify-between space-y-0">
-          <CardTitle class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Đơn Vé Thành Công</CardTitle>
-          <div class="p-2 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
+          <CardTitle class="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            Đơn Vé Thành Công
+          </CardTitle>
+          <div class="p-2 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex-shrink-0">
             <Ticket class="w-4 h-4" />
           </div>
         </CardHeader>
         <CardContent class="space-y-1">
-          <p class="text-2xl font-extrabold text-foreground tabular-nums font-mono" data-testid="kpi-bookings">
-            {{ platformMetrics.totalConfirmedBookings.toLocaleString('vi-VN') }} <span class="text-xs font-bold text-muted-foreground">đơn</span>
+          <p class="text-2xl font-extrabold text-foreground tabular-nums font-mono whitespace-nowrap" data-testid="kpi-bookings">
+            {{ platformMetrics.totalConfirmedBookings.toLocaleString('vi-VN') }}<span class="text-xs font-bold text-muted-foreground ml-1">đơn</span>
           </p>
-          <p class="text-[11px] text-muted-foreground">Tỷ lệ thanh toán thành công 96.2%</p>
+          <p class="text-[11px] text-muted-foreground">
+            Tỷ lệ thanh toán thành công 96.2%
+          </p>
         </CardContent>
       </Card>
 
       <!-- 4. Active Operators -->
-      <Card class="border-border bg-card shadow-xs space-y-1.5">
+      <Card class="border-border bg-card shadow-xs">
         <CardHeader class="pb-2 flex flex-row items-center justify-between space-y-0">
-          <CardTitle class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Nhà Xe Hoạt Động</CardTitle>
-          <div class="p-2 rounded-lg bg-muted text-muted-foreground">
+          <CardTitle class="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            Nhà Xe Hoạt Động
+          </CardTitle>
+          <div class="p-2 rounded-lg bg-muted text-muted-foreground flex-shrink-0">
             <Bus class="w-4 h-4" />
           </div>
         </CardHeader>
         <CardContent class="space-y-1">
-          <p class="text-2xl font-extrabold text-foreground tabular-nums font-mono" data-testid="kpi-operators">
-            {{ platformMetrics.activeOperators }} <span class="text-xs font-bold text-muted-foreground">đối tác</span>
+          <p class="text-2xl font-extrabold text-foreground tabular-nums font-mono whitespace-nowrap" data-testid="kpi-operators">
+            {{ platformMetrics.activeOperators }}<span class="text-xs font-bold text-muted-foreground ml-1">đối tác</span>
           </p>
-          <p class="text-[11px] text-muted-foreground">100% đã xác thực giấy phép kinh doanh</p>
+          <p class="text-[11px] text-muted-foreground">
+            100% đã xác thực giấy phép vận tải
+          </p>
         </CardContent>
       </Card>
     </div>
 
     <!-- Reconciliation Alerts Panel (Protected by PAYMENT_LIST_VIEW) -->
     <Card v-if="hasPermission('PAYMENT_LIST_VIEW')" class="border-border bg-card shadow-xs overflow-hidden">
-      <CardHeader class="p-5 border-b border-border flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      <CardHeader class="p-5 border-b border-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <CardTitle class="text-base font-bold text-foreground flex items-center gap-2">
             <ShieldCheck class="w-4 h-4 text-primary" />
@@ -186,24 +230,24 @@ async function resolveAlert(alertItem) {
             Phát hiện tức thời các giao dịch lệch số dư và tự động đẩy cảnh báo sang Telegram Bot Ban Quản Trị.
           </CardDescription>
         </div>
-        <Badge variant="outline" class="border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300 font-semibold text-xs">
+        <Badge variant="outline" class="border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300 font-semibold text-xs self-start sm:self-auto">
           {{ reconciliationAlerts.filter(a => !a.resolved).length }} cảnh báo cần xử lý
         </Badge>
       </CardHeader>
 
       <CardContent class="p-0">
         <div class="overflow-x-auto">
-          <Table class="min-w-[800px]">
+          <Table class="min-w-[850px]">
             <TableHeader>
               <TableRow class="bg-muted/50 hover:bg-muted/50">
-                <TableHead class="font-semibold text-xs uppercase">Mã Đối Soát</TableHead>
-                <TableHead class="font-semibold text-xs uppercase">Mã Đơn / VNPay Ref</TableHead>
-                <TableHead class="font-semibold text-xs uppercase text-right">Tiền VNPay</TableHead>
-                <TableHead class="font-semibold text-xs uppercase text-right">Tiền Ví Sàn</TableHead>
-                <TableHead class="font-semibold text-xs uppercase text-right">Chênh Lệch</TableHead>
+                <TableHead class="font-semibold text-xs uppercase w-[130px]">Mã Đối Soát</TableHead>
+                <TableHead class="font-semibold text-xs uppercase w-[160px]">Mã Đơn / VNPay Ref</TableHead>
+                <TableHead class="font-semibold text-xs uppercase text-right w-[110px]">Tiền VNPay</TableHead>
+                <TableHead class="font-semibold text-xs uppercase text-right w-[110px]">Tiền Ví Sàn</TableHead>
+                <TableHead class="font-semibold text-xs uppercase text-right w-[110px]">Chênh Lệch</TableHead>
                 <TableHead class="font-semibold text-xs uppercase">Chi Tiết Cảnh Báo</TableHead>
-                <TableHead class="font-semibold text-xs uppercase text-center">Trạng Thái</TableHead>
-                <TableHead class="font-semibold text-xs uppercase text-right">Thao Tác</TableHead>
+                <TableHead class="font-semibold text-xs uppercase text-center w-[110px]">Trạng Thái</TableHead>
+                <TableHead class="font-semibold text-xs uppercase text-right w-[150px]">Thao Tác</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -212,25 +256,42 @@ async function resolveAlert(alertItem) {
                 :key="item.id"
                 class="hover:bg-muted/40 transition-colors"
               >
-                <TableCell class="font-bold text-foreground tabular-nums font-mono">{{ item.id }}</TableCell>
-                <TableCell class="tabular-nums font-mono">
+                <!-- Stable Row ID -->
+                <TableCell class="font-bold text-foreground tabular-nums font-mono text-xs whitespace-nowrap">
+                  {{ item.id }}
+                </TableCell>
+
+                <!-- Booking / Txn Ref -->
+                <TableCell class="tabular-nums font-mono text-xs whitespace-nowrap">
                   <span class="font-bold text-primary block">{{ item.bookingId }}</span>
                   <span class="text-[11px] text-muted-foreground">{{ item.vnpayTxnRef }}</span>
                 </TableCell>
-                <TableCell class="text-right font-semibold tabular-nums font-mono">
+
+                <!-- VNPay Amount -->
+                <TableCell class="text-right font-semibold tabular-nums font-mono text-xs whitespace-nowrap">
                   {{ item.vnpayAmount.toLocaleString('vi-VN') }} đ
                 </TableCell>
-                <TableCell class="text-right font-semibold tabular-nums font-mono">
+
+                <!-- Escrow Amount -->
+                <TableCell class="text-right font-semibold tabular-nums font-mono text-xs whitespace-nowrap">
                   {{ item.internalEscrowAmount.toLocaleString('vi-VN') }} đ
                 </TableCell>
+
+                <!-- Discrepancy -->
                 <TableCell
-                  class="text-right font-extrabold tabular-nums font-mono"
+                  class="text-right font-extrabold tabular-nums font-mono text-xs whitespace-nowrap"
                   :class="item.discrepancy > 0 ? 'text-status-danger' : 'text-emerald-600 dark:text-emerald-400'"
                 >
                   {{ item.discrepancy.toLocaleString('vi-VN') }} đ
                 </TableCell>
-                <TableCell class="text-muted-foreground text-xs max-w-xs">{{ item.description }}</TableCell>
-                <TableCell class="text-center">
+
+                <!-- Details -->
+                <TableCell class="text-muted-foreground text-xs max-w-xs leading-relaxed">
+                  {{ item.description }}
+                </TableCell>
+
+                <!-- Status -->
+                <TableCell class="text-center whitespace-nowrap">
                   <Badge
                     variant="outline"
                     class="font-bold text-[11px]"
@@ -239,7 +300,9 @@ async function resolveAlert(alertItem) {
                     {{ item.resolved ? 'Đã Khớp' : 'Lệch Số Dư' }}
                   </Badge>
                 </TableCell>
-                <TableCell class="text-right">
+
+                <!-- Actions -->
+                <TableCell class="text-right whitespace-nowrap">
                   <Button
                     v-if="!item.resolved && hasPermission('PAYMENT_RECONCILE_RESOLVE')"
                     size="sm"
@@ -254,10 +317,43 @@ async function resolveAlert(alertItem) {
                   </span>
                 </TableCell>
               </TableRow>
+
+              <!-- Empty state row -->
+              <TableRow v-if="reconciliationAlerts.length === 0">
+                <TableCell colspan="8" class="text-center py-8 text-xs text-muted-foreground">
+                  Hiện không có cảnh báo đối soát nào cần xử lý.
+                </TableCell>
+              </TableRow>
             </TableBody>
           </Table>
         </div>
       </CardContent>
     </Card>
+
+    <!-- Confirmation AlertDialog for Resolve Mutation (Section 6 & 10) -->
+    <AlertDialog v-model:open="isConfirmResolveOpen">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle class="flex items-center gap-2">
+            <AlertTriangle class="w-5 h-5 text-amber-500" />
+            <span>Xác nhận xử lý cảnh báo đối soát</span>
+          </AlertDialogTitle>
+          <AlertDialogDescription class="text-xs space-y-2 mt-2">
+            <p>
+              Bạn sắp xác nhận đã xử lý đối soát cho giao dịch:
+              <strong class="text-foreground font-mono">{{ selectedAlertForConfirm?.id }}</strong>
+              (Đơn: <strong class="text-foreground font-mono">{{ selectedAlertForConfirm?.bookingId }}</strong>).
+            </p>
+            <p class="text-muted-foreground">
+              Số tiền chênh lệch sẽ được điều chỉnh về 0 và trạng thái giao dịch sẽ chuyển sang <strong>Đã Khớp</strong>. Thao tác này sẽ ghi nhận vào nhật ký kiểm toán hệ thống.
+            </p>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel @click="isConfirmResolveOpen = false">Hủy bỏ</AlertDialogCancel>
+          <AlertDialogAction @click="resolveAlert(null)">Xác nhận xử lý</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </div>
 </template>

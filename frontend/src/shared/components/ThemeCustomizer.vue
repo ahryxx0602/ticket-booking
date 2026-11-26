@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import {
   useTheme,
   type ThemeMode,
@@ -38,7 +38,8 @@ const emits = defineEmits<{
 }>()
 
 const isOpen = ref(false)
-// REV-06: Track element that opened the drawer for focus restoration
+const drawerRef = ref<HTMLElement | null>(null)
+// REV-06 & B2-REV-05: Track element that opened the drawer for focus restoration
 let lastFocusedElement: HTMLElement | null = null
 
 watch(
@@ -57,6 +58,18 @@ watch(isOpen, (val) => {
   if (val) {
     lastFocusedElement = document.activeElement as HTMLElement
     document.body.classList.add('theme-customizer-open')
+    nextTick(() => {
+      const container = drawerRef.value
+      if (container) {
+        const closeBtn = container.querySelector<HTMLElement>('button[aria-label="Đóng tùy biến"]')
+        if (closeBtn) {
+          closeBtn.focus()
+        } else {
+          const first = container.querySelector<HTMLElement>('button, [href], input, select, textarea')
+          first?.focus()
+        }
+      }
+    })
   } else {
     document.body.classList.remove('theme-customizer-open')
     // Restore focus to trigger element after close
@@ -67,10 +80,39 @@ watch(isOpen, (val) => {
   }
 })
 
-// REV-06: Keyboard Escape handler
+// B2-REV-05: Keyboard Escape & Tab/Shift+Tab Focus Trap
 function handleKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape' && isOpen.value) {
+  if (!isOpen.value) return
+
+  if (e.key === 'Escape') {
     handleCancel()
+    return
+  }
+
+  if (e.key === 'Tab') {
+    const container = drawerRef.value
+    if (!container) return
+
+    const focusableSelectors = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    const focusableElements = Array.from(container.querySelectorAll<HTMLElement>(focusableSelectors))
+      .filter(el => el.offsetParent !== null)
+
+    if (focusableElements.length === 0) return
+
+    const firstElement = focusableElements[0]
+    const lastElement = focusableElements[focusableElements.length - 1]
+
+    if (e.shiftKey) {
+      if (document.activeElement === firstElement || !container.contains(document.activeElement)) {
+        e.preventDefault()
+        lastElement.focus()
+      }
+    } else {
+      if (document.activeElement === lastElement || !container.contains(document.activeElement)) {
+        e.preventDefault()
+        firstElement.focus()
+      }
+    }
   }
 }
 onMounted(() => document.addEventListener('keydown', handleKeydown))
@@ -149,6 +191,7 @@ function handleReset() {
         @click.self="handleCancel"
       >
         <div
+          ref="drawerRef"
           role="dialog"
           aria-modal="true"
           aria-labelledby="theme-customizer-title"
