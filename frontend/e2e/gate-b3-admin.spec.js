@@ -1157,12 +1157,12 @@ test.describe('Gate B3 Final: Contract & Acceptance Tests', () => {
     await expect(page.locator('text=Đã xác nhận xử lý đối soát')).toBeVisible()
   })
 
-  // B3-15: Financial Safety — Refund Gateway Rejection & Network Timeout Locking
+  // B3-15: Financial Safety — Refund Gateway Rejection & Network Timeout Locking (PRE-01)
   test('B3-15: Forced Refund — Gateway Rejection & Network Timeout Locking', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await setupAdminMocks(page)
 
-    // Route for paymentRefunded = false
+    // Route for paymentRefunded = false (Gateway Rejection)
     await page.route('**/api/v1/admin/bookings/BKG-20261123-9988/refund', async (route) => {
       await route.fulfill({
         status: 200,
@@ -1172,7 +1172,7 @@ test.describe('Gate B3 Final: Contract & Acceptance Tests', () => {
           message: 'Booking status updated but payment gateway rejected refund',
           data: {
             bookingReference: 'BKG-20261123-9988',
-            status: 'REFUND_FAILED',
+            status: 'CANCELLED',
             refundPercentage: 100,
             refundAmount: 700000,
             paymentRefunded: false
@@ -1199,6 +1199,54 @@ test.describe('Gate B3 Final: Contract & Acceptance Tests', () => {
       path: path.join(closureScreenshotDir, 'refund-payment-gateway-rejected.png'),
       fullPage: false
     })
+
+    // PRE-01: Network Failure & Persistent Unknown Outcome Test
+    // Reset booking status to CONFIRMED for timeout test
+    dynamicBookings[0].status = 'CONFIRMED'
+    await page.locator('[data-testid="tab-admin-bookings"]').click()
+    await page.waitForTimeout(200)
+
+    // Unroute and mock network abort / timeout
+    await page.unroute('**/api/v1/admin/bookings/BKG-20261123-9988/refund')
+    await page.route('**/api/v1/admin/bookings/BKG-20261123-9988/refund', async (route) => {
+      await route.abort('timedout')
+    })
+
+    // Click refund button again
+    await page.locator('[data-testid="btn-admin-refund-BKG-20261123-9988"]').click()
+    const refundDialog = page.locator('[data-testid="dialog-refund"]')
+    await expect(refundDialog).toBeVisible()
+
+    await reasonInput.fill('Thử hoàn tiền lần 2 và bị sự cố đứt kết nối mạng timeout.')
+    const confirmBtn = page.locator('[data-testid="btn-confirm-refund"]')
+    await confirmBtn.click()
+    await page.waitForTimeout(300)
+
+    // Assert confirm button is now DISABLED due to unknown outcome guard
+    await expect(confirmBtn).toBeDisabled()
+    await expect(page.locator('text=KHÓA gửi lại').first()).toBeVisible()
+
+    // Close modal by clicking Hủy bỏ
+    await page.locator('button:has-text("Hủy bỏ")').click()
+    await expect(refundDialog).toHaveCount(0)
+
+    // Reopen modal for the SAME booking: guard must be persistent
+    await page.locator('[data-testid="btn-admin-refund-BKG-20261123-9988"]').click()
+    await expect(refundDialog).toBeVisible()
+    await expect(confirmBtn).toBeDisabled()
+    await expect(page.locator('text=KHÓA gửi lại').first()).toBeVisible()
+
+    // Assert verify server state button is visible
+    const verifyBtn = page.locator('[data-testid="btn-verify-server-state"]')
+    await expect(verifyBtn).toBeVisible()
+
+    // Unroute refund and re-mock with successful server state
+    await page.unroute('**/api/v1/admin/bookings/BKG-20261123-9988/refund')
+    await verifyBtn.click()
+    await page.waitForTimeout(300)
+
+    // Since server booking is still CONFIRMED, guard unlocks
+    await expect(confirmBtn).toBeEnabled()
   })
 
   // B3-16: Theme Customizer — Desktop Light/Dark, Compact Density, Custom Primary

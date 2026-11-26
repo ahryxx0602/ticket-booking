@@ -1,12 +1,68 @@
-import { describe, it, expect, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { mount, flushPromises } from '@vue/test-utils'
 import OperatorDashboardView from '../views/OperatorDashboardView.vue'
 import FleetAndDriversView from '../views/FleetAndDriversView.vue'
 import OperatorTripsView from '../views/OperatorTripsView.vue'
+import { partnerApi } from '@/modules/partner/api'
 
 describe('Operator Portal Views & Business Logic Tests (Phase FE-02)', () => {
+  beforeEach(() => {
+    vi.spyOn(partnerApi, 'getWallet').mockResolvedValue({
+      success: true,
+      message: 'Wallet retrieved',
+      data: {
+        id: 1,
+        operatorId: 10,
+        availableBalance: 42500000,
+        pendingSettlementBalance: 18700000,
+        lockedBalance: 5200000,
+        debtBalance: 0,
+        currency: 'VND'
+      }
+    })
+    vi.spyOn(partnerApi, 'getWalletTransactions').mockResolvedValue({
+      success: true,
+      message: 'Transactions retrieved',
+      data: [
+        {
+          id: 9081,
+          walletId: 1,
+          operatorId: 10,
+          bookingId: 7712,
+          tripId: 101,
+          paymentReference: 'TXN-9081',
+          transactionType: 'TICKET_ESCROW_CREDIT',
+          grossAmount: 700000,
+          commissionRate: 10,
+          commissionAmount: 70000,
+          netAmount: 630000,
+          balanceBefore: 41870000,
+          balanceAfter: 42500000,
+          description: 'Cộng tiền vé (Ký quỹ)',
+          createdAt: '2026-11-23T14:15:00'
+        }
+      ]
+    })
+    vi.spyOn(partnerApi, 'getWithdrawals').mockResolvedValue({
+      success: true,
+      message: 'Withdrawals retrieved',
+      data: [
+        {
+          id: 1,
+          operatorId: 10,
+          amount: 120000000,
+          bankName: 'Vietcombank',
+          accountNumber: '0071001234567',
+          accountHolderName: 'HOANG LONG',
+          status: 'APPROVED',
+          createdAt: '2026-11-20T10:00:00'
+        }
+      ]
+    })
+  })
+
   describe('OperatorDashboardView.vue', () => {
-    it('renders 4 fintech balance cards with formatted VND amounts', () => {
+    it('renders 4 fintech balance cards with formatted VND amounts', async () => {
       const wrapper = mount(OperatorDashboardView, {
         global: {
           stubs: {
@@ -14,6 +70,7 @@ describe('Operator Portal Views & Business Logic Tests (Phase FE-02)', () => {
           }
         }
       })
+      await flushPromises()
 
       expect(wrapper.text()).toContain('Tổng Quan Ví Ký Quỹ Escrow (4 Số Dư)')
       expect(wrapper.text()).toContain('Số Dư Khả Dụng')
@@ -34,6 +91,7 @@ describe('Operator Portal Views & Business Logic Tests (Phase FE-02)', () => {
           }
         }
       })
+      await flushPromises()
 
       const openBtn = wrapper.find('[data-testid="btn-open-withdraw"]')
       await openBtn.trigger('click')
@@ -47,6 +105,7 @@ describe('Operator Portal Views & Business Logic Tests (Phase FE-02)', () => {
 
       const submitBtn = wrapper.find('[data-testid="btn-submit-withdraw"]')
       await submitBtn.trigger('click')
+      await flushPromises()
 
       expect(wrapper.text()).toContain('vượt quá số dư khả dụng')
     })

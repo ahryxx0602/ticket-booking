@@ -85,10 +85,22 @@ describe('Admin Backoffice Views & Platform Governance Tests (Phase FE-03)', () 
       success: true,
       message: 'Payments retrieved',
       data: {
-        items: [],
+        items: [
+          {
+            id: 2,
+            paymentReference: 'REC-20261122-04',
+            bookingId: 'BKG-20261122-3319',
+            amount: 380000,
+            currency: 'VND',
+            paymentMethod: 'VNPAY',
+            status: 'SUCCESS',
+            reconciliationRequired: true,
+            createdAt: '2026-11-22T21:05:00'
+          }
+        ],
         page: 0,
         size: 10,
-        totalElements: 0,
+        totalElements: 1,
         totalPages: 1,
         hasNext: false,
         hasPrevious: false
@@ -280,6 +292,18 @@ describe('Admin Backoffice Views & Platform Governance Tests (Phase FE-03)', () 
             totalTransactions: 3842,
             reconciliationCount: 0,
             reconciliationTransactions: []
+          }
+        })
+        vi.spyOn(adminApi, 'getPayments').mockResolvedValueOnce({
+          success: true,
+          data: {
+            items: [],
+            page: 0,
+            size: 10,
+            totalElements: 0,
+            totalPages: 1,
+            hasNext: false,
+            hasPrevious: false
           }
         })
         await confirmAction.trigger('click')

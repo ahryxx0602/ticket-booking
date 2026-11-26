@@ -32,18 +32,26 @@ import {
 
 const { hasPermission } = useAdminPermissions()
 
-// Real Backend State — Strictly separated permissions and loading/error states
+// Real Backend State — Strictly separated permissions and independent loading/error states
 const isLoadingReport = ref(false)
 const reportError = ref(null)
 const reportData = ref(null)
 
 const isLoadingPayments = ref(false)
 const paymentsError = ref(null)
-const reconciliationList = ref([])
-const reconciliationTotal = ref(0)
-const reconcilePage = ref(0)
+const paymentsPage = ref({
+  items: [],
+  totalElements: 0,
+  page: 0,
+  size: 10,
+  totalPages: 1
+})
 const reconcilePageSize = ref(10)
-const reconcileTotalPages = ref(1)
+
+const reconciliationList = computed(() => paymentsPage.value.items || [])
+const reconciliationTotal = computed(() => paymentsPage.value.totalElements || 0)
+const reconcilePage = computed(() => paymentsPage.value.page || 0)
+const reconcileTotalPages = computed(() => paymentsPage.value.totalPages || 1)
 
 const isRunningReconciliation = ref(false)
 const selectedAlertForConfirm = ref(null)
@@ -75,20 +83,7 @@ async function fetchReport() {
 
   try {
     const res = await adminApi.getPaymentReport()
-    const report = res?.data || res || null
-    reportData.value = report
-
-    if (Array.isArray(report?.reconciliationTransactions)) {
-      if (report.reconciliationTransactions.length > 0) {
-        if (reconciliationList.value.length === 0) {
-          reconciliationList.value = report.reconciliationTransactions
-          reconciliationTotal.value = report.reconciliationCount ?? report.reconciliationTransactions.length
-        }
-      } else if (report.reconciliationCount === 0) {
-        reconciliationList.value = []
-        reconciliationTotal.value = 0
-      }
-    }
+    reportData.value = res?.data || res || null
   } catch (err) {
     reportError.value = err?.message || 'Không thể tải báo cáo doanh thu tài chính từ máy chủ Backend'
     reportData.value = null
@@ -100,7 +95,7 @@ async function fetchReport() {
 // 2. Fetch Reconciliation Payments (PAYMENT_LIST_VIEW) — Independent request & PageResponse
 async function fetchReconciliationPayments(page = 0, size = 10) {
   if (!hasPermission('PAYMENT_LIST_VIEW')) {
-    reconciliationList.value = []
+    paymentsPage.value = { items: [], totalElements: 0, page: 0, size, totalPages: 1 }
     paymentsError.value = null
     return
   }
@@ -112,23 +107,20 @@ async function fetchReconciliationPayments(page = 0, size = 10) {
     const res = await adminApi.getPayments({ reconciliationRequired: true, page, size })
     const pageData = res?.data || res || {}
     const items = Array.isArray(pageData.items) ? pageData.items : (Array.isArray(pageData) ? pageData : [])
-    if (items.length > 0) {
-      reconciliationList.value = items
-      reconciliationTotal.value = typeof pageData.totalElements === 'number' ? pageData.totalElements : items.length
-      reconcilePage.value = typeof pageData.page === 'number' ? pageData.page : page
-      reconcileTotalPages.value = typeof pageData.totalPages === 'number' ? pageData.totalPages : Math.max(1, Math.ceil(reconciliationTotal.value / size))
-    } else if (reportData.value?.reconciliationTransactions?.length) {
-      reconciliationList.value = reportData.value.reconciliationTransactions
-      reconciliationTotal.value = reportData.value.reconciliationCount ?? reportData.value.reconciliationTransactions.length
-    } else if (reconciliationList.value.length === 0) {
-      reconciliationList.value = []
-      reconciliationTotal.value = 0
+    const totalElements = typeof pageData.totalElements === 'number' ? pageData.totalElements : items.length
+    const currentPage = typeof pageData.page === 'number' ? pageData.page : page
+    const totalPages = typeof pageData.totalPages === 'number' ? pageData.totalPages : Math.max(1, Math.ceil(totalElements / size))
+
+    paymentsPage.value = {
+      items,
+      totalElements,
+      page: currentPage,
+      size,
+      totalPages
     }
   } catch (err) {
     paymentsError.value = err?.message || 'Không thể tải danh sách cảnh báo đối soát từ máy chủ Backend'
-    if (!reportData.value?.reconciliationTransactions?.length) {
-      reconciliationList.value = []
-    }
+    paymentsPage.value = { items: [], totalElements: 0, page: 0, size, totalPages: 1 }
   } finally {
     isLoadingPayments.value = false
   }
@@ -515,9 +507,14 @@ const activeAlertsCount = computed(() => {
           :columns="reconciliationColumns"
           :data="reconciliationList"
           :loading="isLoadingPayments"
-          :page-size="10"
+          :page-size="reconcilePageSize"
+          :manual-pagination="true"
+          :page-count="reconcileTotalPages"
+          :page-index="reconcilePage"
+          :total-elements="reconciliationTotal"
           :get-row-id="(row) => String(row.id || row.paymentReference)"
           empty-text="Hiện không có giao dịch nào cần đối soát từ máy chủ."
+          @page-change="(p) => fetchReconciliationPayments(p, reconcilePageSize)"
         />
       </CardContent>
     </Card>

@@ -19,6 +19,27 @@ test.describe('E2E: Visual Regression & Layout Responsive Check', () => {
     })
 
     test(`FE-VIS-02: Dashboard Operator responsive trên ${vp.name}`, async ({ page }) => {
+      await page.route('**/api/v1/partners/wallet/transactions*', async (route) => {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+      })
+      await page.route('**/api/v1/partners/wallet/withdrawals*', async (route) => {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+      })
+      await page.route('**/api/v1/partners/wallet*', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            id: 1,
+            operatorId: 10,
+            availableBalance: 42500000,
+            pendingSettlementBalance: 18700000,
+            lockedBalance: 5200000,
+            debtBalance: 0,
+            currency: 'VND'
+          })
+        })
+      })
       await loginAsRole(page, 'ROLE_OPERATOR')
       await page.setViewportSize({ width: vp.width, height: vp.height })
       await page.goto('/operator')
@@ -29,13 +50,55 @@ test.describe('E2E: Visual Regression & Layout Responsive Check', () => {
     })
 
     test(`FE-VIS-03: Dashboard Admin responsive trên ${vp.name}`, async ({ page }) => {
+      await page.route('**/admin/payments/reports*', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            grossRevenue: 850000000,
+            netRevenue: 85000000,
+            successCount: 1420,
+            failedCount: 15,
+            pendingCount: 22,
+            refundCount: 8,
+            reconciliationCount: 5,
+            commissionRate: 10
+          })
+        })
+      })
+      await page.route('**/admin/payments?*', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            items: [],
+            totalElements: 0,
+            totalPages: 0,
+            size: 10,
+            page: 0
+          })
+        })
+      })
+      await page.route('**/admin/payments', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            items: [],
+            totalElements: 0,
+            totalPages: 0,
+            size: 10,
+            page: 0
+          })
+        })
+      })
       await loginAsRole(page, 'ROLE_ADMIN', 'admin')
       await page.setViewportSize({ width: vp.width, height: vp.height })
       await page.goto('/admin')
 
       // Đảm bảo các khối KPI render
       await expect(page.locator('text=Doanh Thu Gộp')).toBeVisible()
-      await expect(page.locator('text=Cần Đối Soát')).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Cần Đối Soát' })).toBeVisible()
     })
   }
 

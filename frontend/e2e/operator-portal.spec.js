@@ -3,6 +3,35 @@ import { loginAsRole } from './helpers/auth'
 
 test.describe('E2E: Phân Hệ Đối Tác Nhà Xe (Operator Portal)', () => {
   test.beforeEach(async ({ page }) => {
+    await page.route('**/api/v1/partners/wallet/transactions*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([])
+      })
+    })
+    await page.route('**/api/v1/partners/wallet/withdrawals*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([])
+      })
+    })
+    await page.route('**/api/v1/partners/wallet*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 1,
+          operatorId: 10,
+          availableBalance: 42500000,
+          pendingSettlementBalance: 18700000,
+          lockedBalance: 5200000,
+          debtBalance: 0,
+          currency: 'VND'
+        })
+      })
+    })
     await loginAsRole(page, 'ROLE_OPERATOR', 'operator1')
   })
   test('FE-OPER-E2E-01: Dashboard ví ký quỹ hiển thị 4 số dư Fintech và bảng giao dịch', async ({ page }) => {

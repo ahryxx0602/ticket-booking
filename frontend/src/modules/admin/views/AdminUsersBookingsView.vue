@@ -773,16 +773,69 @@ function handlePreviewRole(roleItem) {
 const selectedBookingForRefund = ref(null)
 const isRefundModalOpen = ref(false)
 const isRefunding = ref(false)
-const isUnknownOutcome = ref(false)
+const unknownOutcomeBookings = ref({})
+const isVerifyingServerState = ref(false)
+
+const isUnknownOutcome = computed(() => {
+  const refCode = selectedBookingForRefund.value?.bookingReference
+  return Boolean(refCode && unknownOutcomeBookings.value[refCode])
+})
+
+function markUnknownOutcome(refCode) {
+  if (!refCode) return
+  unknownOutcomeBookings.value = { ...unknownOutcomeBookings.value, [refCode]: true }
+}
+
+function clearUnknownOutcome(refCode) {
+  if (!refCode) return
+  const next = { ...unknownOutcomeBookings.value }
+  delete next[refCode]
+  unknownOutcomeBookings.value = next
+}
+
 const refundReasonInput = ref('')
 const refundError = ref('')
 
 function openRefundModal(booking) {
   selectedBookingForRefund.value = booking
   refundReasonInput.value = ''
-  refundError.value = ''
-  isUnknownOutcome.value = false
+  if (booking?.bookingReference && unknownOutcomeBookings.value[booking.bookingReference]) {
+    refundError.value = 'Yêu cầu hoàn tiền trước đó của đơn vé này chưa xác định kết quả do mất kết nối mạng / timeout. Hệ thống KHÓA gửi lại để bảo vệ tính toàn vẹn tài chính. Vui lòng bấm "Kiểm tra trạng thái máy chủ" để xác minh trước khi thử lại.'
+  } else {
+    refundError.value = ''
+  }
   isRefundModalOpen.value = true
+}
+
+async function verifyBookingServerState() {
+  const target = selectedBookingForRefund.value
+  if (!target || !target.bookingReference) return
+  const bookingRef = target.bookingReference
+
+  isVerifyingServerState.value = true
+  try {
+    await fetchBookings()
+    const updated = allBookings.value.find(b => b.bookingReference === bookingRef)
+    if (updated) {
+      selectedBookingForRefund.value = updated
+      if (updated.status === 'CANCELLED') {
+        clearUnknownOutcome(bookingRef)
+        notify(`Máy chủ xác nhận đơn #${bookingRef} đã hoàn tất chuyển trạng thái CANCELLED.`, 'success')
+        isRefundModalOpen.value = false
+        return
+      } else if (updated.status === 'CONFIRMED') {
+        clearUnknownOutcome(bookingRef)
+        refundError.value = ''
+        notify(`Máy chủ xác nhận đơn #${bookingRef} vẫn ở trạng thái CONFIRMED (chưa bị hoàn tiền). Đã mở khóa cho phép thao tác.`, 'info')
+        return
+      }
+    }
+    notify(`Không thể xác định trạng thái đơn vé #${bookingRef} từ máy chủ. Tiếp tục khóa để đảm bảo an toàn.`, 'warning')
+  } catch (err) {
+    notify('Lỗi kết nối khi kiểm tra trạng thái máy chủ: ' + (err?.message || ''), 'error')
+  } finally {
+    isVerifyingServerState.value = false
+  }
 }
 
 async function confirmAdminRefund() {
@@ -821,15 +874,18 @@ async function confirmAdminRefund() {
 
     const data = res?.data || res
     if (!data || typeof data !== 'object') {
-      throw new Error('Máy chủ trả về phản hồi không hợp lệ cho lệnh hoàn tiền (Malformed RefundResponse)')
+      markUnknownOutcome(bookingRef)
+      throw new Error('Máy chủ trả về phản hồi không hợp lệ cho lệnh hoàn tiền (Malformed RefundResponse). Kết quả chưa xác định.')
     }
 
     if (!data.bookingReference || data.bookingReference !== bookingRef) {
-      throw new Error('Dữ liệu hoàn tiền không khớp mã đơn vé yêu cầu')
+      markUnknownOutcome(bookingRef)
+      throw new Error('Dữ liệu hoàn tiền không khớp mã đơn vé yêu cầu. Kết quả chưa xác định.')
     }
 
     if (!data.status) {
-      throw new Error('Phản hồi hoàn tiền thiếu trạng thái đơn vé từ máy chủ')
+      markUnknownOutcome(bookingRef)
+      throw new Error('Phản hồi hoàn tiền thiếu trạng thái đơn vé từ máy chủ. Kết quả chưa xác định.')
     }
 
     // Explicitly validate refundAmount, supporting valid zero (0đ)
@@ -845,6 +901,7 @@ async function confirmAdminRefund() {
       notify(`Đã hoàn tiền thành công ${amountStr} cho đơn vé #${bookingRef} (Trạng thái: ${data.status})!`, 'success')
     }
 
+    clearUnknownOutcome(bookingRef)
     isRefundModalOpen.value = false
     selectedBookingForRefund.value = null
 
@@ -856,10 +913,19 @@ async function confirmAdminRefund() {
     }
   } catch (err) {
     const errMsg = err?.message || ''
-    const isTimeout = err?.code === 'ECONNABORTED' || errMsg.toLowerCase().includes('timeout') || err?.name === 'TimeoutError'
-    if (isTimeout) {
-      isUnknownOutcome.value = true
-      refundError.value = 'Yêu cầu hoàn tiền bị quá hạn phản hồi (Network Timeout). Trạng thái giao dịch tại máy chủ chưa xác định, hệ thống đã KHÓA gửi lại để chống hoàn tiền trùng lặp. Vui lòng bấm Hủy và kiểm tra lại danh sách đơn vé hoặc đối soát thủ công.'
+    const errCode = err?.code || ''
+    const isTimeoutOrNetwork =
+      errCode === 'NETWORK_ERROR' ||
+      errCode === 'ECONNABORTED' ||
+      errCode === 'ERR_NETWORK' ||
+      errMsg.toLowerCase().includes('timeout') ||
+      errMsg.toLowerCase().includes('kết nối') ||
+      err?.name === 'TimeoutError' ||
+      errMsg.includes('chưa xác định')
+
+    if (isTimeoutOrNetwork) {
+      markUnknownOutcome(bookingRef)
+      refundError.value = 'Yêu cầu hoàn tiền bị quá hạn phản hồi (Network Timeout/Disconnect). Trạng thái giao dịch tại máy chủ chưa xác định, hệ thống đã KHÓA gửi lại trên đơn vé này để chống hoàn tiền trùng lặp. Vui lòng kiểm tra lại trạng thái máy chủ hoặc đối soát thủ công.'
     } else {
       refundError.value = errMsg || 'Máy chủ từ chối yêu cầu hoàn tiền cưỡng chế'
     }
@@ -1790,14 +1856,25 @@ const bookingColumns = [
             />
           </FormField>
 
-          <DialogFooter class="pt-2">
-            <Button type="button" variant="outline" :disabled="isRefunding" @click="isRefundModalOpen = false">
+          <DialogFooter class="pt-2 flex flex-col sm:flex-row gap-2">
+            <Button
+              v-if="isUnknownOutcome"
+              type="button"
+              variant="secondary"
+              :disabled="isVerifyingServerState"
+              data-testid="btn-verify-server-state"
+              @click="verifyBookingServerState"
+            >
+              <RefreshCw v-if="isVerifyingServerState" class="w-3.5 h-3.5 mr-1.5 animate-spin" />
+              <span>{{ isVerifyingServerState ? 'Đang xác minh...' : 'Kiểm tra trạng thái máy chủ' }}</span>
+            </Button>
+            <Button type="button" variant="outline" :disabled="isRefunding || isVerifyingServerState" @click="isRefundModalOpen = false">
               Hủy bỏ
             </Button>
             <Button
               type="submit"
               variant="destructive"
-              :disabled="isRefunding || isUnknownOutcome"
+              :disabled="isRefunding || isUnknownOutcome || isVerifyingServerState"
               data-testid="btn-confirm-refund"
               @click.prevent="confirmAdminRefund"
             >

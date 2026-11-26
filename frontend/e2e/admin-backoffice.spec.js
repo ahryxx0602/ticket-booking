@@ -370,6 +370,23 @@ test.describe('E2E: Phân Hệ Ban Quản Trị (Admin Backoffice)', () => {
   })
 
   test('FE-ADM-E2E-03: Chốt chặn ADMIN_CANNOT_LOCK_SELF và Hoàn tiền cưỡng chế Admin Refund', async ({ page }) => {
+    await page.route('**/admin/bookings/*/refund*', async (route) => {
+      const url = route.request().url()
+      const match = url.match(/\/admin\/bookings\/([^/]+)\/refund/)
+      const ref = match ? match[1] : 'BK-12345'
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          refundId: 'RF-999',
+          bookingReference: ref,
+          refundAmount: 500000,
+          refundPercentage: 100,
+          status: 'CANCELLED',
+          paymentRefunded: true
+        })
+      })
+    })
     await page.goto('/admin/users-bookings')
     
     await expect(page.locator('text=Quản Trị Người Dùng & Hoàn Tiền Cưỡng Chế (Admin Refund)')).toBeVisible()
