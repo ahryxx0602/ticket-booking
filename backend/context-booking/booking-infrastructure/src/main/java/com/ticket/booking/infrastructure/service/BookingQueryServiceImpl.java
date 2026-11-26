@@ -1,13 +1,18 @@
 package com.ticket.booking.infrastructure.service;
 
 import com.ticket.booking.application.dto.BookingResponse;
+import com.ticket.booking.application.dto.SeatAvailabilityItemResponse;
+import com.ticket.booking.application.dto.SeatAvailabilityResponse;
 import com.ticket.booking.application.usecase.AdminGetBookingsUseCase;
 import com.ticket.booking.application.usecase.GetBookingDetailUseCase;
 import com.ticket.booking.application.usecase.GetMyBookingsUseCase;
+import com.ticket.booking.application.usecase.GetSeatAvailabilityUseCase;
 import com.ticket.booking.domain.model.Booking;
 import com.ticket.booking.domain.model.BookingStatus;
+import com.ticket.booking.domain.port.CatalogTripPort;
 import com.ticket.booking.domain.port.IdentityUserPort;
 import com.ticket.booking.domain.repository.BookingRepository;
+import com.ticket.booking.domain.repository.SeatLockRepository;
 import com.ticket.shared.dto.PageResponse;
 import com.ticket.shared.exception.BusinessException;
 import com.ticket.shared.exception.EntityNotFoundException;
@@ -15,13 +20,22 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
+
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
-public class BookingQueryServiceImpl implements GetMyBookingsUseCase, GetBookingDetailUseCase, AdminGetBookingsUseCase {
+public class BookingQueryServiceImpl implements GetMyBookingsUseCase, GetBookingDetailUseCase, AdminGetBookingsUseCase, GetSeatAvailabilityUseCase {
 
     private final BookingRepository bookingRepository;
     private final IdentityUserPort identityUserPort;
+    private final CatalogTripPort catalogTripPort;
+    private final SeatLockRepository seatLockRepository;
 
     private static final int MAX_PAGE_SIZE = 100;
 
@@ -63,6 +77,52 @@ public class BookingQueryServiceImpl implements GetMyBookingsUseCase, GetBooking
 
         PageResponse<Booking> result = bookingRepository.findAllWithFilters(status, tripId, userId, safePage, safeSize);
         return mapPage(result);
+    }
+
+    @Override
+    public SeatAvailabilityResponse execute(Long tripId) {
+        if (tripId == null) {
+            throw new IllegalArgumentException("Trip ID must not be null");
+        }
+
+        CatalogTripPort.TripSnapshot tripSnapshot = catalogTripPort.findTripWithSeats(tripId)
+                .orElseThrow(() -> new EntityNotFoundException("Trip", tripId));
+
+        List<String> catalogSeatNumbers = tripSnapshot.seatsByNumber().keySet().stream()
+                .sorted()
+                .toList();
+
+        if (catalogSeatNumbers.isEmpty()) {
+            return SeatAvailabilityResponse.builder()
+                    .tripId(tripId)
+                    .serverTime(OffsetDateTime.now(ZoneOffset.ofHours(7)))
+                    .seats(Collections.emptyList())
+                    .build();
+        }
+
+        Set<String> confirmedSeats = bookingRepository.findConfirmedSeatNumbers(tripId);
+        Set<String> activeHeldDbSeats = bookingRepository.findActiveHeldSeatNumbers(tripId, LocalDateTime.now());
+        Set<String> redisLockedSeats = seatLockRepository.findLockedSeats(tripId, catalogSeatNumbers);
+
+        List<SeatAvailabilityItemResponse> items = catalogSeatNumbers.stream()
+                .map(seatNumber -> {
+                    String status;
+                    if (confirmedSeats.contains(seatNumber)) {
+                        status = "SOLD";
+                    } else if (activeHeldDbSeats.contains(seatNumber) || redisLockedSeats.contains(seatNumber)) {
+                        status = "HELD";
+                    } else {
+                        status = "AVAILABLE";
+                    }
+                    return new SeatAvailabilityItemResponse(seatNumber, status);
+                })
+                .toList();
+
+        return SeatAvailabilityResponse.builder()
+                .tripId(tripId)
+                .serverTime(OffsetDateTime.now(ZoneOffset.ofHours(7)))
+                .seats(items)
+                .build();
     }
 
     private PageResponse<BookingResponse> mapPage(PageResponse<Booking> source) {

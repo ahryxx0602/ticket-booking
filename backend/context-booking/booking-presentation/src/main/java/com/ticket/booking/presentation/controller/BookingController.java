@@ -2,9 +2,11 @@ package com.ticket.booking.presentation.controller;
 
 import com.ticket.booking.application.dto.BookingResponse;
 import com.ticket.booking.application.dto.HoldSeatCommand;
+import com.ticket.booking.application.dto.SeatAvailabilityResponse;
 import com.ticket.booking.application.usecase.CancelBookingUseCase;
 import com.ticket.booking.application.usecase.GetBookingDetailUseCase;
 import com.ticket.booking.application.usecase.GetMyBookingsUseCase;
+import com.ticket.booking.application.usecase.GetSeatAvailabilityUseCase;
 import com.ticket.booking.application.usecase.HoldSeatUseCase;
 import com.ticket.shared.dto.ApiResponse;
 import com.ticket.shared.dto.PageResponse;
@@ -26,15 +28,23 @@ import java.security.Principal;
 @RestController
 @RequestMapping("/api/v1/bookings")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('CUSTOMER')")
 public class BookingController {
 
     private final HoldSeatUseCase holdSeatUseCase;
     private final CancelBookingUseCase cancelBookingUseCase;
     private final GetMyBookingsUseCase getMyBookingsUseCase;
     private final GetBookingDetailUseCase getBookingDetailUseCase;
+    private final GetSeatAvailabilityUseCase getSeatAvailabilityUseCase;
+
+    @GetMapping("/trips/{tripId}/availability")
+    public ResponseEntity<ApiResponse<SeatAvailabilityResponse>> getSeatAvailability(
+            @PathVariable Long tripId) {
+        SeatAvailabilityResponse response = getSeatAvailabilityUseCase.execute(tripId);
+        return ResponseEntity.ok(ApiResponse.ok("Seat availability retrieved successfully", response));
+    }
 
     @PostMapping("/hold")
+    @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<ApiResponse<BookingResponse>> holdSeats(
             @Valid @RequestBody HoldSeatCommand command,
             Principal principal) {
@@ -43,6 +53,7 @@ public class BookingController {
     }
 
     @PostMapping("/{bookingReference}/cancel")
+    @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<ApiResponse<Void>> cancelBooking(
             @PathVariable String bookingReference,
             Principal principal) {
@@ -51,6 +62,7 @@ public class BookingController {
     }
 
     @GetMapping("/my-bookings")
+    @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<ApiResponse<PageResponse<BookingResponse>>> getMyBookings(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
@@ -60,6 +72,7 @@ public class BookingController {
     }
 
     @GetMapping("/{bookingReference}")
+    @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<ApiResponse<BookingResponse>> getBookingDetail(
             @PathVariable String bookingReference,
             Principal principal) {

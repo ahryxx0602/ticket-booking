@@ -65,7 +65,8 @@ public class SecurityConfig {
                 // 3. Administrator Only APIs
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
 
-                // 4. Customer Role APIs
+                // 4. Customer Role APIs (Public Availability for Guest Discovery)
+                .requestMatchers(HttpMethod.GET, "/api/v1/bookings/trips/*/availability").permitAll()
                 .requestMatchers("/api/v1/bookings/**").hasRole("CUSTOMER")
                 .requestMatchers("/api/v1/payments/checkout").hasRole("CUSTOMER")
 

@@ -7,6 +7,10 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
+  availabilityMap: {
+    type: Object,
+    default: () => ({})
+  },
   selectedSeats: {
     type: Array,
     default: () => []
@@ -35,20 +39,22 @@ const props = defineProps({
 
 const emit = defineEmits(['toggle-seat'])
 
-// Active Deck Tab: 'LOWER' or 'UPPER'
+// Active Deck Tab: 'LOWER' or 'UPPER' (only used when explicit decks exist)
 const activeDeck = ref('LOWER')
 
 // Physical seat normalization from backend SeatDto:
 // { id, tripId, seatNumber, seatType, priceMultiplier, finalPrice }
+// PRE-05: Remove A/B floor inference unless explicitly provided in seat metadata.
 const normalizedSeats = computed(() => {
   return (props.seats || []).map(s => {
     const code = s.seatNumber || s.seatCode || s.code || ''
     const price = Number(s.finalPrice) || Number(s.price) || props.basePrice || 0
-    let deck = s.deck
-    if (!deck) {
-      if (code.toUpperCase().startsWith('A')) deck = 'LOWER'
-      else if (code.toUpperCase().startsWith('B')) deck = 'UPPER'
-      else deck = 'SINGLE'
+    let deck = null
+    if (s.deck) {
+      const d = String(s.deck).toUpperCase()
+      if (d === 'LOWER' || d === 'UPPER' || d === 'SINGLE') {
+        deck = d
+      }
     }
     return {
       id: s.id,
@@ -63,37 +69,42 @@ const normalizedSeats = computed(() => {
 })
 
 const hasMultipleDecks = computed(() => {
-  const hasLower = normalizedSeats.value.some(s => s.deck === 'LOWER' || s.code.startsWith('A'))
-  const hasUpper = normalizedSeats.value.some(s => s.deck === 'UPPER' || s.code.startsWith('B'))
+  const hasLower = normalizedSeats.value.some(s => s.deck === 'LOWER')
+  const hasUpper = normalizedSeats.value.some(s => s.deck === 'UPPER')
   return hasLower && hasUpper
 })
 
 const lowerDeckSeats = computed(() => {
   if (!hasMultipleDecks.value) return normalizedSeats.value
-  return normalizedSeats.value.filter(s => s.deck === 'LOWER' || s.code.startsWith('A'))
+  return normalizedSeats.value.filter(s => s.deck === 'LOWER')
 })
 
 const upperDeckSeats = computed(() => {
-  return normalizedSeats.value.filter(s => s.deck === 'UPPER' || s.code.startsWith('B'))
+  return normalizedSeats.value.filter(s => s.deck === 'UPPER')
 })
 
 /**
  * Seat State Priority Rules:
  * 1. HELD_BY_ME: In active booking held by current passenger
- * 2. CONFIRMED_UNAVAILABLE: In unavailableSeats (conflict/hold failure) OR explicit backend status
+ * 2. CONFIRMED_UNAVAILABLE: In unavailableSeats (conflict), OR backend availability is SOLD/HELD, OR raw status
  * 3. SELECTED: Current passenger booking intent
- * 4. UNVERIFIED: Catalog seat existence (availability verified atomically upon hold)
+ * 4. AVAILABLE: Backend availability confirms AVAILABLE
+ * 5. UNVERIFIED: Catalog seat existence (availability verified upon hold)
  */
 function getSeatStatus(seat) {
   const code = seat.code
   if (props.heldSeats.includes(code)) return 'HELD_BY_ME'
-  if (
-    props.unavailableSeats.includes(code) ||
-    ['BOOKED', 'SOLD', 'CONFIRMED', 'UNAVAILABLE', 'HELD_BY_OTHER'].includes(seat.rawStatus)
-  ) {
+  if (props.unavailableSeats.includes(code)) return 'CONFIRMED_UNAVAILABLE'
+
+  const avail = props.availabilityMap?.[code]
+  if (avail === 'SOLD' || avail === 'HELD') {
+    return 'CONFIRMED_UNAVAILABLE'
+  }
+  if (['BOOKED', 'SOLD', 'CONFIRMED', 'UNAVAILABLE', 'HELD_BY_OTHER'].includes(seat.rawStatus)) {
     return 'CONFIRMED_UNAVAILABLE'
   }
   if (props.selectedSeats.includes(code)) return 'SELECTED'
+  if (avail === 'AVAILABLE') return 'AVAILABLE'
   return 'UNVERIFIED'
 }
 
@@ -124,7 +135,7 @@ function formatCurrency(val) {
         </p>
       </div>
 
-      <!-- Deck Switcher Tabs (Only if multiple decks exist) -->
+      <!-- Deck Switcher Tabs (Only if multiple decks explicitly provided in seat metadata) -->
       <div v-if="hasMultipleDecks" class="inline-flex rounded-lg border border-border p-1 bg-muted/40 self-start sm:self-auto">
         <button
           type="button"
@@ -137,7 +148,7 @@ function formatCurrency(val) {
               : 'text-muted-foreground hover:text-foreground'
           ]"
         >
-          Tầng Dưới (A)
+          Tầng Dưới
         </button>
         <button
           type="button"
@@ -150,17 +161,17 @@ function formatCurrency(val) {
               : 'text-muted-foreground hover:text-foreground'
           ]"
         >
-          Tầng Trên (B)
+          Tầng Trên
         </button>
       </div>
     </div>
 
-    <!-- Informational Verification Alert (Contract Transparency) -->
+    <!-- Informational Verification Alert (PRE-05: Customer-Friendly Vietnamese Wording) -->
     <div class="p-3 bg-muted/40 border border-border rounded-lg flex items-start gap-2.5 text-xs text-muted-foreground" data-testid="seat-contract-notice">
       <AlertCircle class="w-4 h-4 text-primary shrink-0 mt-0.5" />
       <div>
         <span class="font-medium text-foreground">Xác thực tính khả dụng: </span>
-        Danh mục chỗ ngồi được đồng bộ từ lịch trình. Tính khả dụng thực tế của từng chỗ sẽ được xác thực nguyên tử qua khóa phân tán của máy chủ khi quý khách bấm "Giữ Chỗ".
+        Tình trạng chỗ thực tế sẽ được hệ thống kiểm tra và xác nhận khi quý khách bấm 'Giữ Chỗ'.
       </div>
     </div>
 
@@ -168,7 +179,7 @@ function formatCurrency(val) {
     <div class="py-3 px-3.5 bg-muted/30 rounded-lg border border-border flex flex-wrap items-center justify-between gap-3 text-xs">
       <div class="flex items-center gap-2">
         <div class="w-4 h-4 rounded border border-border bg-card shadow-xs"></div>
-        <span class="text-muted-foreground font-medium">Chỗ danh mục (Chưa xác minh)</span>
+        <span class="text-muted-foreground font-medium">Chỗ trống (Có thể chọn)</span>
       </div>
       <div class="flex items-center gap-2">
         <div class="w-4 h-4 rounded bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">
@@ -186,24 +197,24 @@ function formatCurrency(val) {
         <div class="w-4 h-4 rounded bg-muted border border-border text-muted-foreground/60 flex items-center justify-center text-[10px]">
           <X class="w-2.5 h-2.5" />
         </div>
-        <span class="text-muted-foreground font-medium">Không khả dụng (Trùng lặp / Đã bán)</span>
+        <span class="text-muted-foreground font-medium">Không khả dụng (Đã bán / Đang giữ)</span>
       </div>
     </div>
 
-    <!-- Neutral Cabin Grid Container (No Fabricated Physical Bus Elements) -->
+    <!-- Cabin Grid Container (Neutral Grid or Explicit Multi-Deck) -->
     <div class="bg-muted/10 rounded-xl p-4 sm:p-6 border border-border flex flex-col items-center">
       <!-- Empty State if no seats in deck -->
       <div v-if="normalizedSeats.length === 0" class="py-12 text-center text-xs text-muted-foreground" data-testid="deck-empty">
         Không có dữ liệu chỗ ngồi cho chuyến xe này.
       </div>
 
-      <!-- Berth Grid: Lower Deck (or Single Deck) -->
+      <!-- Berth Grid: Lower Deck (or Unified Neutral Grid when no explicit deck metadata) -->
       <div
         v-else-if="!hasMultipleDecks || activeDeck === 'LOWER'"
-        class="w-full max-w-md space-y-3"
+        class="w-full max-w-lg space-y-3"
         data-testid="seat-grid-lower"
       >
-        <div class="grid grid-cols-3 gap-3 sm:gap-4">
+        <div class="grid grid-cols-3 sm:grid-cols-4 gap-3 sm:gap-4">
           <button
             v-for="seat in lowerDeckSeats"
             :key="seat.code"
@@ -213,7 +224,7 @@ function formatCurrency(val) {
             @click="handleSeatClick(seat)"
             :class="[
               'relative rounded-lg p-3 transition-all select-none border text-center flex flex-col items-center justify-center h-20 w-full focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
-              getSeatStatus(seat) === 'UNVERIFIED' && 'bg-card border-border hover:border-primary hover:shadow-xs cursor-pointer text-foreground',
+              (getSeatStatus(seat) === 'AVAILABLE' || getSeatStatus(seat) === 'UNVERIFIED') && 'bg-card border-border hover:border-primary hover:shadow-xs cursor-pointer text-foreground',
               getSeatStatus(seat) === 'SELECTED' && 'bg-primary border-primary text-primary-foreground font-bold shadow-xs cursor-pointer',
               getSeatStatus(seat) === 'HELD_BY_ME' && 'bg-primary/10 border-primary text-primary font-bold shadow-xs cursor-pointer',
               getSeatStatus(seat) === 'CONFIRMED_UNAVAILABLE' && 'bg-muted/60 border-border/60 text-muted-foreground/60 cursor-not-allowed opacity-60'
@@ -241,13 +252,13 @@ function formatCurrency(val) {
         </div>
       </div>
 
-      <!-- Berth Grid: Upper Deck -->
+      <!-- Berth Grid: Upper Deck (when explicit deck metadata exists) -->
       <div
         v-else-if="hasMultipleDecks && activeDeck === 'UPPER'"
-        class="w-full max-w-md space-y-3"
+        class="w-full max-w-lg space-y-3"
         data-testid="seat-grid-upper"
       >
-        <div class="grid grid-cols-3 gap-3 sm:gap-4">
+        <div class="grid grid-cols-3 sm:grid-cols-4 gap-3 sm:gap-4">
           <button
             v-for="seat in upperDeckSeats"
             :key="seat.code"
@@ -257,7 +268,7 @@ function formatCurrency(val) {
             @click="handleSeatClick(seat)"
             :class="[
               'relative rounded-lg p-3 transition-all select-none border text-center flex flex-col items-center justify-center h-20 w-full focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
-              getSeatStatus(seat) === 'UNVERIFIED' && 'bg-card border-border hover:border-primary hover:shadow-xs cursor-pointer text-foreground',
+              (getSeatStatus(seat) === 'AVAILABLE' || getSeatStatus(seat) === 'UNVERIFIED') && 'bg-card border-border hover:border-primary hover:shadow-xs cursor-pointer text-foreground',
               getSeatStatus(seat) === 'SELECTED' && 'bg-primary border-primary text-primary-foreground font-bold shadow-xs cursor-pointer',
               getSeatStatus(seat) === 'HELD_BY_ME' && 'bg-primary/10 border-primary text-primary font-bold shadow-xs cursor-pointer',
               getSeatStatus(seat) === 'CONFIRMED_UNAVAILABLE' && 'bg-muted/60 border-border/60 text-muted-foreground/60 cursor-not-allowed opacity-60'

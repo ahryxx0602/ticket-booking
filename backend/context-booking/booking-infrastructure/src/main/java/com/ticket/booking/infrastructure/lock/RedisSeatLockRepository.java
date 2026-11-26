@@ -81,6 +81,41 @@ public class RedisSeatLockRepository implements SeatLockRepository {
         return bucket.isExists();
     }
 
+    @Override
+    public java.util.Set<String> findLockedSeats(Long tripId, List<String> seatNumbers) {
+        if (seatNumbers == null || seatNumbers.isEmpty()) {
+            return Collections.emptySet();
+        }
+        List<String> normalizedSeats = seatNumbers.stream()
+                .map(String::trim)
+                .map(String::toUpperCase)
+                .distinct()
+                .toList();
+
+        java.util.Map<String, String> keyToSeat = new java.util.HashMap<>();
+        for (String seat : normalizedSeats) {
+            keyToSeat.put(buildKey(tripId, seat), seat);
+        }
+
+        try {
+            org.redisson.api.RBuckets buckets = redissonClient.getBuckets(StringCodec.INSTANCE);
+            java.util.Map<String, String> loaded = buckets.get(keyToSeat.keySet().toArray(new String[0]));
+            if (loaded == null || loaded.isEmpty()) {
+                return Collections.emptySet();
+            }
+            java.util.Set<String> lockedSeats = new java.util.HashSet<>();
+            for (java.util.Map.Entry<String, String> entry : loaded.entrySet()) {
+                if (entry.getValue() != null && keyToSeat.containsKey(entry.getKey())) {
+                    lockedSeats.add(keyToSeat.get(entry.getKey()));
+                }
+            }
+            return lockedSeats;
+        } catch (Exception ex) {
+            log.warn("Failed to batch query seat locks for tripId={}: {}", tripId, ex.getMessage());
+            throw ex;
+        }
+    }
+
     private boolean tryAcquireSingleLock(String lockKey, String ownerToken, Duration ttl) throws InterruptedException {
         RBucket<String> bucket = redissonClient.getBucket(lockKey, StringCodec.INSTANCE);
         long deadline = System.currentTimeMillis() + WAIT_TIME_MS;

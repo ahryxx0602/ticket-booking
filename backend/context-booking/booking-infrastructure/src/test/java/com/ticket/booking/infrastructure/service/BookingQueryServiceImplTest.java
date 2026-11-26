@@ -1,13 +1,17 @@
 package com.ticket.booking.infrastructure.service;
 
 import com.ticket.booking.application.dto.BookingResponse;
+import com.ticket.booking.application.dto.SeatAvailabilityResponse;
 import com.ticket.booking.domain.model.Booking;
 import com.ticket.booking.domain.model.BookingItem;
 import com.ticket.booking.domain.model.BookingStatus;
+import com.ticket.booking.domain.port.CatalogTripPort;
 import com.ticket.booking.domain.port.IdentityUserPort;
 import com.ticket.booking.domain.repository.BookingRepository;
+import com.ticket.booking.domain.repository.SeatLockRepository;
 import com.ticket.shared.dto.PageResponse;
 import com.ticket.shared.exception.BusinessException;
+import com.ticket.shared.exception.EntityNotFoundException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -15,11 +19,17 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -28,6 +38,8 @@ class BookingQueryServiceImplTest {
 
     @Mock private BookingRepository bookingRepository;
     @Mock private IdentityUserPort identityUserPort;
+    @Mock private CatalogTripPort catalogTripPort;
+    @Mock private SeatLockRepository seatLockRepository;
 
     @InjectMocks
     private BookingQueryServiceImpl queryService;
@@ -105,5 +117,66 @@ class BookingQueryServiceImplTest {
         assertThatThrownBy(() -> queryService.execute("customer1", 0, 10))
                 .isInstanceOf(BusinessException.class)
                 .extracting("code").isEqualTo("ACCOUNT_LOCKED");
+    }
+
+    @Test
+    void getSeatAvailability_whenTripNotFound_shouldThrowEntityNotFoundException() {
+        when(catalogTripPort.findTripWithSeats(999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> queryService.execute(999L))
+                .isInstanceOf(EntityNotFoundException.class);
+    }
+
+    @Test
+    void getSeatAvailability_whenTripHasNoSeats_shouldReturnEmptySeatsList() {
+        CatalogTripPort.TripSnapshot emptySnapshot = new CatalogTripPort.TripSnapshot(101L, true, Collections.emptyMap());
+        when(catalogTripPort.findTripWithSeats(101L)).thenReturn(Optional.of(emptySnapshot));
+
+        SeatAvailabilityResponse response = queryService.execute(101L);
+
+        assertThat(response.getTripId()).isEqualTo(101L);
+        assertThat(response.getSeats()).isEmpty();
+    }
+
+    @Test
+    void getSeatAvailability_shouldEnforcePrecedenceSoldOverHeldOverAvailable() {
+        Map<String, CatalogTripPort.TripSeatInfo> seatMap = Map.of(
+                "A01", new CatalogTripPort.TripSeatInfo(1L, "A01", BigDecimal.valueOf(350000)),
+                "A02", new CatalogTripPort.TripSeatInfo(2L, "A02", BigDecimal.valueOf(350000)),
+                "A03", new CatalogTripPort.TripSeatInfo(3L, "A03", BigDecimal.valueOf(350000)),
+                "A04", new CatalogTripPort.TripSeatInfo(4L, "A04", BigDecimal.valueOf(350000)),
+                "A05", new CatalogTripPort.TripSeatInfo(5L, "A05", BigDecimal.valueOf(350000))
+        );
+        CatalogTripPort.TripSnapshot snapshot = new CatalogTripPort.TripSnapshot(101L, true, seatMap);
+        when(catalogTripPort.findTripWithSeats(101L)).thenReturn(Optional.of(snapshot));
+
+        // DB Confirmed: A04, A05
+        when(bookingRepository.findConfirmedSeatNumbers(101L)).thenReturn(Set.of("A04", "A05"));
+        // DB Active Held: A03
+        when(bookingRepository.findActiveHeldSeatNumbers(eq(101L), any(LocalDateTime.class))).thenReturn(Set.of("A03"));
+        // Redis In-flight Locks: A02, A05 (A05 overlaps with confirmed DB)
+        when(seatLockRepository.findLockedSeats(eq(101L), any())).thenReturn(Set.of("A02", "A05"));
+
+        SeatAvailabilityResponse response = queryService.execute(101L);
+
+        assertThat(response.getTripId()).isEqualTo(101L);
+        assertThat(response.getSeats()).hasSize(5);
+
+        Map<String, String> statusBySeat = response.getSeats().stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        com.ticket.booking.application.dto.SeatAvailabilityItemResponse::getSeatNumber,
+                        com.ticket.booking.application.dto.SeatAvailabilityItemResponse::getStatus
+                ));
+
+        // A01: not in DB, not in Redis -> AVAILABLE
+        assertThat(statusBySeat.get("A01")).isEqualTo("AVAILABLE");
+        // A02: in Redis in-flight lock -> HELD
+        assertThat(statusBySeat.get("A02")).isEqualTo("HELD");
+        // A03: in DB active held -> HELD
+        assertThat(statusBySeat.get("A03")).isEqualTo("HELD");
+        // A04: in DB confirmed -> SOLD
+        assertThat(statusBySeat.get("A04")).isEqualTo("SOLD");
+        // A05: in both DB confirmed AND Redis -> SOLD (Precedence SOLD > HELD)
+        assertThat(statusBySeat.get("A05")).isEqualTo("SOLD");
     }
 }

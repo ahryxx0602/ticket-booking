@@ -19,6 +19,9 @@ export const catalogBookingApi = {
   },
 
   // Customer Bookings
+  getSeatAvailability(tripId) {
+    return httpClient.get(`/bookings/trips/${tripId}/availability`)
+  },
   holdSeats(payload) {
     return httpClient.post('/bookings/hold', payload)
   },

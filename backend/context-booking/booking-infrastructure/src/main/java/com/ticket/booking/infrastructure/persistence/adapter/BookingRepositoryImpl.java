@@ -57,6 +57,16 @@ public class BookingRepositoryImpl implements BookingRepository {
     }
 
     @Override
+    public Set<String> findConfirmedSeatNumbers(Long tripId) {
+        return springDataBookingRepository.findConfirmedSeatNumbers(tripId);
+    }
+
+    @Override
+    public Set<String> findActiveHeldSeatNumbers(Long tripId, LocalDateTime now) {
+        return springDataBookingRepository.findActiveHeldSeatNumbers(tripId, now);
+    }
+
+    @Override
     public PageResponse<Booking> findByUserId(Long userId, int page, int size) {
         Page<Long> idPage = springDataBookingRepository.findIdsByUserId(userId, PageRequest.of(page, size));
         return toPageResponse(idPage);

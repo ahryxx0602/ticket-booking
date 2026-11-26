@@ -42,6 +42,7 @@ class BookingControllerTest {
     @Mock private CancelBookingUseCase cancelBookingUseCase;
     @Mock private GetMyBookingsUseCase getMyBookingsUseCase;
     @Mock private GetBookingDetailUseCase getBookingDetailUseCase;
+    @Mock private com.ticket.booking.application.usecase.GetSeatAvailabilityUseCase getSeatAvailabilityUseCase;
 
     @InjectMocks
     private BookingController bookingController;
@@ -145,5 +146,29 @@ class BookingControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(command)))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void getSeatAvailability_shouldReturnAvailabilityResponse() throws Exception {
+        com.ticket.booking.application.dto.SeatAvailabilityResponse response = com.ticket.booking.application.dto.SeatAvailabilityResponse.builder()
+                .tripId(101L)
+                .serverTime(java.time.OffsetDateTime.now())
+                .seats(List.of(
+                        new com.ticket.booking.application.dto.SeatAvailabilityItemResponse("A01", "AVAILABLE"),
+                        new com.ticket.booking.application.dto.SeatAvailabilityItemResponse("A02", "HELD"),
+                        new com.ticket.booking.application.dto.SeatAvailabilityItemResponse("A03", "SOLD")
+                ))
+                .build();
+
+        when(getSeatAvailabilityUseCase.execute(101L)).thenReturn(response);
+
+        mockMvc.perform(get("/api/v1/bookings/trips/101/availability"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.tripId").value(101))
+                .andExpect(jsonPath("$.data.seats[0].seatNumber").value("A01"))
+                .andExpect(jsonPath("$.data.seats[0].status").value("AVAILABLE"))
+                .andExpect(jsonPath("$.data.seats[1].status").value("HELD"))
+                .andExpect(jsonPath("$.data.seats[2].status").value("SOLD"));
     }
 }

@@ -44,6 +44,25 @@ public interface SpringDataBookingRepository extends JpaRepository<BookingJpaEnt
             """, nativeQuery = true)
     Set<String> findActiveBookedSeatNumbers(@Param("tripId") Long tripId, @Param("now") LocalDateTime now);
 
+    @Query(value = """
+            SELECT DISTINCT i.seat_number
+            FROM booking_items i
+            INNER JOIN bookings b ON b.id = i.booking_id
+            WHERE b.trip_id = :tripId
+              AND b.status = 'CONFIRMED'
+            """, nativeQuery = true)
+    Set<String> findConfirmedSeatNumbers(@Param("tripId") Long tripId);
+
+    @Query(value = """
+            SELECT DISTINCT i.seat_number
+            FROM booking_items i
+            INNER JOIN bookings b ON b.id = i.booking_id
+            WHERE b.trip_id = :tripId
+              AND b.status = 'HELD'
+              AND b.expires_at > :now
+            """, nativeQuery = true)
+    Set<String> findActiveHeldSeatNumbers(@Param("tripId") Long tripId, @Param("now") LocalDateTime now);
+
     @Query(value = "SELECT b.id FROM BookingJpaEntity b WHERE b.userId = :userId ORDER BY b.createdAt DESC, b.id DESC",
            countQuery = "SELECT COUNT(b.id) FROM BookingJpaEntity b WHERE b.userId = :userId")
     Page<Long> findIdsByUserId(@Param("userId") Long userId, Pageable pageable);

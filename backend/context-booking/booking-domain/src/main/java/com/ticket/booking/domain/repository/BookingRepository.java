@@ -17,6 +17,12 @@ public interface BookingRepository {
     Optional<Booking> findByReference(String bookingReference);
     Optional<Booking> findByReferenceForUpdate(String bookingReference);
     Set<String> findActiveBookedSeatNumbers(Long tripId, LocalDateTime now);
+    default Set<String> findConfirmedSeatNumbers(Long tripId) {
+        return java.util.Collections.emptySet();
+    }
+    default Set<String> findActiveHeldSeatNumbers(Long tripId, LocalDateTime now) {
+        return java.util.Collections.emptySet();
+    }
     PageResponse<Booking> findByUserId(Long userId, int page, int size);
     PageResponse<Booking> findAllWithFilters(BookingStatus status, Long tripId, Long userId, int page, int size);
     List<Booking> findExpiredHeldBookings(LocalDateTime now, int limit);

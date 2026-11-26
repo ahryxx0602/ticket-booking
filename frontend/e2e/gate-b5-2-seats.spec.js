@@ -7,40 +7,48 @@ import { loginAsRole } from './helpers/auth.js'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const screenshotDir = path.resolve(__dirname, '../../docs/frontend-v2/screenshots-gate-b5-2-closure')
+const screenshotEnhancementDir = path.resolve(__dirname, '../../docs/frontend-v2/screenshots-gate-b5-2-enhancement')
 
-if (!fs.existsSync(screenshotDir)) {
-  fs.mkdirSync(screenshotDir, { recursive: true })
+for (const dir of [screenshotDir, screenshotEnhancementDir]) {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true })
+  }
 }
 
 // ---------------------------------------------------------------------------
 // 1. Authoritative Backend Seat Matrix Fixtures (SeatDto.java)
 // Zero fake status properties: id, tripId, seatNumber, seatType, priceMultiplier, finalPrice
 // ---------------------------------------------------------------------------
-const createMockSeats = () => {
+const createMockSeats = (options = {}) => {
+  const { withDeck = false } = options
   const seats = []
   // Lower Deck (A01 - A18)
   for (let i = 1; i <= 18; i++) {
     const num = `A${String(i).padStart(2, '0')}`
-    seats.push({
+    const seat = {
       id: 100 + i,
       tripId: 101,
       seatNumber: num,
       seatType: i <= 6 ? 'VIP' : 'STANDARD',
       priceMultiplier: i <= 6 ? 1.15 : 1.0,
       finalPrice: i <= 6 ? 400000 : 350000
-    })
+    }
+    if (withDeck) seat.deck = 'LOWER'
+    seats.push(seat)
   }
   // Upper Deck (B01 - B18)
   for (let i = 1; i <= 18; i++) {
     const num = `B${String(i).padStart(2, '0')}`
-    seats.push({
+    const seat = {
       id: 200 + i,
       tripId: 101,
       seatNumber: num,
       seatType: 'STANDARD',
       priceMultiplier: 1.0,
       finalPrice: 350000
-    })
+    }
+    if (withDeck) seat.deck = 'UPPER'
+    seats.push(seat)
   }
   return seats
 }
@@ -71,7 +79,7 @@ const mockTripDetail = {
  */
 async function setupSeatSelectionMocks(page, options = {}) {
   const {
-    seats = createMockSeats(),
+    seats = createMockSeats({ withDeck: true }),
     seatsFail = false,
     delaySeatsMs = 0,
     holdFail = false,
@@ -79,7 +87,14 @@ async function setupSeatSelectionMocks(page, options = {}) {
     holdErrorMessage = null,
     malformedHold = false,
     holdTimeout = false,
-    myBookings = []
+    cancelFail = false,
+    cancelTimeout = false,
+    myBookings = [],
+    myBookingsMalformed = false,
+    availabilitySeats = [
+      { seatNumber: 'A01', status: 'AVAILABLE' },
+      { seatNumber: 'A02', status: 'AVAILABLE' }
+    ]
   } = options
 
   // Mock Settings & Banners
@@ -113,6 +128,22 @@ async function setupSeatSelectionMocks(page, options = {}) {
       body: JSON.stringify({
         success: true,
         data: seats
+      })
+    })
+  })
+
+  // Mock GET Seat Availability (Option B Endpoint)
+  await page.route('**/api/v1/bookings/trips/*/availability', async (route) => {
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          tripId: 101,
+          serverTime: '2026-11-26T15:30:00+07:00',
+          seats: availabilitySeats
+        }
       })
     })
   })
@@ -166,14 +197,32 @@ async function setupSeatSelectionMocks(page, options = {}) {
     })
   })
 
-  // Mock GET My Bookings (for recovery verification)
+  // Mock GET My Bookings (PRE-01: PageResponse<BookingResponse> Contract)
   await page.route('**/api/v1/bookings/my-bookings*', async (route) => {
+    if (myBookingsMalformed) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: { corrupted: true } // Missing items array
+        })
+      })
+    }
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
         success: true,
-        data: myBookings
+        data: {
+          items: myBookings,
+          page: 0,
+          size: 20,
+          totalElements: myBookings.length,
+          totalPages: 1,
+          hasNext: false,
+          hasPrevious: false
+        }
       })
     })
   })
@@ -204,6 +253,20 @@ async function setupSeatSelectionMocks(page, options = {}) {
 
   // Mock POST Cancel Booking Hold
   await page.route('**/api/v1/bookings/*/cancel', async (route) => {
+    if (cancelTimeout) {
+      return route.abort('timedout')
+    }
+    if (cancelFail) {
+      return route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: false,
+          code: 'SERVER_ERROR',
+          message: 'Lỗi máy chủ khi hủy giữ chỗ.'
+        })
+      })
+    }
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -216,7 +279,7 @@ async function setupSeatSelectionMocks(page, options = {}) {
   })
 }
 
-test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verification', () => {
+test.describe('Gate B5.2 & B5.2-E — Seat Reservation Flow & Contract Hardening', () => {
   // -------------------------------------------------------------------------
   // B52-01: Seat API Success & Authentic Seat Matrix
   // -------------------------------------------------------------------------
@@ -227,16 +290,13 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
     await page.goto('/trips/101/seats')
     await page.waitForLoadState('networkidle')
 
-    // Sơ đồ chỗ ngồi hiển thị
     await expect(page.getByText('Sơ đồ chỗ ngồi')).toBeVisible()
     await expect(page.locator('[data-testid="seat-grid-lower"]')).toBeVisible()
-
-    // Ghế A01, A02 hiển thị
     await expect(page.locator('[data-testid="seat-A01"]')).toBeVisible()
     await expect(page.locator('[data-testid="seat-A02"]')).toBeVisible()
 
-    // B52 Screenshot: Desktop Light
     await page.screenshot({ path: path.join(screenshotDir, 'seatmap-desktop-light.png') })
+    await page.screenshot({ path: path.join(screenshotEnhancementDir, 'seatmap-desktop-light.png') })
   })
 
   // -------------------------------------------------------------------------
@@ -249,8 +309,8 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
     await page.goto('/trips/101/seats')
     await expect(page.locator('[data-testid="seat-loading"]')).toBeVisible()
 
-    // B52 Screenshot: Loading State
     await page.screenshot({ path: path.join(screenshotDir, 'seatmap-loading-state.png') })
+    await page.screenshot({ path: path.join(screenshotEnhancementDir, 'seatmap-loading-state.png') })
   })
 
   // -------------------------------------------------------------------------
@@ -266,8 +326,8 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
     await expect(page.locator('[data-testid="seat-error"]')).toBeVisible()
     await expect(page.locator('[data-testid="seat-retry-btn"]')).toBeVisible()
 
-    // B52 Screenshot: Error Retry
     await page.screenshot({ path: path.join(screenshotDir, 'seatmap-error-retry.png') })
+    await page.screenshot({ path: path.join(screenshotEnhancementDir, 'seatmap-error-retry.png') })
   })
 
   // -------------------------------------------------------------------------
@@ -283,48 +343,48 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
     await expect(page.locator('[data-testid="seat-empty"]')).toBeVisible()
     await expect(page.getByText('Chưa có thông tin chỗ ngồi')).toBeVisible()
 
-    // B52 Screenshot: Empty State
     await page.screenshot({ path: path.join(screenshotDir, 'seatmap-empty-state.png') })
+    await page.screenshot({ path: path.join(screenshotEnhancementDir, 'seatmap-empty-state.png') })
   })
 
   // -------------------------------------------------------------------------
-  // B52-05: Seat Status Mapping (Unverified Catalog Seats & Conflict Transitions)
+  // B52-05: Seat Status Mapping (Unverified Catalog Seats & Contract Notice)
   // -------------------------------------------------------------------------
-  test('B52-05: Seat status mapping displays unverified catalog seats and handles conflict transitions', async ({ page }) => {
+  test('B52-05: Seat status mapping displays customer-friendly contract notice (PRE-05)', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await setupSeatSelectionMocks(page)
 
     await page.goto('/trips/101/seats')
     await page.waitForLoadState('networkidle')
 
-    // Catalog seats are unverified: enabled and clickable for selection intent
     const seatA01 = page.locator('[data-testid="seat-A01"]')
     await expect(seatA01).toBeEnabled()
     await expect(page.locator('[data-testid="seat-contract-notice"]')).toBeVisible()
 
-    // Notice that actual availability is verified via distributed lock on hold
-    await expect(page.locator('[data-testid="seat-contract-notice"]')).toContainText('Xác thực tính khả dụng')
+    // PRE-05: Friendly Vietnamese wording without technical jargon
+    await expect(page.locator('[data-testid="seat-contract-notice"]')).toContainText("Tình trạng chỗ thực tế sẽ được hệ thống kiểm tra và xác nhận khi quý khách bấm 'Giữ Chỗ'")
   })
 
   // -------------------------------------------------------------------------
-  // B52-06: Deck Rendering & Tab Switching (Lower Deck / Upper Deck)
+  // B52-06: Explicit Multi-Deck Switching
   // -------------------------------------------------------------------------
-  test('B52-06: Deck rendering switches smoothly between Tầng Dưới (A) and Tầng Trên (B)', async ({ page }) => {
+  test('B52-06: Deck rendering switches smoothly when explicit deck metadata is present', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
-    await setupSeatSelectionMocks(page)
+    await setupSeatSelectionMocks(page, { seats: createMockSeats({ withDeck: true }) })
 
     await page.goto('/trips/101/seats')
     await page.waitForLoadState('networkidle')
 
     // Click Upper Deck Tab
     const upperTab = page.locator('[data-testid="deck-tab-upper"]')
+    await expect(upperTab).toBeVisible()
     await upperTab.click()
 
     await expect(page.locator('[data-testid="seat-grid-upper"]')).toBeVisible()
     await expect(page.locator('[data-testid="seat-B01"]')).toBeVisible()
 
-    // B52 Screenshot: Deck Tabs
     await page.screenshot({ path: path.join(screenshotDir, 'seatmap-deck-tabs.png') })
+    await page.screenshot({ path: path.join(screenshotEnhancementDir, 'seatmap-deck-tabs.png') })
 
     // Switch back to Lower Deck
     const lowerTab = page.locator('[data-testid="deck-tab-lower"]')
@@ -353,8 +413,8 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
     await expect(page.locator('[data-testid="selected-seat-item-A02"]')).toBeVisible()
     await expect(page.locator('[data-testid="total-price-display"]')).toContainText('800.000')
 
-    // B52 Screenshot: Selected Seats
     await page.screenshot({ path: path.join(screenshotDir, 'seatmap-selected-seats.png') })
+    await page.screenshot({ path: path.join(screenshotEnhancementDir, 'seatmap-selected-seats.png') })
 
     // Deselect A01 via sidebar remove button
     await page.locator('[data-testid="remove-seat-A01"]').click()
@@ -363,31 +423,60 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
   })
 
   // -------------------------------------------------------------------------
-  // B52-08: Conflict Unavailable Seats Cannot Be Clicked
+  // B52-08: Conflict Handling Does Not Permanently Disable All Seats (PRE-05)
   // -------------------------------------------------------------------------
-  test('B52-08: Conflict rejected seats transition to disabled and cannot be selected', async ({ page }) => {
+  test('B52-08: Conflict rejected seats deselect and refresh availability without permanent lock (PRE-05)', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await loginAsRole(page, 'ROLE_CUSTOMER', 'customer1')
+
+    let availCount = 0
     await setupSeatSelectionMocks(page, {
       holdFail: true,
       holdErrorCode: 'SEAT_ALREADY_RESERVED',
       holdErrorMessage: 'Một hoặc nhiều ghế đã bị hành khách khác chọn.'
     })
 
+    // Dynamic mock: initial load A01 is AVAILABLE; after conflict refresh, A01 is HELD
+    await page.route('**/api/v1/bookings/trips/*/availability', async (route) => {
+      availCount++
+      const a01Status = availCount > 1 ? 'HELD' : 'AVAILABLE'
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            tripId: 101,
+            serverTime: '2026-11-26T15:30:00+07:00',
+            seats: [
+              { seatNumber: 'A01', status: a01Status },
+              { seatNumber: 'A02', status: 'AVAILABLE' }
+            ]
+          }
+        })
+      })
+    })
+
     await page.goto('/trips/101/seats')
     await page.waitForLoadState('networkidle')
 
-    // Select A01 and attempt hold -> conflict occurs
-    await page.locator('[data-testid="seat-A01"]').click()
+    // Initial state: A01 is available and can be selected
+    const seatA01 = page.locator('[data-testid="seat-A01"]')
+    await expect(seatA01).toBeEnabled()
+    await seatA01.click()
+
+    // Proceed with hold -> backend rejects with conflict
     await page.locator('[data-testid="btn-proceed-booking"]').click()
 
-    // A01 is now marked as unavailable and disabled
-    const seatA01 = page.locator('[data-testid="seat-A01"]')
+    // Conflict toast
+    await expect(page.getByText('Một hoặc nhiều ghế đã bị hành khách khác chọn. Vui lòng chọn ghế khác!')).toBeVisible()
+
+    // A01 is now deselected and disabled because refreshed availability returned HELD
     await expect(seatA01).toBeDisabled()
 
-    // Clicking disabled seat does not add to selection
-    await seatA01.click({ force: true })
-    await expect(page.locator('[data-testid="no-seats-selected"]')).toBeVisible()
+    // A02 remains selectable
+    const seatA02 = page.locator('[data-testid="seat-A02"]')
+    await expect(seatA02).toBeEnabled()
   })
 
   // -------------------------------------------------------------------------
@@ -411,13 +500,13 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
     await page.locator('[data-testid="seat-A11"]').click()
 
     // Warning toast
-    await expect(page.getByText('Mỗi hành khách được chọn tối đa 10 giường trong một lần đặt vé.')).toBeVisible()
+    await expect(page.getByText('Mỗi hành khách được chọn tối đa 10 chỗ trong một lần đặt vé.')).toBeVisible()
 
     // Count remains 10
     await expect(page.locator('[data-testid="selected-seats-list"]').locator('> div')).toHaveCount(10)
 
-    // B52 Screenshot: Max Limit Warning
     await page.screenshot({ path: path.join(screenshotDir, 'seatmap-max-limit-warning.png') })
+    await page.screenshot({ path: path.join(screenshotEnhancementDir, 'seatmap-max-limit-warning.png') })
   })
 
   // -------------------------------------------------------------------------
@@ -440,8 +529,8 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
     await page.waitForURL(/\/login\?redirect=.*trips.*101.*seats/)
     await expect(page.getByText('Vui lòng đăng nhập tài khoản Khách hàng')).toBeVisible()
 
-    // B52 Screenshot: Auth Redirect
     await page.screenshot({ path: path.join(screenshotDir, 'seatmap-auth-redirect.png') })
+    await page.screenshot({ path: path.join(screenshotEnhancementDir, 'seatmap-auth-redirect.png') })
   })
 
   // -------------------------------------------------------------------------
@@ -455,7 +544,6 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
     await page.goto('/trips/101/seats')
     await page.waitForLoadState('networkidle')
 
-    // Select A01
     await page.locator('[data-testid="seat-A01"]').click()
 
     const holdRequestPromise = page.waitForRequest('**/api/v1/bookings/hold')
@@ -463,8 +551,6 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
     const holdRequest = await holdRequestPromise
 
     const capturedPayload = JSON.parse(holdRequest.postData() || '{}')
-
-    // Assert payload fields
     expect(capturedPayload.tripId).toBe(101)
     expect(capturedPayload.seatNumbers).toEqual(['A01'])
   })
@@ -506,7 +592,6 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
     await page.locator('[data-testid="seat-A01"]').click()
 
     const btn = page.locator('[data-testid="btn-proceed-booking"]')
-    // Rapid double click
     await Promise.all([
       btn.click(),
       btn.click({ force: true }).catch(() => {})
@@ -530,15 +615,12 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
     await page.locator('[data-testid="seat-A01"]').click()
     await page.locator('[data-testid="btn-proceed-booking"]').click()
 
-    // Countdown widget visible
     await expect(page.locator('[data-testid="hold-countdown-widget"]')).toBeVisible()
     await expect(page.locator('[data-testid="countdown-timer"]')).toBeVisible()
-
-    // CTA updates to "Tiến Hành Thanh Toán"
     await expect(page.locator('[data-testid="btn-proceed-booking"]')).toContainText('Tiến Hành Thanh Toán')
 
-    // B52 Screenshot: Active Hold Countdown
     await page.screenshot({ path: path.join(screenshotDir, 'seatmap-hold-countdown.png') })
+    await page.screenshot({ path: path.join(screenshotEnhancementDir, 'seatmap-hold-countdown.png') })
   })
 
   // -------------------------------------------------------------------------
@@ -559,14 +641,11 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
     await page.locator('[data-testid="seat-A01"]').click()
     await page.locator('[data-testid="btn-proceed-booking"]').click()
 
-    // Error toast
     await expect(page.getByText('Một hoặc nhiều ghế đã bị hành khách khác chọn. Vui lòng chọn ghế khác!')).toBeVisible()
-
-    // Countdown does NOT start
     await expect(page.locator('[data-testid="hold-countdown-widget"]')).toHaveCount(0)
 
-    // B52 Screenshot: Seat Conflict
     await page.screenshot({ path: path.join(screenshotDir, 'seatmap-seat-conflict.png') })
+    await page.screenshot({ path: path.join(screenshotEnhancementDir, 'seatmap-seat-conflict.png') })
   })
 
   // -------------------------------------------------------------------------
@@ -592,9 +671,9 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
   })
 
   // -------------------------------------------------------------------------
-  // B52-16: Malformed Hold Response (Missing bookingReference) Triggers Unknown Outcome Guard
+  // B52-16: Malformed Hold Response Triggers Unknown Outcome Guard (PRE-03)
   // -------------------------------------------------------------------------
-  test('B52-16: Malformed hold response triggers fail-closed unknown outcome guard', async ({ page }) => {
+  test('B52-16: Malformed hold response triggers fail-closed unknown outcome guard (PRE-03)', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await loginAsRole(page, 'ROLE_CUSTOMER', 'customer1')
     await setupSeatSelectionMocks(page, { malformedHold: true })
@@ -605,14 +684,13 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
     await page.locator('[data-testid="seat-A01"]').click()
     await page.locator('[data-testid="btn-proceed-booking"]').click()
 
-    // Guard alert is visible and Proceed button is disabled
     await expect(page.locator('[data-testid="hold-unknown-alert"]')).toBeVisible()
     await expect(page.locator('[data-testid="btn-proceed-booking"]')).toBeDisabled()
     await expect(page.locator('[data-testid="hold-countdown-widget"]')).toHaveCount(0)
   })
 
   // -------------------------------------------------------------------------
-  // B52-17: Network Timeout on Hold Mutation Triggers Unknown Outcome Guard (BLOCKER-02)
+  // B52-17: Network Timeout on Hold Mutation Triggers Unknown Outcome Guard (PRE-02)
   // -------------------------------------------------------------------------
   test('B52-17: Network timeout during hold triggers persistent guard and disables CTA', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
@@ -625,20 +703,16 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
     await page.locator('[data-testid="seat-A01"]').click()
     await page.locator('[data-testid="btn-proceed-booking"]').click()
 
-    // Unknown outcome alert is displayed
     const alert = page.locator('[data-testid="hold-unknown-alert"]')
     await expect(alert).toBeVisible()
     await expect(alert).toContainText('chưa xác định kết quả')
 
-    // CTA is locked
     const proceedBtn = page.locator('[data-testid="btn-proceed-booking"]')
     await expect(proceedBtn).toBeDisabled()
-
-    // Verify recovery button is present
     await expect(page.locator('[data-testid="btn-verify-hold-state"]')).toBeVisible()
 
-    // B52 Screenshot: Unknown Outcome Guard
     await page.screenshot({ path: path.join(screenshotDir, 'seatmap-hold-unknown-outcome.png') })
+    await page.screenshot({ path: path.join(screenshotEnhancementDir, 'seatmap-hold-unknown-outcome.png') })
   })
 
   // -------------------------------------------------------------------------
@@ -657,7 +731,6 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
 
     const timer = page.locator('[data-testid="countdown-timer"]')
     await expect(timer).toBeVisible()
-    // Timer text starts around 09:59 or 10:00
     await expect(timer).toContainText(/^(09|10):[0-5]\d$/)
   })
 
@@ -668,7 +741,6 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
     await page.setViewportSize({ width: 1440, height: 900 })
     await loginAsRole(page, 'ROLE_CUSTOMER', 'customer1')
 
-    // Set expiresAt to 2 seconds in the future
     await setupSeatSelectionMocks(page)
     await page.route('**/api/v1/bookings/hold', async (route) => {
       return route.fulfill({
@@ -701,9 +773,8 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
     // Wait 3s for timer to expire
     await page.waitForTimeout(3000)
 
-    // Countdown widget disappears and expiration notice is shown
     await expect(page.locator('[data-testid="hold-countdown-widget"]')).toHaveCount(0)
-    await expect(page.getByText('Thời gian 10 phút đã hết. Vui lòng chọn lại giường nằm.')).toBeVisible()
+    await expect(page.getByText('Thời gian 10 phút giữ chỗ đã hết. Vui lòng chọn lại chỗ ngồi.')).toBeVisible()
   })
 
   // -------------------------------------------------------------------------
@@ -722,21 +793,16 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
 
     await expect(page.locator('[data-testid="hold-countdown-widget"]')).toBeVisible()
 
-    // Click "Hủy phiên giữ chỗ"
     await page.locator('[data-testid="btn-cancel-hold-trigger"]').click()
-
-    // Confirmation dialog appears
     await expect(page.getByText('Hủy giữ chỗ hiện tại?')).toBeVisible()
 
-    // Confirm cancel
     await page.locator('[data-testid="btn-confirm-cancel-hold"]').click()
 
-    // Countdown widget disappears and toast appears
     await expect(page.locator('[data-testid="hold-countdown-widget"]')).toHaveCount(0)
     await expect(page.getByText('Đã hủy giữ chỗ thành công.')).toBeVisible()
 
-    // B52 Screenshot: Hold Cancelled
     await page.screenshot({ path: path.join(screenshotDir, 'seatmap-hold-cancelled.png') })
+    await page.screenshot({ path: path.join(screenshotEnhancementDir, 'seatmap-hold-cancelled.png') })
   })
 
   // -------------------------------------------------------------------------
@@ -755,16 +821,14 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
 
     await expect(page.locator('[data-testid="hold-countdown-widget"]')).toBeVisible()
 
-    // Click Proceed button again to go to Checkout
     await page.locator('[data-testid="btn-proceed-booking"]').click()
 
-    // Assert URL contains authoritative bookingReference VB-HOLD-8899, NEVER tripId
     await page.waitForURL(/\/checkout\/VB-HOLD-8899/)
     expect(page.url()).toContain('/checkout/VB-HOLD-8899')
   })
 
   // -------------------------------------------------------------------------
-  // B52-22: Responsive Viewports (Tablet 768x1024 and Mobile 375x812)
+  // B52-22: Responsive Viewports
   // -------------------------------------------------------------------------
   test('B52-22: Responsive viewports maintain usability on tablet and mobile', async ({ page }) => {
     // 1. Tablet Viewport
@@ -774,8 +838,8 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
     await page.waitForLoadState('networkidle')
 
     await expect(page.locator('[data-testid="seat-grid-lower"]')).toBeVisible()
-    // B52 Screenshot: Tablet
     await page.screenshot({ path: path.join(screenshotDir, 'seatmap-tablet.png') })
+    await page.screenshot({ path: path.join(screenshotEnhancementDir, 'seatmap-tablet.png') })
 
     // 2. Mobile Viewport
     await page.setViewportSize({ width: 375, height: 812 })
@@ -784,8 +848,8 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
 
     await expect(page.locator('[data-testid="seat-grid-lower"]')).toBeVisible()
     await expect(page.locator('[data-testid="btn-proceed-booking"]')).toBeVisible()
-    // B52 Screenshot: Mobile
     await page.screenshot({ path: path.join(screenshotDir, 'seatmap-mobile.png') })
+    await page.screenshot({ path: path.join(screenshotEnhancementDir, 'seatmap-mobile.png') })
   })
 
   // -------------------------------------------------------------------------
@@ -798,7 +862,6 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
     await page.goto('/trips/101/seats')
     await page.waitForLoadState('networkidle')
 
-    // Switch to dark theme via root class
     await page.evaluate(() => {
       document.documentElement.classList.add('dark')
     })
@@ -806,12 +869,12 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
 
     await expect(page.locator('[data-testid="seat-grid-lower"]')).toBeVisible()
 
-    // B52 Screenshot: Desktop Dark
     await page.screenshot({ path: path.join(screenshotDir, 'seatmap-desktop-dark.png') })
+    await page.screenshot({ path: path.join(screenshotEnhancementDir, 'seatmap-desktop-dark.png') })
   })
 
   // -------------------------------------------------------------------------
-  // B52-24: Active Held Booking Restoration on Reload (BLOCKER-03)
+  // B52-24: Active Held Booking Restoration on Reload
   // -------------------------------------------------------------------------
   test('B52-24: Reload restores active held booking from storage and backend verification', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
@@ -821,29 +884,25 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
     await page.goto('/trips/101/seats')
     await page.waitForLoadState('networkidle')
 
-    // Perform hold
     await page.locator('[data-testid="seat-A01"]').click()
     await page.locator('[data-testid="btn-proceed-booking"]').click()
     await expect(page.locator('[data-testid="hold-countdown-widget"]')).toBeVisible()
 
-    // Reload page
     await page.reload()
     await page.waitForLoadState('networkidle')
 
-    // Countdown and held booking should be restored
     await expect(page.locator('[data-testid="hold-countdown-widget"]')).toBeVisible()
     await expect(page.locator('[data-testid="btn-proceed-booking"]')).toContainText('Tiến Hành Thanh Toán')
     await expect(page.locator('[data-testid="selected-seat-item-A01"]')).toBeVisible()
   })
 
   // -------------------------------------------------------------------------
-  // B52-25: Hold State Verification Button Resolves Interrupted Hold (BLOCKER-02)
+  // B52-25: Hold State Verification Button Resolves Interrupted Hold (PRE-01 & PRE-02)
   // -------------------------------------------------------------------------
-  test('B52-25: Hold state verification recovers active hold from server my-bookings', async ({ page }) => {
+  test('B52-25: Hold state verification recovers active hold with exact seat match from PageResponse', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await loginAsRole(page, 'ROLE_CUSTOMER', 'customer1')
 
-    // Setup mocks where hold times out initially, but my-bookings has the authoritative booking
     await setupSeatSelectionMocks(page, {
       holdTimeout: true,
       myBookings: [
@@ -866,10 +925,8 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
     await page.locator('[data-testid="seat-A01"]').click()
     await page.locator('[data-testid="btn-proceed-booking"]').click()
 
-    // Timeout alert is shown
     await expect(page.locator('[data-testid="hold-unknown-alert"]')).toBeVisible()
 
-    // Click verify hold state button
     const verifyBtn = page.locator('[data-testid="btn-verify-hold-state"]')
     await verifyBtn.click()
 
@@ -880,18 +937,152 @@ test.describe('Gate B5.2 — Seat Reservation Flow & Physical Seat Matrix Verifi
   })
 
   // -------------------------------------------------------------------------
-  // B52-26: Neutral Seat Layout (No Fabricated Physical Bus Components)
+  // B52E-01: Seat Availability Endpoint & Status Mapping (Option B)
   // -------------------------------------------------------------------------
-  test('B52-26: Layout is neutral without fabricated steering wheel or bus tail', async ({ page }) => {
+  test('B52E-01: Dynamic availability endpoint maps AVAILABLE, HELD, and SOLD statuses', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
-    await setupSeatSelectionMocks(page)
+    await setupSeatSelectionMocks(page, {
+      availabilitySeats: [
+        { seatNumber: 'A01', status: 'AVAILABLE' },
+        { seatNumber: 'A02', status: 'SOLD' },
+        { seatNumber: 'A03', status: 'HELD' }
+      ]
+    })
 
     await page.goto('/trips/101/seats')
     await page.waitForLoadState('networkidle')
 
-    // Assert that fabricated physical texts are NOT present
-    await expect(page.getByText('Khu vực Tài xế')).toHaveCount(0)
-    await expect(page.getByText('Cửa lên xuống')).toHaveCount(0)
-    await expect(page.getByText('Đuôi xe khách')).toHaveCount(0)
+    // A01 is available
+    await expect(page.locator('[data-testid="seat-A01"]')).toBeEnabled()
+
+    // A02 is SOLD -> disabled
+    await expect(page.locator('[data-testid="seat-A02"]')).toBeDisabled()
+
+    // A03 is HELD -> disabled
+    await expect(page.locator('[data-testid="seat-A03"]')).toBeDisabled()
+
+    // Refresh availability button is functional
+    const refreshBtn = page.locator('[data-testid="btn-refresh-availability"]')
+    await expect(refreshBtn).toBeVisible()
+    await refreshBtn.click()
+
+    await page.screenshot({ path: path.join(screenshotEnhancementDir, 'seatmap-dynamic-availability.png') })
+  })
+
+  // -------------------------------------------------------------------------
+  // B52E-02: PRE-01 Malformed PageResponse Preserves Fail-Closed Lock
+  // -------------------------------------------------------------------------
+  test('B52E-02: PRE-01 Malformed PageResponse preserves unknown outcome lock', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await loginAsRole(page, 'ROLE_CUSTOMER', 'customer1')
+    await setupSeatSelectionMocks(page, {
+      holdTimeout: true,
+      myBookingsMalformed: true
+    })
+
+    await page.goto('/trips/101/seats')
+    await page.waitForLoadState('networkidle')
+
+    await page.locator('[data-testid="seat-A01"]').click()
+    await page.locator('[data-testid="btn-proceed-booking"]').click()
+
+    await expect(page.locator('[data-testid="hold-unknown-alert"]')).toBeVisible()
+
+    // Click verify hold state
+    await page.locator('[data-testid="btn-verify-hold-state"]').click()
+
+    // Must PRESERVE lock on malformed response!
+    await expect(page.locator('[data-testid="hold-unknown-alert"]')).toBeVisible()
+    await expect(page.locator('[data-testid="btn-proceed-booking"]')).toBeDisabled()
+  })
+
+  // -------------------------------------------------------------------------
+  // B52E-03: PRE-02 Unrelated Booking on Same Trip Does NOT Clear Lock
+  // -------------------------------------------------------------------------
+  test('B52E-03: PRE-02 Unrelated booking on same trip preserves fail-closed lock', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await loginAsRole(page, 'ROLE_CUSTOMER', 'customer1')
+
+    await setupSeatSelectionMocks(page, {
+      holdTimeout: true,
+      myBookings: [
+        {
+          bookingId: 992,
+          bookingReference: 'VB-OTHER-BOOKING',
+          userId: 1,
+          tripId: 101,
+          status: 'HELD',
+          totalAmount: 350000,
+          expiresAt: new Date(Date.now() + 600000).toISOString(),
+          seatNumbers: ['B05'] // Different seat!
+        }
+      ]
+    })
+
+    await page.goto('/trips/101/seats')
+    await page.waitForLoadState('networkidle')
+
+    // Requested seat A01
+    await page.locator('[data-testid="seat-A01"]').click()
+    await page.locator('[data-testid="btn-proceed-booking"]').click()
+
+    await expect(page.locator('[data-testid="hold-unknown-alert"]')).toBeVisible()
+
+    // Click verify hold state
+    await page.locator('[data-testid="btn-verify-hold-state"]').click()
+
+    // Does NOT clear unknown outcome because seats do not match!
+    await expect(page.locator('[data-testid="hold-unknown-alert"]')).toBeVisible()
+    await expect(page.locator('[data-testid="btn-proceed-booking"]')).toBeDisabled()
+  })
+
+  // -------------------------------------------------------------------------
+  // B52E-04: PRE-04 Cancellation Timeout Locks Checkout
+  // -------------------------------------------------------------------------
+  test('B52E-04: PRE-04 Cancellation timeout locks checkout and preserves warning context', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await loginAsRole(page, 'ROLE_CUSTOMER', 'customer1')
+    await setupSeatSelectionMocks(page, { cancelTimeout: true })
+
+    await page.goto('/trips/101/seats')
+    await page.waitForLoadState('networkidle')
+
+    await page.locator('[data-testid="seat-A01"]').click()
+    await page.locator('[data-testid="btn-proceed-booking"]').click()
+
+    await expect(page.locator('[data-testid="hold-countdown-widget"]')).toBeVisible()
+
+    // Attempt cancel -> times out
+    await page.locator('[data-testid="btn-cancel-hold-trigger"]').click()
+    await page.locator('[data-testid="btn-confirm-cancel-hold"]').click()
+
+    // Cancel unresolved alert appears and checkout CTA is disabled
+    await expect(page.locator('[data-testid="cancel-unresolved-alert"]')).toBeVisible()
+    await expect(page.locator('[data-testid="btn-proceed-booking"]')).toBeDisabled()
+
+    await page.screenshot({ path: path.join(screenshotEnhancementDir, 'seatmap-cancel-unresolved.png') })
+  })
+
+  // -------------------------------------------------------------------------
+  // B52E-05: PRE-05 Layout Neutrality Without Explicit Deck Metadata
+  // -------------------------------------------------------------------------
+  test('B52E-05: PRE-05 Layout renders unified neutral grid without deck tabs when deck metadata is omitted', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    // Seats without explicit deck
+    await setupSeatSelectionMocks(page, { seats: createMockSeats({ withDeck: false }) })
+
+    await page.goto('/trips/101/seats')
+    await page.waitForLoadState('networkidle')
+
+    // Deck tabs must NOT be present
+    await expect(page.locator('[data-testid="deck-tab-lower"]')).toHaveCount(0)
+    await expect(page.locator('[data-testid="deck-tab-upper"]')).toHaveCount(0)
+
+    // Neutral grid is visible
+    await expect(page.locator('[data-testid="seat-grid-lower"]')).toBeVisible()
+    await expect(page.locator('[data-testid="seat-A01"]')).toBeVisible()
+    await expect(page.locator('[data-testid="seat-B01"]')).toBeVisible()
+
+    await page.screenshot({ path: path.join(screenshotEnhancementDir, 'seatmap-neutral-grid.png') })
   })
 })

@@ -6,6 +6,7 @@ import { useAuthStore } from '@/modules/auth/store'
 import SeatMap2Deck from '@/shared/components/SeatMap2Deck.vue'
 import { useCountdown } from '@/shared/composables/useCountdown'
 import { catalogBookingApi } from '../api'
+import { validateBookingResponse } from '../utils/booking-validator'
 import {
   Bus,
   ArrowLeft,
@@ -39,12 +40,15 @@ const loading = ref(false)
 const error = ref(null)
 const holding = ref(false)
 const cancelling = ref(false)
+const isCancelUnresolved = ref(false)
 const isVerifyingHoldState = ref(false)
+const isRefreshingAvailability = ref(false)
 const selectedSeats = ref([])
 const backendSeats = ref([])
 const unavailableSeats = ref([])
+const availabilityMap = ref({})
 
-// Unknown outcome state for hold mutation
+// Unknown outcome state for hold mutation (fail-closed guard)
 const isHoldUnknownOutcome = ref(false)
 const holdUnknownContext = ref(null)
 
@@ -81,7 +85,7 @@ const trip = ref(initialTrip ? {
 
 // Countdown Hook (Server expiresAt sync)
 const { remainingSeconds, formattedTime, isRunning, start: startCountdown, stop: stopCountdown } = useCountdown(() => {
-  toast.warning('Thời gian 10 phút đã hết. Vui lòng chọn lại giường nằm.', {
+  toast.warning('Thời gian 10 phút giữ chỗ đã hết. Vui lòng chọn lại chỗ ngồi.', {
     description: 'Phiên giữ chỗ của bạn đã kết thúc tự động.'
   })
   heldBooking.value = null
@@ -90,11 +94,12 @@ const { remainingSeconds, formattedTime, isRunning, start: startCountdown, stop:
     sessionStorage.removeItem(getActiveHoldStorageKey())
   } catch (_) {}
   fetchTripSeats()
+  fetchAvailability()
 })
 
 // Calculate total price: server authoritative amount when held, otherwise client sum
 const totalPrice = computed(() => {
-  if (heldBooking.value?.totalAmount) {
+  if (heldBooking.value?.totalAmount !== undefined && heldBooking.value?.totalAmount !== null) {
     return Number(heldBooking.value.totalAmount)
   }
   if (selectedSeats.value.length === 0) return 0
@@ -116,7 +121,8 @@ function recordHoldUnknownOutcome(seats, customReason) {
     userId: auth.user?.id || null,
     tripId: Number(tripId.value),
     seatNumbers: [...seats],
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    reason: customReason || 'Unknown outcome'
   }
   holdUnknownContext.value = ctx
   try {
@@ -132,19 +138,49 @@ function clearHoldUnknownOutcome() {
   } catch (_) {}
 }
 
+/**
+ * PRE-01 & PRE-02: Authoritative Server State Verification for Hold Mutation
+ * - Reads PageResponse<BookingResponse> ({ items, page, size, totalPages, totalElements, hasNext })
+ * - Does not treat malformed responses as valid empty lists
+ * - Does not assume page 0 is complete dataset if hasNext is true
+ * - Matches exact requested seat set (not any arbitrary unexpired booking)
+ * - Retains fail-closed lock if no exact matching booking is found on server
+ * - Preserves lock on verification failure
+ */
 async function verifyHoldServerState() {
   if (isVerifyingHoldState.value) return
   isVerifyingHoldState.value = true
-  try {
-    const res = await catalogBookingApi.getMyBookings({ page: 0, size: 10 })
-    const bookings = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : (res?.data?.content || []))
 
-    // Look for matching unexpired HELD booking for this trip
-    const matched = bookings.find(b => {
-      const isTripMatch = Number(b.tripId) === Number(tripId.value)
-      const isHeld = b.status === 'HELD'
-      const notExpired = b.expiresAt && new Date(b.expiresAt).getTime() > Date.now()
-      return isTripMatch && isHeld && notExpired
+  try {
+    let allItems = []
+    let currentPage = 0
+    let hasMore = true
+    const maxPages = 5
+
+    while (hasMore && currentPage < maxPages) {
+      const res = await catalogBookingApi.getMyBookings({ page: currentPage, size: 20 })
+      const pageData = res?.data
+
+      // PRE-01: PageResponse contract validation
+      if (!pageData || !Array.isArray(pageData.items)) {
+        throw new Error('Dữ liệu phản hồi từ máy chủ không đúng định dạng phân trang PageResponse (thiếu mảng items).')
+      }
+
+      allItems.push(...pageData.items)
+      hasMore = Boolean(pageData.hasNext) && (currentPage + 1 < (pageData.totalPages || 1))
+      currentPage++
+    }
+
+    const targetSeats = holdUnknownContext.value?.seatNumbers || selectedSeats.value
+
+    // PRE-02 & PRE-03: Strict match against exact requested seats on this trip
+    const matched = allItems.find(b => {
+      const validation = validateBookingResponse(b, {
+        expectedTripId: tripId.value,
+        expectedUserId: auth.user?.id,
+        expectedSeats: targetSeats
+      })
+      return validation.valid
     })
 
     if (matched) {
@@ -160,14 +196,15 @@ async function verifyHoldServerState() {
       } catch (_) {}
       clearHoldUnknownOutcome()
       toast.success(`Máy chủ đã xác nhận phiên giữ chỗ #${matched.bookingReference} cho ghế ${matched.seatNumbers.join(', ')}.`)
+      await fetchAvailability()
     } else {
-      // Authoritative list verified, no active hold found
-      clearHoldUnknownOutcome()
-      toast.info('Máy chủ không ghi nhận phiên giữ chỗ nào đang hoạt động. Quý khách có thể chọn lại ghế.')
-      await fetchTripSeats()
+      // PRE-02: Do NOT clear unknown outcome merely because no booking was found!
+      // Fail-closed security rule: retain lock to prevent double booking.
+      toast.warning('Máy chủ chưa ghi nhận phiên giữ chỗ khớp với ghế đã yêu cầu. Hệ thống tiếp tục KHÓA thao tác để đảm bảo an toàn. Vui lòng đối soát lịch sử đặt chỗ hoặc thử lại sau.')
     }
   } catch (err) {
-    // PRE-01 / BLOCKER-02: Verification failure preserves lock!
+    // PRE-01 / PRE-02: Verification failure preserves lock!
+    console.error('Hold state verification failed:', err)
     toast.error('Không thể kết nối đến máy chủ để xác minh giữ chỗ: ' + (err?.message || 'Tiếp tục KHÓA thao tác để đảm bảo an toàn.'))
   } finally {
     isVerifyingHoldState.value = false
@@ -194,9 +231,34 @@ async function fetchTripSeats() {
   }
 }
 
+/**
+ * Dynamic Availability Fetching (Option B API)
+ * GET /api/v1/bookings/trips/{tripId}/availability
+ */
+async function fetchAvailability() {
+  if (!tripId.value) return
+  isRefreshingAvailability.value = true
+  try {
+    const res = await catalogBookingApi.getSeatAvailability(tripId.value)
+    const availData = res?.data || res
+    const seatsList = Array.isArray(availData?.seats) ? availData.seats : []
+    const newMap = {}
+    seatsList.forEach(item => {
+      if (item.seatNumber && item.status) {
+        newMap[item.seatNumber] = item.status
+      }
+    })
+    availabilityMap.value = newMap
+  } catch (err) {
+    console.warn('Seat availability query failed (non-blocking fallback to catalog):', err)
+  } finally {
+    isRefreshingAvailability.value = false
+  }
+}
+
 function onToggleSeat(seatCode) {
   if (isHoldUnknownOutcome.value) {
-    toast.warning('Giao dịch giữ chỗ trước đang bị gián đoạn. Vui lòng xác minh trạng thái máy chủ.')
+    toast.warning('Giao dịch giữ chỗ trước đang bị gián đoạn. Vui lòng bấm kiểm tra trạng thái máy chủ.')
     return
   }
   if (isRunning.value && heldBooking.value) {
@@ -209,7 +271,7 @@ function onToggleSeat(seatCode) {
     selectedSeats.value.splice(idx, 1)
   } else {
     if (selectedSeats.value.length >= 10) {
-      toast.warning('Mỗi hành khách được chọn tối đa 10 giường trong một lần đặt vé.')
+      toast.warning('Mỗi hành khách được chọn tối đa 10 chỗ trong một lần đặt vé.')
       return
     }
     selectedSeats.value.push(seatCode)
@@ -226,10 +288,13 @@ function removeSeat(seatCode) {
   if (idx > -1) selectedSeats.value.splice(idx, 1)
 }
 
+/**
+ * PRE-03: Handle Seat Hold with Strict BookingResponse Validation
+ */
 async function handleHoldSeats() {
   if (holding.value || isHoldUnknownOutcome.value) return
   if (selectedSeats.value.length === 0) {
-    toast.warning('Vui lòng chọn ít nhất 1 giường trên sơ đồ xe.')
+    toast.warning('Vui lòng chọn ít nhất 1 chỗ trên sơ đồ xe.')
     return
   }
 
@@ -267,42 +332,24 @@ async function handleHoldSeats() {
 
     const booking = res?.data || res
 
-    // BLOCKER-04: Strict BookingResponse validation
-    if (!booking || typeof booking !== 'object') {
-      recordHoldUnknownOutcome(requestedSeats, 'Dữ liệu phản hồi giữ chỗ từ máy chủ không hợp lệ.')
-      throw new Error('Dữ liệu phản hồi giữ chỗ từ máy chủ không hợp lệ.')
+    // PRE-03: Strict shared validator for BookingResponse
+    const validation = validateBookingResponse(booking, {
+      expectedTripId: tripId.value,
+      expectedUserId: auth.user?.id,
+      expectedSeats: requestedSeats
+    })
+
+    if (!validation.valid) {
+      recordHoldUnknownOutcome(requestedSeats, validation.error)
+      throw new Error(validation.error)
     }
 
-    if (!booking.bookingReference) {
-      recordHoldUnknownOutcome(requestedSeats, 'Dữ liệu phản hồi giữ chỗ từ máy chủ không hợp lệ.')
-      throw new Error('Dữ liệu phản hồi giữ chỗ từ máy chủ không hợp lệ.')
-    }
-
-    if (booking.tripId !== undefined && String(booking.tripId) !== String(tripId.value)) {
-      recordHoldUnknownOutcome(requestedSeats, 'Mã chuyến xe trong phản hồi giữ chỗ không khớp.')
-      throw new Error('Mã chuyến xe trong phản hồi giữ chỗ không khớp.')
-    }
-
-    if (booking.status && booking.status !== 'HELD') {
-      recordHoldUnknownOutcome(requestedSeats, `Trạng thái giữ chỗ không hợp lệ (${booking.status}).`)
-      throw new Error(`Trạng thái giữ chỗ không hợp lệ (${booking.status}).`)
-    }
-
-    if (!booking.expiresAt || new Date(booking.expiresAt).getTime() <= Date.now()) {
-      recordHoldUnknownOutcome(requestedSeats, 'Thời gian hết hạn giữ chỗ (expiresAt) từ máy chủ không hợp lệ.')
-      throw new Error('Thời gian hết hạn giữ chỗ (expiresAt) từ máy chủ không hợp lệ.')
-    }
-
-    // Success: Server state is authoritative
-    const confirmedSeats = (Array.isArray(booking.seatNumbers) && booking.seatNumbers.length > 0)
-      ? booking.seatNumbers
-      : (Array.isArray(booking.seats) && booking.seats.length > 0 ? booking.seats : requestedSeats)
-
+    // Success: Server state is authoritative (no fallback to requestedSeats)
     heldBooking.value = {
       ...booking,
-      seatNumbers: confirmedSeats
+      seatNumbers: booking.seatNumbers
     }
-    selectedSeats.value = [...confirmedSeats]
+    selectedSeats.value = [...booking.seatNumbers]
 
     startCountdown(booking.expiresAt)
     clearHoldUnknownOutcome()
@@ -316,6 +363,7 @@ async function handleHoldSeats() {
     } catch (_) {}
 
     toast.success(`Giữ chỗ thành công! Đã khóa ${selectedSeats.value.join(', ')} trong 10 phút. Vui lòng thanh toán!`)
+    await fetchAvailability()
   } catch (err) {
     console.error('Hold seats failed:', err)
     const errMsg = err?.message || ''
@@ -323,11 +371,11 @@ async function handleHoldSeats() {
     const isConflict = errCode === 'SEAT_ALREADY_RESERVED' || errMsg.includes('SEAT_ALREADY_RESERVED')
 
     if (isConflict) {
-      // Definitive business rejection: mark as unavailable and refetch
-      unavailableSeats.value = [...new Set([...unavailableSeats.value, ...requestedSeats])]
+      // PRE-05: Definitive business rejection: remove only requested seats from selection,
+      // and refresh authoritative availability rather than permanently disabling all seats.
       selectedSeats.value = selectedSeats.value.filter(s => !requestedSeats.includes(s))
       toast.error('Một hoặc nhiều ghế đã bị hành khách khác chọn. Vui lòng chọn ghế khác!')
-      await fetchTripSeats()
+      await fetchAvailability()
     } else {
       // Ambiguous outcome (timeout, network error, malformed response)
       const isTimeoutOrNetwork =
@@ -337,7 +385,8 @@ async function handleHoldSeats() {
         errMsg.toLowerCase().includes('timeout') ||
         errMsg.toLowerCase().includes('kết nối') ||
         errMsg.includes('không hợp lệ') ||
-        errMsg.includes('Malformed') ||
+        errMsg.includes('khuyết') ||
+        errMsg.includes('không khớp') ||
         err?.name === 'TimeoutError'
 
       if (isTimeoutOrNetwork) {
@@ -354,6 +403,12 @@ async function handleHoldSeats() {
   }
 }
 
+/**
+ * PRE-04: Cancellation Safety
+ * - Tracks pending and unresolved cancellation states
+ * - Preserves recovery context on failure
+ * - Blocks checkout while cancellation is pending or unresolved
+ */
 async function handleCancelBooking() {
   if (!heldBooking.value?.bookingReference || cancelling.value) return
   cancelling.value = true
@@ -364,28 +419,63 @@ async function handleCancelBooking() {
     stopCountdown()
     heldBooking.value = null
     selectedSeats.value = []
+    isCancelUnresolved.value = false
     try {
       sessionStorage.removeItem(getActiveHoldStorageKey())
     } catch (_) {}
     toast.success('Đã hủy giữ chỗ thành công.')
-    await fetchTripSeats()
+    await Promise.all([fetchTripSeats(), fetchAvailability()])
   } catch (err) {
     console.error('Cancel booking failed:', err)
-    toast.error('Không thể hủy giữ chỗ trên máy chủ: ' + (err?.message || ''))
+    const errMsg = err?.message || ''
+    const isTimeoutOrNetwork =
+      errMsg.toLowerCase().includes('timeout') ||
+      errMsg.toLowerCase().includes('kết nối') ||
+      err?.code === 'NETWORK_ERROR'
+
+    if (isTimeoutOrNetwork) {
+      isCancelUnresolved.value = true
+      toast.error('Yêu cầu hủy giữ chỗ gặp sự cố mạng hoặc timeout. Đã khóa thanh toán để đối soát trạng thái máy chủ.')
+    } else {
+      toast.error('Không thể hủy giữ chỗ trên máy chủ: ' + errMsg)
+    }
   } finally {
     cancelling.value = false
   }
 }
 
+/**
+ * PRE-03 & PRE-04: Proceed to Checkout with Strict Verification
+ */
 function proceedToCheckout() {
   if (isHoldUnknownOutcome.value) {
     toast.warning('Giao dịch giữ chỗ đang bị gián đoạn. Vui lòng bấm "Kiểm tra trạng thái giữ chỗ".')
+    return
+  }
+  if (cancelling.value) {
+    toast.warning('Đang xử lý hủy giữ chỗ, không thể tiến hành thanh toán.')
+    return
+  }
+  if (isCancelUnresolved.value) {
+    toast.error('Yêu cầu hủy giữ chỗ trước đó chưa xác định được kết quả trên máy chủ. Đã khóa thanh toán để bảo vệ giao dịch.')
     return
   }
   if (!heldBooking.value) {
     handleHoldSeats()
     return
   }
+
+  // PRE-03: Validate held booking before navigating to checkout
+  const validation = validateBookingResponse(heldBooking.value, {
+    expectedTripId: tripId.value,
+    expectedUserId: auth.user?.id
+  })
+
+  if (!validation.valid) {
+    toast.error(`Phiên giữ chỗ không hợp lệ để thanh toán: ${validation.error}`)
+    return
+  }
+
   router.push(`/checkout/${heldBooking.value.bookingReference}`)
 }
 
@@ -395,7 +485,7 @@ function formatCurrency(val) {
 }
 
 onMounted(async () => {
-  fetchTripSeats()
+  await Promise.all([fetchTripSeats(), fetchAvailability()])
 
   // 1. Restore pending seat intent after returning from login
   try {
@@ -421,7 +511,7 @@ onMounted(async () => {
     }
   } catch (_) {}
 
-  // 3. Restore Active Held Booking from Server
+  // 3. Restore Active Held Booking from Server with strict validator
   try {
     const storedActiveHold = sessionStorage.getItem(getActiveHoldStorageKey())
     if (storedActiveHold) {
@@ -430,8 +520,11 @@ onMounted(async () => {
         try {
           const detailRes = await catalogBookingApi.getBookingDetail(parsed.bookingReference)
           const booking = detailRes?.data || detailRes
-          const notExpired = booking?.expiresAt && new Date(booking.expiresAt).getTime() > Date.now()
-          if (booking && booking.status === 'HELD' && notExpired) {
+          const validation = validateBookingResponse(booking, {
+            expectedTripId: tripId.value,
+            expectedUserId: auth.user?.id
+          })
+          if (validation.valid) {
             heldBooking.value = booking
             selectedSeats.value = [...(booking.seatNumbers || [])]
             startCountdown(booking.expiresAt)
@@ -487,16 +580,29 @@ onMounted(async () => {
         </p>
       </div>
 
-      <router-link
-        to="/search"
-        class="inline-flex items-center justify-center px-4 py-2 text-xs font-semibold rounded-lg border border-border text-foreground hover:bg-muted transition-all self-start md:self-auto"
-      >
-        <ArrowLeft class="w-3.5 h-3.5 mr-1.5" />
-        Đổi chuyến xe khác
-      </router-link>
+      <div class="flex items-center gap-2 self-start md:self-auto">
+        <button
+          type="button"
+          data-testid="btn-refresh-availability"
+          :disabled="isRefreshingAvailability"
+          @click="fetchAvailability"
+          class="inline-flex items-center justify-center px-3 py-2 text-xs font-semibold rounded-lg border border-border text-foreground hover:bg-muted transition-all disabled:opacity-50"
+          title="Cập nhật tình trạng chỗ trống từ máy chủ"
+        >
+          <RefreshCw class="w-3.5 h-3.5 mr-1.5" :class="{ 'animate-spin': isRefreshingAvailability }" />
+          <span>Cập nhật chỗ</span>
+        </button>
+        <router-link
+          to="/search"
+          class="inline-flex items-center justify-center px-4 py-2 text-xs font-semibold rounded-lg border border-border text-foreground hover:bg-muted transition-all"
+        >
+          <ArrowLeft class="w-3.5 h-3.5 mr-1.5" />
+          Đổi chuyến xe khác
+        </router-link>
+      </div>
     </div>
 
-    <!-- Unknown Outcome Warning Alert (BLOCKER-02) -->
+    <!-- Unknown Outcome Warning Alert (PRE-02: Fail-Closed Protection) -->
     <div
       v-if="isHoldUnknownOutcome"
       data-testid="hold-unknown-alert"
@@ -526,6 +632,25 @@ onMounted(async () => {
       </button>
     </div>
 
+    <!-- Cancellation Unresolved Warning Alert (PRE-04) -->
+    <div
+      v-if="isCancelUnresolved"
+      data-testid="cancel-unresolved-alert"
+      class="bg-destructive/10 border-2 border-destructive/40 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs"
+    >
+      <div class="flex items-start gap-3">
+        <ShieldAlert class="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+        <div class="space-y-1">
+          <p class="font-bold text-destructive">
+            Yêu cầu hủy giữ chỗ chưa xác định kết quả
+          </p>
+          <p class="text-muted-foreground">
+            Thao tác hủy gặp sự cố mạng hoặc timeout. Đã khóa chức năng thanh toán để tránh tranh chấp giao dịch. Vui lòng tải lại trang hoặc kiểm tra danh sách vé của bạn.
+          </p>
+        </div>
+      </div>
+    </div>
+
     <!-- Loading Skeleton State -->
     <div v-if="loading" class="space-y-6" data-testid="seat-loading">
       <div class="bg-card rounded-xl border border-border p-8 text-center space-y-4">
@@ -537,7 +662,7 @@ onMounted(async () => {
     <!-- Error State with Retry Button -->
     <div v-else-if="error" class="bg-destructive/10 border border-destructive/20 rounded-xl p-6 text-center space-y-3" data-testid="seat-error">
       <AlertCircle class="w-8 h-8 text-destructive mx-auto" />
-      <h3 class="text-sm font-bold text-foreground">Không thể tải danh sách ghế</h3>
+      <h3 class="text-sm font-bold text-foreground">Không thể tải danh sách chỗ ngồi</h3>
       <p class="text-xs text-muted-foreground max-w-md mx-auto">{{ error }}</p>
       <button
         type="button"
@@ -563,6 +688,7 @@ onMounted(async () => {
         <SeatMap2Deck
           v-else
           :seats="backendSeats"
+          :availability-map="availabilityMap"
           :selected-seats="selectedSeats"
           :held-seats="heldSeatCodes"
           :unavailable-seats="unavailableSeats"
@@ -627,9 +753,6 @@ onMounted(async () => {
                   </span>
                   <div>
                     <span class="font-medium text-foreground">Chỗ {{ seatCode }}</span>
-                    <span class="text-[11px] text-muted-foreground ml-1">
-                      ({{ seatCode.startsWith('A') ? 'Tầng 1' : 'Tầng 2' }})
-                    </span>
                   </div>
                 </div>
 
@@ -678,7 +801,7 @@ onMounted(async () => {
               type="button"
               data-testid="btn-proceed-booking"
               @click="proceedToCheckout"
-              :disabled="selectedSeats.length === 0 || holding || isHoldUnknownOutcome"
+              :disabled="selectedSeats.length === 0 || holding || isHoldUnknownOutcome || cancelling || isCancelUnresolved"
               class="w-full h-12 bg-primary hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground disabled:cursor-not-allowed text-primary-foreground font-semibold rounded-lg shadow-xs transition-all flex items-center justify-center gap-2 text-sm"
             >
               <Loader2 v-if="holding" class="w-4 h-4 animate-spin text-primary-foreground" />
