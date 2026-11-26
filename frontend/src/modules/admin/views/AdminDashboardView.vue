@@ -41,6 +41,9 @@ const isLoadingPayments = ref(false)
 const paymentsError = ref(null)
 const reconciliationList = ref([])
 const reconciliationTotal = ref(0)
+const reconcilePage = ref(0)
+const reconcilePageSize = ref(10)
+const reconcileTotalPages = ref(1)
 
 const isRunningReconciliation = ref(false)
 const selectedAlertForConfirm = ref(null)
@@ -59,7 +62,7 @@ function formatCount(val) {
   return Number(val).toLocaleString('vi-VN')
 }
 
-// 1. Fetch Payment Report (PAYMENT_REPORT_VIEW)
+// 1. Fetch Payment Report (PAYMENT_REPORT_VIEW) — Completely independent state
 async function fetchReport() {
   if (!hasPermission('PAYMENT_REPORT_VIEW')) {
     reportData.value = null
@@ -74,28 +77,31 @@ async function fetchReport() {
     const res = await adminApi.getPaymentReport()
     const report = res?.data || res || null
     reportData.value = report
+
     if (Array.isArray(report?.reconciliationTransactions)) {
-      reconciliationList.value = report.reconciliationTransactions
-      reconciliationTotal.value = report.reconciliationCount ?? report.reconciliationTransactions.length
+      if (report.reconciliationTransactions.length > 0) {
+        if (reconciliationList.value.length === 0) {
+          reconciliationList.value = report.reconciliationTransactions
+          reconciliationTotal.value = report.reconciliationCount ?? report.reconciliationTransactions.length
+        }
+      } else if (report.reconciliationCount === 0) {
+        reconciliationList.value = []
+        reconciliationTotal.value = 0
+      }
     }
   } catch (err) {
-    reportError.value = err?.message || 'Không thể tải báo cáo doanh thu từ máy chủ Backend'
+    reportError.value = err?.message || 'Không thể tải báo cáo doanh thu tài chính từ máy chủ Backend'
     reportData.value = null
   } finally {
     isLoadingReport.value = false
   }
 }
 
-// 2. Fetch Reconciliation Payments (PAYMENT_LIST_VIEW)
-async function fetchReconciliationPayments() {
+// 2. Fetch Reconciliation Payments (PAYMENT_LIST_VIEW) — Independent request & PageResponse
+async function fetchReconciliationPayments(page = 0, size = 10) {
   if (!hasPermission('PAYMENT_LIST_VIEW')) {
     reconciliationList.value = []
     paymentsError.value = null
-    return
-  }
-
-  // If already populated by authoritative report, skip redundant fetch
-  if (reconciliationList.value.length > 0) {
     return
   }
 
@@ -103,56 +109,87 @@ async function fetchReconciliationPayments() {
   paymentsError.value = null
 
   try {
-    const res = await adminApi.getPayments({ reconciliationRequired: true, page: 0, size: 20 })
+    const res = await adminApi.getPayments({ reconciliationRequired: true, page, size })
     const pageData = res?.data || res || {}
-    reconciliationList.value = Array.isArray(pageData.items) ? pageData.items : (Array.isArray(pageData) ? pageData : [])
-    reconciliationTotal.value = pageData.totalElements ?? reconciliationList.value.length
+    const items = Array.isArray(pageData.items) ? pageData.items : (Array.isArray(pageData) ? pageData : [])
+    if (items.length > 0) {
+      reconciliationList.value = items
+      reconciliationTotal.value = typeof pageData.totalElements === 'number' ? pageData.totalElements : items.length
+      reconcilePage.value = typeof pageData.page === 'number' ? pageData.page : page
+      reconcileTotalPages.value = typeof pageData.totalPages === 'number' ? pageData.totalPages : Math.max(1, Math.ceil(reconciliationTotal.value / size))
+    } else if (reportData.value?.reconciliationTransactions?.length) {
+      reconciliationList.value = reportData.value.reconciliationTransactions
+      reconciliationTotal.value = reportData.value.reconciliationCount ?? reportData.value.reconciliationTransactions.length
+    } else if (reconciliationList.value.length === 0) {
+      reconciliationList.value = []
+      reconciliationTotal.value = 0
+    }
   } catch (err) {
     paymentsError.value = err?.message || 'Không thể tải danh sách cảnh báo đối soát từ máy chủ Backend'
-    reconciliationList.value = []
+    if (!reportData.value?.reconciliationTransactions?.length) {
+      reconciliationList.value = []
+    }
   } finally {
     isLoadingPayments.value = false
   }
 }
 
-// Composite loader for mounted and refresh
+// Composite independent loader for mounted and refresh
 async function fetchDashboardData() {
+  const promises = []
   if (hasPermission('PAYMENT_REPORT_VIEW')) {
-    await fetchReport()
+    promises.push(fetchReport())
   }
-  if (hasPermission('PAYMENT_LIST_VIEW') && reconciliationList.value.length === 0 && !reportError.value) {
-    await fetchReconciliationPayments()
+  if (hasPermission('PAYMENT_LIST_VIEW')) {
+    promises.push(fetchReconciliationPayments(reconcilePage.value, reconcilePageSize.value))
   }
+  await Promise.allSettled(promises)
 }
 
 onMounted(() => {
   fetchDashboardData()
 })
 
-// Trigger manual refresh / reconciliation sync with strict error propagation
+// Trigger manual refresh with strict error propagation and no fake success
 async function triggerManualReconciliation() {
   isRunningReconciliation.value = true
   try {
+    let attempted = 0
+    let failed = 0
+
+    const tasks = []
     if (hasPermission('PAYMENT_REPORT_VIEW')) {
-      await fetchReport()
+      attempted++
+      tasks.push(fetchReport())
     }
     if (hasPermission('PAYMENT_LIST_VIEW')) {
-      if (reconciliationList.value.length === 0 || !hasPermission('PAYMENT_REPORT_VIEW')) {
-        await fetchReconciliationPayments()
-      }
+      attempted++
+      tasks.push(fetchReconciliationPayments(reconcilePage.value, reconcilePageSize.value))
     }
 
-    if (reportError.value || paymentsError.value) {
-      throw new Error(reportError.value || paymentsError.value)
+    if (attempted === 0) {
+      toast.info('Tài khoản không có quyền xem báo cáo hoặc danh sách đối soát')
+      return
     }
 
-    toast.success('Đồng bộ đối soát hoàn tất', {
-      description: 'Đã tải dữ liệu đối soát và báo cáo mới nhất từ máy chủ Backend.'
-    })
-  } catch (err) {
-    toast.error('Đồng bộ thất bại', {
-      description: err?.message || 'Lỗi khi đồng bộ dữ liệu đối soát từ máy chủ'
-    })
+    await Promise.allSettled(tasks)
+
+    if (hasPermission('PAYMENT_REPORT_VIEW') && reportError.value) failed++
+    if (hasPermission('PAYMENT_LIST_VIEW') && paymentsError.value) failed++
+
+    if (failed === 0) {
+      toast.success('Đồng bộ đối soát hoàn tất', {
+        description: 'Đã tải dữ liệu đối soát và báo cáo mới nhất từ máy chủ Backend.'
+      })
+    } else if (failed < attempted) {
+      toast.warning('Đồng bộ hoàn thành một phần', {
+        description: 'Một số yêu cầu dữ liệu không thành công. Vui lòng kiểm tra thông báo lỗi bên dưới.'
+      })
+    } else {
+      toast.error('Đồng bộ thất bại', {
+        description: reportError.value || paymentsError.value || 'Lỗi khi đồng bộ dữ liệu đối soát từ máy chủ'
+      })
+    }
   } finally {
     isRunningReconciliation.value = false
   }
@@ -194,8 +231,11 @@ async function confirmResolveAlert() {
     // Authoritative state refetch
     try {
       await fetchDashboardData()
+      if (reportError.value || paymentsError.value) {
+        toast.warning('Xử lý đối soát thành công, nhưng làm mới dữ liệu thất bại. Vui lòng bấm làm mới.')
+      }
     } catch (_) {
-      toast.warning('Xử lý thành công nhưng làm mới dữ liệu thất bại. Vui lòng bấm làm mới.')
+      toast.warning('Xử lý đối soát thành công, nhưng làm mới dữ liệu thất bại. Vui lòng bấm làm mới.')
     }
   } catch (err) {
     toast.error('Xử lý đối soát thất bại', {
@@ -503,12 +543,14 @@ const activeAlertsCount = computed(() => {
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel :disabled="isResolving" @click="isConfirmResolveOpen = false">Hủy bỏ</AlertDialogCancel>
-          <AlertDialogAction
-            :disabled="isResolving"
-            @click="confirmResolveAlert"
-          >
-            <RefreshCw v-if="isResolving" class="w-3.5 h-3.5 mr-1.5 animate-spin" />
-            <span>{{ isResolving ? 'Đang xử lý...' : 'Xác nhận xử lý' }}</span>
+          <AlertDialogAction as-child>
+            <Button
+              :disabled="isResolving"
+              @click.prevent="confirmResolveAlert"
+            >
+              <RefreshCw v-if="isResolving" class="w-3.5 h-3.5 mr-1.5 animate-spin" />
+              <span>{{ isResolving ? 'Đang xử lý...' : 'Xác nhận xử lý' }}</span>
+            </Button>
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

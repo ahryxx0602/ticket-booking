@@ -115,6 +115,10 @@ function notify(msg, type = 'success') {
   feedbackType.value = type
   if (type === 'error') {
     toast.error(msg)
+  } else if (type === 'warning') {
+    toast.warning(msg)
+  } else if (type === 'info') {
+    toast.info(msg)
   } else {
     toast.success(msg)
   }
@@ -193,20 +197,51 @@ function handleCategoryChange(cat) {
 // =========================================================================
 // 2. REAL API SYSTEM ROLES & 7x26 PERMISSION MATRIX
 // =========================================================================
+// Canonical mapping for exact set equality (1:1 with AdminPermissionCatalog.java)
+const CANONICAL_MODULE_PERMS = {
+  MOD_DASHBOARD: ['PAYMENT_REPORT_VIEW', 'PAYMENT_LIST_VIEW', 'PAYMENT_RECONCILE_RESOLVE'],
+  MOD_OPERATORS: ['OPERATOR_VIEW', 'OPERATOR_CREATE_UPDATE', 'OPERATOR_APPROVE_REJECT', 'OPERATOR_SUSPEND', 'OPERATOR_COMMISSION_MANAGE'],
+  MOD_WITHDRAWALS: ['WITHDRAWAL_VIEW', 'WITHDRAWAL_APPROVE', 'WITHDRAWAL_REJECT'],
+  MOD_BANNERS: ['BANNER_VIEW', 'BANNER_CREATE_DELETE', 'BANNER_APPROVE_REJECT'],
+  MOD_IAM: ['USER_VIEW', 'USER_CREATE_UPDATE_DELETE', 'USER_STATUS_LOCK', 'USER_PASSWORD_RESET', 'USER_ROLE_ASSIGN', 'ROLE_MANAGE_CRUD'],
+  MOD_BOOKINGS: ['BOOKING_VIEW', 'BOOKING_FORCE_REFUND'],
+  MOD_SETTINGS: ['STATION_VIEW', 'STATION_CREATE_UPDATE_DELETE', 'TRIP_MANAGE_CRUD', 'SYSTEM_SETTINGS_MANAGE']
+}
+
 function validatePermissionCatalog(cat) {
   if (!Array.isArray(cat) || cat.length !== 7) return false
-  const uniquePerms = new Set()
+  const canonicalModules = Object.keys(CANONICAL_MODULE_PERMS)
+  const incomingModules = new Set()
+  const allCodes = new Set()
+
   for (const m of cat) {
     if (!m || typeof m.moduleCode !== 'string' || !m.moduleCode) return false
-    if (!m || typeof m.moduleName !== 'string' || !m.moduleName) return false
+    if (typeof m.moduleName !== 'string' || !m.moduleName) return false
     if (!Array.isArray(m.permissions) || m.permissions.length === 0) return false
+
+    if (!CANONICAL_MODULE_PERMS[m.moduleCode]) return false
+    incomingModules.add(m.moduleCode)
+
+    const expectedPerms = new Set(CANONICAL_MODULE_PERMS[m.moduleCode])
+    const modulePerms = new Set()
+
     for (const p of m.permissions) {
       if (!p || typeof p.code !== 'string' || !p.code) return false
       if (typeof p.name !== 'string' || !p.name) return false
-      uniquePerms.add(p.code)
+      if (typeof p.httpMethod !== 'string') return false
+      if (typeof p.apiPattern !== 'string') return false
+
+      if (allCodes.has(p.code)) return false // Duplicate code rejected
+      allCodes.add(p.code)
+      modulePerms.add(p.code)
+
+      if (!expectedPerms.has(p.code)) return false // Must belong to this exact module
     }
+
+    if (modulePerms.size !== expectedPerms.size) return false
   }
-  return uniquePerms.size === 26
+
+  return incomingModules.size === canonicalModules.length && allCodes.size === 26
 }
 
 const permissionCatalog = ref(ADMIN_PERMISSION_MODULES)
@@ -677,6 +712,7 @@ const isConfirmDeleteRoleOpen = ref(false)
 const isDeletingRole = ref(false)
 
 function openDeleteRoleModal(roleItem) {
+  if (!roleItem) return
   if (roleItem.systemDefault) {
     notify('Không thể xóa các Role mặc định gốc của hệ thống (SYSTEM_ROLE_PROTECTED)', 'error')
     return
@@ -685,12 +721,17 @@ function openDeleteRoleModal(roleItem) {
     notify('Bạn không được phép tự xóa chính Role mà tài khoản của bạn đang sử dụng (CANNOT_MODIFY_OWN_ROLE)', 'error')
     return
   }
-  const userCount = countUsersWithRole(roleItem.code)
-  if (userCount > 0) {
-    notify(
-      `Không thể xóa Role ${roleItem.code} vì đang có ${userCount} tài khoản được gán Role này (ROLE_IN_USE). Vui lòng đổi Role cho người dùng trước.`,
-      'error'
-    )
+  // Authoritative roleItem.userCount check (No fallback to 0 if undefined)
+  if (typeof roleItem.userCount === 'number') {
+    if (roleItem.userCount > 0) {
+      notify(
+        `Không thể xóa Role ${roleItem.code} vì đang có ${roleItem.userCount} tài khoản được gán Role này (ROLE_IN_USE). Vui lòng đổi Role cho người dùng trước.`,
+        'error'
+      )
+      return
+    }
+  } else if (roleItem.userCount === undefined || roleItem.userCount === null) {
+    notify('Chưa có thông tin số lượng người dùng từ máy chủ cho Role này. Vui lòng làm mới danh sách vai trò trước khi xóa.', 'warning')
     return
   }
   roleToDelete.value = roleItem
@@ -705,12 +746,13 @@ async function confirmDeleteRole() {
     if (previewRole.value?.code === roleToDelete.value.code) {
       stopRolePreview()
     }
-    notify(`Đã xóa Role tùy chỉnh ${roleToDelete.value.code}`)
+    notify(`Đã xóa Role tùy chỉnh ${roleToDelete.value.code}`, 'success')
     isConfirmDeleteRoleOpen.value = false
     roleToDelete.value = null
     await fetchRoles()
   } catch (err) {
-    notify(err?.message || 'Lỗi khi xóa vai trò', 'error')
+    notify(err?.message || 'Lỗi khi xóa vai trò từ máy chủ Backend', 'error')
+    // Keep dialog open on rejection so user sees error and can cancel or retry
   } finally {
     isDeletingRole.value = false
   }
@@ -731,6 +773,7 @@ function handlePreviewRole(roleItem) {
 const selectedBookingForRefund = ref(null)
 const isRefundModalOpen = ref(false)
 const isRefunding = ref(false)
+const isUnknownOutcome = ref(false)
 const refundReasonInput = ref('')
 const refundError = ref('')
 
@@ -738,6 +781,7 @@ function openRefundModal(booking) {
   selectedBookingForRefund.value = booking
   refundReasonInput.value = ''
   refundError.value = ''
+  isUnknownOutcome.value = false
   isRefundModalOpen.value = true
 }
 
@@ -748,7 +792,7 @@ async function confirmAdminRefund() {
     return
   }
 
-  if (isRefunding.value) return
+  if (isRefunding.value || isUnknownOutcome.value) return
 
   const target = selectedBookingForRefund.value
   if (!target || !target.bookingReference) {
@@ -776,12 +820,29 @@ async function confirmAdminRefund() {
     })
 
     const data = res?.data || res
-    // B3-FINAL-05: Inspect RefundResponse
-    if (data?.paymentRefunded === false) {
-      notify(`Đã hoàn tiền đơn #${bookingRef} sang trạng thái ${data.status || 'REFUNDED'}, nhưng hoàn tiền cổng thanh toán cần đối soát bổ sung.`, 'warning')
+    if (!data || typeof data !== 'object') {
+      throw new Error('Máy chủ trả về phản hồi không hợp lệ cho lệnh hoàn tiền (Malformed RefundResponse)')
+    }
+
+    if (!data.bookingReference || data.bookingReference !== bookingRef) {
+      throw new Error('Dữ liệu hoàn tiền không khớp mã đơn vé yêu cầu')
+    }
+
+    if (!data.status) {
+      throw new Error('Phản hồi hoàn tiền thiếu trạng thái đơn vé từ máy chủ')
+    }
+
+    // Explicitly validate refundAmount, supporting valid zero (0đ)
+    const hasValidAmount = data.refundAmount !== undefined && data.refundAmount !== null && !isNaN(Number(data.refundAmount))
+    const amountStr = hasValidAmount ? `${formatVnd(data.refundAmount)} đ` : '— đ'
+
+    // paymentRefunded validation according to DTO (distinguishing booking status transition from payment outcome)
+    if (typeof data.paymentRefunded !== 'boolean') {
+      notify(`Đơn vé #${bookingRef} đã chuyển sang trạng thái ${data.status}, nhưng kết quả hoàn tiền cổng thanh toán chưa được xác nhận. Vui lòng đối soát thủ công.`, 'warning')
+    } else if (data.paymentRefunded === false) {
+      notify(`Đã cập nhật đơn #${bookingRef} sang ${data.status}, nhưng cổng thanh toán từ chối hoàn tiền (${amountStr}). Cần đối soát bổ sung.`, 'warning')
     } else {
-      const amountStr = data?.refundAmount ? `${formatVnd(data.refundAmount)} đ` : '100%'
-      notify(`Đã hoàn tiền thành công ${amountStr} cho đơn vé #${bookingRef} (Máy chủ xác nhận)!`)
+      notify(`Đã hoàn tiền thành công ${amountStr} cho đơn vé #${bookingRef} (Trạng thái: ${data.status})!`, 'success')
     }
 
     isRefundModalOpen.value = false
@@ -794,10 +855,13 @@ async function confirmAdminRefund() {
       notify('Hoàn tiền thành công trên máy chủ nhưng làm mới danh sách đơn vé thất bại. Vui lòng bấm làm mới.', 'warning')
     }
   } catch (err) {
-    if (err?.code === 'ECONNABORTED' || err?.message?.includes('timeout')) {
-      refundError.value = 'Yêu cầu hoàn tiền bị quá hạn phản hồi (Network Timeout). Trạng thái giao dịch chưa xác định, không tự động gửi lại. Vui lòng kiểm tra lại danh sách đơn vé trước khi thử lại.'
+    const errMsg = err?.message || ''
+    const isTimeout = err?.code === 'ECONNABORTED' || errMsg.toLowerCase().includes('timeout') || err?.name === 'TimeoutError'
+    if (isTimeout) {
+      isUnknownOutcome.value = true
+      refundError.value = 'Yêu cầu hoàn tiền bị quá hạn phản hồi (Network Timeout). Trạng thái giao dịch tại máy chủ chưa xác định, hệ thống đã KHÓA gửi lại để chống hoàn tiền trùng lặp. Vui lòng bấm Hủy và kiểm tra lại danh sách đơn vé hoặc đối soát thủ công.'
     } else {
-      refundError.value = err?.message || 'Máy chủ từ chối yêu cầu hoàn tiền cưỡng chế'
+      refundError.value = errMsg || 'Máy chủ từ chối yêu cầu hoàn tiền cưỡng chế'
     }
   } finally {
     isRefunding.value = false
@@ -817,7 +881,7 @@ const userColumns = [
       return h('div', { class: 'space-y-0.5' }, [
         h('div', { class: 'flex items-center gap-1.5' }, [
           h('span', { class: 'font-mono font-bold text-foreground text-xs' }, `@${u.username}`),
-          self ? h(Badge, { variant: 'outline', class: 'border-primary/40 bg-primary/10 text-primary text-[10px] px-1 py-0 font-bold', 'data-testid': 'self-admin-guard' }, () => 'Tài khoản hiện tại (Không thể tự khóa)') : null
+          self ? h(Badge, { variant: 'outline', class: 'border-primary/40 bg-primary/10 text-primary text-[10px] px-1 py-0 font-bold whitespace-nowrap shrink-0', 'data-testid': 'self-admin-guard' }, () => 'Tài khoản hiện tại (Không thể tự khóa)') : null
         ]),
         h('span', { class: 'text-[11px] text-muted-foreground block' }, u.email)
       ])
@@ -846,7 +910,7 @@ const userColumns = [
         ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
         : 'bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30'
 
-      return h(Badge, { variant: 'outline', class: `${variantClass} font-semibold text-[11px]` }, () => label)
+      return h(Badge, { variant: 'outline', class: `${variantClass} font-semibold text-[11px] whitespace-nowrap shrink-0` }, () => label)
     }
   },
   {
@@ -948,7 +1012,7 @@ const bookingColumns = [
     cell: ({ row }) => {
       const b = row.original
       const ref = b.bookingReference || `BKG-${b.bookingId || b.id}`
-      return h('span', { class: 'font-mono font-bold text-foreground text-xs' }, ref)
+      return h('span', { class: 'font-mono font-bold text-foreground text-xs whitespace-nowrap' }, ref)
     }
   },
   {
@@ -1091,7 +1155,7 @@ const bookingColumns = [
         @click="activeTab = 'ROLES'"
       >
         <Shield class="w-4 h-4" />
-        <span>Vai Trò & Phân Quyền (7x26)</span>
+        <span>Vai Trò<span class="hidden sm:inline"> & Phân Quyền (7x26)</span></span>
       </button>
 
       <button
@@ -1102,7 +1166,7 @@ const bookingColumns = [
         @click="activeTab = 'BOOKINGS'"
       >
         <Ticket class="w-4 h-4" />
-        <span>Đơn Vé & Hoàn Tiền</span>
+        <span>Đơn Vé<span class="hidden sm:inline"> & Hoàn Tiền</span></span>
       </button>
     </div>
 
@@ -1299,6 +1363,7 @@ const bookingColumns = [
                   variant="ghost"
                   size="sm"
                   class="h-7 w-7 p-0"
+                  :data-testid="`btn-edit-role-${role.code}`"
                   @click="openEditRoleModal(role)"
                 >
                   <Pencil class="h-3 w-3" />
@@ -1307,6 +1372,7 @@ const bookingColumns = [
                   variant="ghost"
                   size="sm"
                   class="h-7 w-7 p-0 text-destructive hover:bg-destructive/10"
+                  :data-testid="`btn-delete-role-${role.code}`"
                   @click="openDeleteRoleModal(role)"
                 >
                   <Trash2 class="h-3 w-3" />
@@ -1532,13 +1598,13 @@ const bookingColumns = [
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel :disabled="isDeletingUser" @click="isConfirmDeleteUserOpen = false">Hủy</AlertDialogCancel>
-          <AlertDialogAction
+          <Button
             :disabled="isDeletingUser"
-            class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            variant="destructive"
             @click="confirmDeleteUser"
           >
             {{ isDeletingUser ? 'Đang xóa...' : 'Xác nhận xóa' }}
-          </AlertDialogAction>
+          </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -1675,13 +1741,13 @@ const bookingColumns = [
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel :disabled="isDeletingRole" @click="isConfirmDeleteRoleOpen = false">Hủy</AlertDialogCancel>
-          <AlertDialogAction
+          <Button
             :disabled="isDeletingRole"
-            class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            variant="destructive"
             @click="confirmDeleteRole"
           >
             {{ isDeletingRole ? 'Đang xóa...' : 'Xác nhận xóa' }}
-          </AlertDialogAction>
+          </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -1731,7 +1797,7 @@ const bookingColumns = [
             <Button
               type="submit"
               variant="destructive"
-              :disabled="isRefunding"
+              :disabled="isRefunding || isUnknownOutcome"
               data-testid="btn-confirm-refund"
               @click.prevent="confirmAdminRefund"
             >

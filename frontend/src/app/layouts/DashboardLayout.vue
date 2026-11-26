@@ -465,6 +465,7 @@ function handleLogout() {
             variant="ghost"
             size="sm"
             class="h-9 w-9 p-0 text-muted-foreground hover:text-foreground"
+            data-testid="theme-customizer-trigger"
             @click="isThemeCustomizerOpen = true"
             title="Tùy biến giao diện (Theme Customizer)"
           >

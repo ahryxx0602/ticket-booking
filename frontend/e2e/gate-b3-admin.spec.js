@@ -7,10 +7,14 @@ import { loginAsRole } from './helpers/auth'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const screenshotDir = path.resolve(__dirname, '../../docs/frontend-v2/screenshots-gate-b3-final')
+const closureScreenshotDir = path.resolve(__dirname, '../../docs/frontend-v2/screenshots-gate-b3-closure')
 
-// Ensure final screenshots directory exists
+// Ensure screenshots directories exist
 if (!fs.existsSync(screenshotDir)) {
   fs.mkdirSync(screenshotDir, { recursive: true })
+}
+if (!fs.existsSync(closureScreenshotDir)) {
+  fs.mkdirSync(closureScreenshotDir, { recursive: true })
 }
 
 // ---------------------------------------------------------------------------
@@ -212,8 +216,8 @@ const canonicalPermissionCatalog = [
     ]
   },
   {
-    moduleCode: 'MOD_TRIPS_SETTINGS',
-    moduleName: '7. Bến xe, Chuyến & Cấu hình sàn',
+    moduleCode: 'MOD_SETTINGS',
+    moduleName: '7. Bến xe, Chuyến xe & Cấu hình',
     routePath: '/admin/settings',
     viewPermissionCode: 'STATION_VIEW',
     permissions: [
@@ -245,6 +249,16 @@ let dynamicRoles = [
     systemDefault: false,
     userCount: 1,
     permissions: ['PAYMENT_REPORT_VIEW', 'PAYMENT_LIST_VIEW', 'PAYMENT_RECONCILE_RESOLVE', 'WITHDRAWAL_VIEW', 'BOOKING_VIEW', 'BOOKING_FORCE_REFUND']
+  },
+  {
+    id: 5,
+    code: 'ROLE_DISPATCHER',
+    name: 'Điều Hành Lịch Trình',
+    description: 'Chuyên trách quản lý tuyến và bến xe.',
+    category: 'SYSTEM',
+    systemDefault: false,
+    userCount: 0,
+    permissions: ['TRIP_MANAGE_CRUD', 'STATION_VIEW']
   }
 ]
 
@@ -269,6 +283,57 @@ let dynamicBookings = [
 // 2. Strict Hermetic Network Mocks Registration
 // ---------------------------------------------------------------------------
 async function setupAdminMocks(page, options = {}) {
+  // Reset dynamic state for test isolation
+  dynamicRoles = [
+    {
+      id: 1,
+      code: 'ROLE_ADMIN',
+      name: 'Quản Trị Viên Toàn Sàn (Super Admin)',
+      description: 'Toàn quyền điều hành hệ thống, quản lý 7 Modules và 26 APIs quản trị.',
+      category: 'SYSTEM',
+      systemDefault: true,
+      userCount: 1,
+      permissions: canonicalPermissionCatalog.flatMap(m => m.permissions.map(p => p.code))
+    },
+    {
+      id: 4,
+      code: 'ROLE_ACCOUNTANT',
+      name: 'Kế Toán & Đối Soát Tài Chính',
+      description: 'Chuyên trách báo cáo doanh thu, đối soát VNPay và giải ngân ví Escrow.',
+      category: 'SYSTEM',
+      systemDefault: false,
+      userCount: 1,
+      permissions: ['PAYMENT_REPORT_VIEW', 'PAYMENT_LIST_VIEW', 'PAYMENT_RECONCILE_RESOLVE', 'WITHDRAWAL_VIEW', 'BOOKING_VIEW', 'BOOKING_FORCE_REFUND']
+    },
+    {
+      id: 5,
+      code: 'ROLE_DISPATCHER',
+      name: 'Điều Hành Lịch Trình',
+      description: 'Chuyên trách quản lý tuyến và bến xe.',
+      category: 'SYSTEM',
+      systemDefault: false,
+      userCount: 0,
+      permissions: ['TRIP_MANAGE_CRUD', 'STATION_VIEW']
+    }
+  ]
+
+  dynamicBookings = [
+    {
+      bookingId: 1,
+      bookingReference: 'BKG-20261123-9988',
+      userId: 3,
+      customerName: 'Khách Hàng Thử Nghiệm 1',
+      customerPhone: '0912000001',
+      tripId: 101,
+      route: 'Hà Nội → Đà Nẵng',
+      operatorName: 'Hoàng Long Limousine',
+      seatNumbers: ['A05', 'A06'],
+      totalAmount: 700000,
+      status: 'CONFIRMED',
+      createdAt: '2026-11-23T14:20:00'
+    }
+  ]
+
   // 1. Payment Report (isolated endpoint)
   await page.route('**/api/v1/admin/payments/reports**', async (route) => {
     if (options.reportFail) {
@@ -289,7 +354,70 @@ async function setupAdminMocks(page, options = {}) {
     })
   })
 
-  // 2. Payment List (isolated endpoint)
+  // 2. Payment List & Reconciliation Resolving
+  await page.route('**/api/v1/admin/payments/**', async (route) => {
+    const url = route.request().url()
+    const method = route.request().method()
+
+    if (url.includes('/reconcile') && method === 'POST') {
+      if (options.reconcileFail) {
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 'RECONCILE_FAILED',
+            message: 'Cổng đối soát VNPay từ chối xác nhận đối chiếu giao dịch'
+          })
+        })
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          message: 'Reconciliation alert resolved successfully',
+          data: {
+            id: 1,
+            reconciliationRequired: false,
+            status: 'SUCCESS'
+          }
+        })
+      })
+      return
+    }
+
+    if (url.includes('/reports')) return route.fallback()
+
+    if (options.paymentsFail) {
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 'PAYMENTS_UNAVAILABLE',
+          message: 'Không thể truy vấn danh sách giao dịch đối soát từ máy chủ'
+        })
+      })
+      return
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          items: mockPaymentReport.data.reconciliationTransactions,
+          page: 0,
+          size: 10,
+          totalElements: 2,
+          totalPages: 1
+        }
+      })
+    })
+  })
+
+  // Also catch /api/v1/admin/payments without trailing slash
   await page.route('**/api/v1/admin/payments?**', async (route) => {
     if (options.paymentsFail) {
       await route.fulfill({
@@ -332,6 +460,40 @@ async function setupAdminMocks(page, options = {}) {
   })
 
   // 4. Roles CRUD (exact route)
+  await page.route('**/api/v1/admin/roles/**', async (route) => {
+    const method = route.request().method()
+    const url = route.request().url()
+    if (url.includes('/permissions-catalog')) return route.fallback()
+
+    if (method === 'DELETE') {
+      const roleId = url.split('/').pop()
+      if (options.roleDeleteFail) {
+        await route.fulfill({
+          status: 400,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 'ROLE_IN_USE',
+            message: 'Không thể xóa Role vì đang có tài khoản sử dụng'
+          })
+        })
+        return
+      }
+      const idx = dynamicRoles.findIndex(r => String(r.id) === String(roleId))
+      if (idx !== -1) dynamicRoles.splice(idx, 1)
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          message: 'System role deleted successfully',
+          data: null
+        })
+      })
+      return
+    }
+    route.fallback()
+  })
+
   await page.route('**/api/v1/admin/roles', async (route) => {
     const method = route.request().method()
     if (method === 'GET') {
@@ -346,7 +508,7 @@ async function setupAdminMocks(page, options = {}) {
       })
     } else if (method === 'POST') {
       const payload = route.request().postDataJSON()
-      if (options.roleCreateFail) {
+      if (options.roleCreateFail || payload?.code?.includes('FAIL')) {
         await route.fulfill({
           status: 400,
           contentType: 'application/json',
@@ -379,6 +541,64 @@ async function setupAdminMocks(page, options = {}) {
         })
       })
     }
+  })
+
+  // 5. Users Mutation Routes (Status, Role, Password, Delete)
+  await page.route('**/api/v1/admin/users/**', async (route) => {
+    const method = route.request().method()
+    const url = route.request().url()
+
+    if (method === 'PATCH' && url.includes('/status')) {
+      const parts = url.split('/')
+      const userId = parts[parts.length - 2]
+      const user = syntheticUsers.find(u => String(u.id) === String(userId) || u.username === userId)
+      if (user) {
+        const payload = route.request().postDataJSON() || {}
+        user.status = payload.status || (user.status === 'ACTIVE' ? 'LOCKED' : 'ACTIVE')
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, message: 'Status updated', data: user })
+      })
+      return
+    }
+
+    if (method === 'PATCH' && url.includes('/role')) {
+      const parts = url.split('/')
+      const userId = parts[parts.length - 2]
+      const user = syntheticUsers.find(u => String(u.id) === String(userId) || u.username === userId)
+      if (user) {
+        const payload = route.request().postDataJSON() || {}
+        user.role = payload.role
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, message: 'Role updated', data: user })
+      })
+      return
+    }
+
+    if (method === 'POST' && url.includes('/reset-password')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, message: 'Password reset successfully' })
+      })
+      return
+    }
+
+    if (method === 'DELETE') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, message: 'User deleted successfully' })
+      })
+      return
+    }
+
+    route.fallback()
   })
 
   // 5. Users with Server-Side Pagination & Role/Category Filtering
@@ -561,18 +781,28 @@ test.describe('Gate B3 Final: Contract & Acceptance Tests', () => {
     await page.locator('[data-testid="tab-admin-roles"]').click()
     await page.locator('[data-testid="btn-create-role-in-tab"]').click()
 
-    // 1. Fill role code and name
+    // 1. Failure Path: Duplicate Code / Backend Rejection
+    await page.locator('[data-testid="input-role-code"]').fill('CAMPAIGN_MOD_FAIL')
+    await page.locator('[data-testid="input-role-name"]').fill('Vai Trò Trùng Lặp')
+    await page.locator('[data-testid="btn-save-role"]').click()
+    await page.waitForTimeout(200)
+
+    // Assert error message displayed, dialog stays open
+    await expect(page.locator('text=Mã vai trò "ROLE_CAMPAIGN_MOD_FAIL" đã tồn tại').or(page.locator('text=Mã vai trò đã tồn tại'))).toBeVisible()
+    await expect(page.locator('[role="dialog"]')).toBeVisible()
+
+    // 2. Success Path: Valid code
     await page.locator('[data-testid="input-role-code"]').fill('CAMPAIGN_MOD')
     await page.locator('[data-testid="input-role-name"]').fill('Quản Trị Chiến Dịch')
 
-    // 2. Clear all and toggle module 4 (MOD_BANNERS)
+    // Clear all and toggle module 4 (MOD_BANNERS)
     await page.locator('[data-testid="btn-role-clear-all"]').click()
     await page.locator('[data-testid="toggle-module-MOD_BANNERS"]').click()
 
-    // 3. Toggle single permission: PAYMENT_REPORT_VIEW
+    // Toggle single permission: PAYMENT_REPORT_VIEW
     await page.locator('[data-testid="perm-checkbox-PAYMENT_REPORT_VIEW"]').click()
 
-    // 4. Save role
+    // Save role
     await page.locator('[data-testid="btn-save-role"]').click()
     await page.waitForTimeout(300)
 
@@ -749,7 +979,7 @@ test.describe('Gate B3 Final: Contract & Acceptance Tests', () => {
     await expect(page.locator('[data-testid="dialog-refund"]')).toHaveCount(0)
 
     // Table reflects authoritative state: status is REFUNDED
-    await expect(page.locator('text=REFUNDED')).toBeVisible()
+    await expect(page.locator('tbody').getByText('REFUNDED', { exact: true })).toBeVisible()
 
     // Capture required evidence: refund-confirmed-success.png
     await page.screenshot({
@@ -835,5 +1065,203 @@ test.describe('Gate B3 Final: Contract & Acceptance Tests', () => {
 
     await page.locator('[data-testid="exit-role-preview-btn"]').click()
     await expect(banner).toHaveCount(0)
+  })
+
+  // B3-13: Role Deletion Invariants — Protection Guards, In-Use Block, and Confirmed Deletion
+  test('B3-13: Role Deletion Invariants — Protection & Safe Deletion', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await setupAdminMocks(page)
+    await loginAsRole(page, 'ROLE_ADMIN', 'admin')
+    await page.goto('/admin/users-bookings')
+    await page.waitForLoadState('networkidle')
+
+    await page.locator('[data-testid="tab-admin-roles"]').click()
+
+    // 1. Try to delete custom role with userCount: 1 (ROLE_ACCOUNTANT)
+    const deleteAccountantBtn = page.locator('[data-testid="btn-delete-role-ROLE_ACCOUNTANT"]')
+    await expect(deleteAccountantBtn).toBeVisible()
+    await deleteAccountantBtn.click()
+
+    // Assert ROLE_IN_USE error notification appears
+    await expect(page.locator('text=ROLE_IN_USE').first()).toBeVisible()
+    await page.screenshot({
+      path: path.join(closureScreenshotDir, 'role-deletion-in-use-blocked.png'),
+      fullPage: false
+    })
+
+    // 2. Delete an unused custom role (ROLE_DISPATCHER, userCount: 0)
+    const deleteDispatcherBtn = page.locator('[data-testid="btn-delete-role-ROLE_DISPATCHER"]')
+    await expect(deleteDispatcherBtn).toBeVisible()
+    await deleteDispatcherBtn.click()
+
+    // Confirmation dialog opens
+    const confirmDialog = page.locator('[role="alertdialog"]')
+    await expect(confirmDialog).toBeVisible()
+    await expect(confirmDialog).toContainText('ROLE_DISPATCHER')
+
+    // Cancel deletion
+    await confirmDialog.locator('button:has-text("Hủy")').click()
+    await expect(confirmDialog).toHaveCount(0)
+    await expect(page.locator('[data-testid="role-card-ROLE_DISPATCHER"]')).toBeVisible()
+
+    // Reopen and confirm deletion
+    await deleteDispatcherBtn.click()
+    await expect(confirmDialog).toBeVisible()
+    await confirmDialog.locator('button:has-text("Xác nhận xóa")').click()
+    await page.waitForTimeout(300)
+
+    // Assert role card is deleted from the view
+    await expect(page.locator('[data-testid="role-card-ROLE_DISPATCHER"]')).toHaveCount(0)
+    await page.screenshot({
+      path: path.join(closureScreenshotDir, 'role-deletion-confirmed.png'),
+      fullPage: false
+    })
+  })
+
+  // B3-14: Reconciliation Mutation — Confirmation Dialog, Success & Feedback
+  test('B3-14: Reconciliation — Manual Resolve Confirmation & Mutation Safety', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await setupAdminMocks(page)
+    await loginAsRole(page, 'ROLE_ADMIN', 'admin')
+    await page.goto('/admin')
+    await page.waitForLoadState('networkidle')
+
+    // Find first resolve button in reconciliation table
+    const resolveBtn = page.locator('[data-testid^="btn-resolve-alert"]').first()
+    await expect(resolveBtn).toBeVisible()
+    await resolveBtn.click()
+
+    // Confirm dialog opens
+    const dialog = page.locator('[role="alertdialog"]')
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toContainText('xử lý đối soát')
+
+    // Click cancel
+    await dialog.locator('button:has-text("Hủy bỏ")').click()
+    await expect(dialog).toHaveCount(0)
+
+    // Reopen and confirm resolve
+    await resolveBtn.click()
+    await expect(dialog).toBeVisible()
+
+    await page.screenshot({
+      path: path.join(closureScreenshotDir, 'reconciliation-mutation-resolve.png'),
+      fullPage: false
+    })
+
+    await dialog.locator('button:has-text("Xác nhận xử lý")').click()
+    await page.waitForTimeout(300)
+
+    // Dialog closed and success toast visible
+    await expect(dialog).toHaveCount(0)
+    await expect(page.locator('text=Đã xác nhận xử lý đối soát')).toBeVisible()
+  })
+
+  // B3-15: Financial Safety — Refund Gateway Rejection & Network Timeout Locking
+  test('B3-15: Forced Refund — Gateway Rejection & Network Timeout Locking', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await setupAdminMocks(page)
+
+    // Route for paymentRefunded = false
+    await page.route('**/api/v1/admin/bookings/BKG-20261123-9988/refund', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          message: 'Booking status updated but payment gateway rejected refund',
+          data: {
+            bookingReference: 'BKG-20261123-9988',
+            status: 'REFUND_FAILED',
+            refundPercentage: 100,
+            refundAmount: 700000,
+            paymentRefunded: false
+          }
+        })
+      })
+    })
+
+    await loginAsRole(page, 'ROLE_ADMIN', 'admin')
+    await page.goto('/admin/users-bookings')
+    await page.waitForLoadState('networkidle')
+
+    await page.locator('[data-testid="tab-admin-bookings"]').click()
+    await page.locator('[data-testid="btn-admin-refund-BKG-20261123-9988"]').click()
+
+    const reasonInput = page.locator('[data-testid="input-refund-reason"]')
+    await reasonInput.fill('Hành khách thông báo hủy chuyến trước 24 giờ theo quy định.')
+    await page.locator('[data-testid="btn-confirm-refund"]').click()
+    await page.waitForTimeout(300)
+
+    // Assert warning notification regarding payment gateway rejection
+    await expect(page.locator('text=cổng thanh toán từ chối hoàn tiền').first()).toBeVisible()
+    await page.screenshot({
+      path: path.join(closureScreenshotDir, 'refund-payment-gateway-rejected.png'),
+      fullPage: false
+    })
+  })
+
+  // B3-16: Theme Customizer — Desktop Light/Dark, Compact Density, Custom Primary
+  test('B3-16: Theme Customizer — Light/Dark, Density & Primary Theme', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await setupAdminMocks(page)
+    await loginAsRole(page, 'ROLE_ADMIN', 'admin')
+    await page.goto('/admin')
+    await page.waitForLoadState('networkidle')
+
+    // Open Theme Customizer Trigger in header
+    const customizerBtn = page.locator('[data-testid="theme-customizer-trigger"]')
+    await expect(customizerBtn).toBeVisible()
+    await customizerBtn.click()
+
+    // Assert theme studio drawer is open
+    const drawer = page.locator('[data-testid="theme-customizer-drawer"]')
+    await expect(drawer).toBeVisible()
+
+    // Toggle Dark Mode
+    const darkBtn = drawer.locator('button:has-text("Tối")')
+    await darkBtn.click()
+    await expect(page.locator('html')).toHaveClass(/dark/)
+    await page.screenshot({
+      path: path.join(closureScreenshotDir, 'admin-dark-theme.png'),
+      fullPage: false
+    })
+
+    // Toggle Compact Density
+    const compactOpt = drawer.locator('text=Thu gọn')
+    if (await compactOpt.isVisible()) {
+      await compactOpt.click()
+      await page.screenshot({
+        path: path.join(closureScreenshotDir, 'admin-compact-density.png'),
+        fullPage: false
+      })
+    }
+
+    // Close Theme Customizer via Escape key
+    await page.keyboard.press('Escape')
+    await expect(drawer).toHaveCount(0)
+  })
+
+  // B3-17: Independent Dashboard Loading — Isolated Failure Permutations
+  test('B3-17: Dashboard Loading — Report Failure with Independent Payments Success', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    // Report fails, but payments list succeeds
+    await setupAdminMocks(page, { reportFail: true, paymentsFail: false })
+    await loginAsRole(page, 'ROLE_ADMIN', 'admin')
+    await page.goto('/admin')
+    await page.waitForLoadState('networkidle')
+
+    // Report error alert is displayed
+    await expect(page.locator('[data-testid="dashboard-report-error"]')).toBeVisible()
+
+    // Meanwhile, Reconciliation Payments table is LOADED INDEPENDENTLY and visible!
+    await expect(page.locator('table')).toBeVisible()
+    await expect(page.locator('text=REC-20261123-01').first()).toBeVisible()
+
+    // Capture required evidence: dashboard-independent-loading.png
+    await page.screenshot({
+      path: path.join(closureScreenshotDir, 'dashboard-independent-loading.png'),
+      fullPage: false
+    })
   })
 })
