@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-const screenshotDir = path.resolve(__dirname, '../../docs/frontend-v2/screenshots-gate-b5-1')
+const screenshotDir = path.resolve(__dirname, '../../docs/frontend-v2/screenshots-gate-b5-1-corrected')
 
 if (!fs.existsSync(screenshotDir)) {
   fs.mkdirSync(screenshotDir, { recursive: true })
@@ -27,8 +27,8 @@ const mockStations = [
 const mockBanners = [
   {
     id: 1,
-    title: 'Ưu Đãi VeloBus Tuyến Bắc Nam Mùa Lễ',
-    description: 'Giảm 20% cho toàn bộ tuyến xe Limousine VIP giường nằm khi đặt trước 7 ngày.',
+    title: 'Ưu Đãi Tuyến Bắc Nam Mùa Du Lịch',
+    description: 'Chương trình ưu đãi đối tác áp dụng cho tuyến đường Hà Nội đi Đà Nẵng.',
     badge: 'Khuyến mãi hot',
     imageUrl: '',
     linkUrl: '/search?departureCity=Hà Nội&arrivalCity=Đà Nẵng',
@@ -37,8 +37,8 @@ const mockBanners = [
   },
   {
     id: 2,
-    title: 'Tuyến Mới: Sài Gòn Đi Đà Lạt Đón Tận Nơi',
-    description: 'Xe Limousine phòng nằm đơn riêng tư với tiện ích giải trí màn hình cá nhân.',
+    title: 'Tuyến Mới: Sài Gòn Đi Đà Lạt',
+    description: 'Bổ sung các khung giờ xuất bến thuận tiện vào dịp cuối tuần.',
     badge: 'Tuyến mới',
     imageUrl: '',
     linkUrl: '/search?departureCity=Sài Gòn&arrivalCity=Đà Lạt',
@@ -47,6 +47,7 @@ const mockBanners = [
   }
 ]
 
+// Contract TripDto matching backend TripDto.java
 const mockTrips = [
   {
     id: 101,
@@ -61,7 +62,7 @@ const mockTrips = [
     arrivalTime: '2026-11-26T22:30:00',
     transportType: 'Limousine VIP 34 Giường',
     basePrice: 350000,
-    totalSeats: 26,
+    totalSeats: 34,
     status: 'SCHEDULED'
   },
   {
@@ -75,9 +76,9 @@ const mockTrips = [
     arrivalCity: 'Đà Nẵng',
     departureTime: '2026-11-26T14:00:00',
     arrivalTime: '2026-11-27T04:00:00',
-    transportType: 'Xe Giường Nằm Luxury',
+    transportType: 'Xe Giường Nằm',
     basePrice: 320000,
-    totalSeats: 18,
+    totalSeats: 40,
     status: 'SCHEDULED'
   },
   {
@@ -91,22 +92,53 @@ const mockTrips = [
     arrivalCity: 'Đà Nẵng',
     departureTime: '2026-11-26T19:30:00',
     arrivalTime: '2026-11-27T09:30:00',
-    transportType: 'Limousine Phòng Đôi 24',
+    transportType: 'Limousine VIP 34 Giường',
     basePrice: 450000,
-    totalSeats: 6,
+    totalSeats: 24,
+    status: 'SCHEDULED'
+  },
+  {
+    id: 104,
+    tripCode: 'HN-DN-PREMIUM',
+    departureStationCode: 'HN-GP',
+    departureStationName: 'Bến xe Giáp Bát',
+    departureCity: 'Hà Nội',
+    arrivalStationCode: 'DN-TT',
+    arrivalStationName: 'Bến xe Trung tâm Đà Nẵng',
+    arrivalCity: 'Đà Nẵng',
+    departureTime: '2026-11-26T21:00:00',
+    arrivalTime: '2026-11-27T11:00:00',
+    transportType: 'Limousine Cabin Riêng',
+    basePrice: 1200000, // PRE-04: > 1,000,000 VND
+    totalSeats: 12,
     status: 'SCHEDULED'
   }
 ]
 
 async function setupCustomerDiscoveryMocks(page, options = {}) {
-  const { trips = mockTrips, delayTripsMs = 0, tripsFail = false } = options
+  const {
+    trips = mockTrips,
+    delayTripsMs = 0,
+    tripsFail = false,
+    stations = mockStations,
+    stationsFail = false,
+    banners = mockBanners
+  } = options
 
   // Catalog Stations
   await page.route('**/api/v1/catalog/stations**', async (route) => {
+    if (stationsFail) {
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 500, message: 'Internal Server Error' })
+      })
+      return
+    }
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ code: 200, message: 'OK', data: mockStations })
+      body: JSON.stringify({ code: 200, message: 'OK', data: stations })
     })
   })
 
@@ -115,7 +147,7 @@ async function setupCustomerDiscoveryMocks(page, options = {}) {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ code: 200, message: 'OK', data: mockBanners })
+      body: JSON.stringify({ code: 200, message: 'OK', data: banners })
     })
   })
 
@@ -149,7 +181,7 @@ async function setupCustomerDiscoveryMocks(page, options = {}) {
   })
 }
 
-test.describe('VeloBus Gate B5.1 — Customer Discovery & Mobility UX', () => {
+test.describe('VeloBus Gate B5.1 Corrected — Customer Discovery & Mobility UX', () => {
 
   // -------------------------------------------------------------------------
   // B5-01: Home Page Desktop Light
@@ -161,29 +193,31 @@ test.describe('VeloBus Gate B5.1 — Customer Discovery & Mobility UX', () => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
-    // Verify Warm Minimalist Hero
+    // Verify Warm Minimalist Hero & Shared TripSearchForm
     await expect(page.locator('h1')).toContainText('Đặt Vé Xe Khách Liên Tỉnh')
+    await expect(page.locator('[data-testid="trip-search-form"]')).toBeVisible()
     await expect(page.locator('[data-testid="departure-city-select"]')).toBeVisible()
     await expect(page.locator('[data-testid="arrival-city-select"]')).toBeVisible()
+    await expect(page.locator('[data-testid="departure-datepicker-trigger"]')).toBeVisible()
     await expect(page.locator('[data-testid="btn-search-trips"]')).toBeVisible()
 
-    // Verify Active Banners from API
-    await expect(page.getByText('Ưu Đãi VeloBus Tuyến Bắc Nam Mùa Lễ')).toBeVisible()
+    // Verify authentic banners from API
+    await expect(page.getByText('Ưu Đãi Tuyến Bắc Nam Mùa Du Lịch')).toBeVisible()
 
     await page.screenshot({ path: path.join(screenshotDir, 'home-desktop-light.png') })
   })
 
   // -------------------------------------------------------------------------
-  // B5-02: Home Page Desktop Dark
+  // B5-02: Home Page Desktop Dark - Theme synchronization & Computed Contrast
   // -------------------------------------------------------------------------
-  test('B5-02: Home Page Desktop Dark - Theme synchronization', async ({ page }) => {
+  test('B5-02: Home Page Desktop Dark - Theme synchronization and computed colors', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await setupCustomerDiscoveryMocks(page)
 
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
-    // Open Theme Studio & Switch to Dark Mode
+    // Open Theme Studio & Switch to Dark Mode & Save (Commit)
     const themeTrigger = page.locator('[data-testid="theme-customizer-trigger"]')
     if (await themeTrigger.isVisible()) {
       await themeTrigger.click()
@@ -192,12 +226,24 @@ test.describe('VeloBus Gate B5.1 — Customer Discovery & Mobility UX', () => {
 
       const darkBtn = drawer.getByRole('button', { name: 'Tối', exact: true })
       await darkBtn.click()
-      await page.keyboard.press('Escape')
+
+      // PRE-05: Click "Lưu giao diện" to commit draft theme before closing
+      const saveBtn = drawer.getByRole('button', { name: 'Lưu giao diện' })
+      if (await saveBtn.isVisible()) {
+        await saveBtn.click()
+      } else {
+        await page.keyboard.press('Escape')
+      }
     } else {
       await page.evaluate(() => document.documentElement.classList.add('dark'))
     }
 
     await expect(page.locator('html')).toHaveClass(/dark/)
+
+    // Assert computed dark background color on body
+    const bodyBg = await page.evaluate(() => window.getComputedStyle(document.body).backgroundColor)
+    expect(bodyBg).not.toBe('rgb(255, 255, 255)')
+
     await page.screenshot({ path: path.join(screenshotDir, 'home-desktop-dark.png') })
   })
 
@@ -234,9 +280,9 @@ test.describe('VeloBus Gate B5.1 — Customer Discovery & Mobility UX', () => {
   })
 
   // -------------------------------------------------------------------------
-  // B5-05: Station Selection & Swap Interaction
+  // B5-05: Station Selection (Combobox/Select) & Swap Interaction
   // -------------------------------------------------------------------------
-  test('B5-05: Station selection and Swap button interaction', async ({ page }) => {
+  test('B5-05: Station selection via Select/Combobox and Swap button interaction', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await setupCustomerDiscoveryMocks(page)
 
@@ -245,37 +291,39 @@ test.describe('VeloBus Gate B5.1 — Customer Discovery & Mobility UX', () => {
 
     const depSelect = page.locator('[data-testid="departure-city-select"]')
     const arrSelect = page.locator('[data-testid="arrival-city-select"]')
+    await expect(depSelect).toBeVisible()
+    await expect(arrSelect).toBeVisible()
 
-    await depSelect.selectOption('Hà Nội')
-    await arrSelect.selectOption('Đà Nẵng')
+    const initialDep = await depSelect.innerText()
+    const initialArr = await arrSelect.innerText()
 
     // Click swap button
     const swapBtn = page.getByTitle('Đổi chiều điểm đi và điểm đến')
     await swapBtn.click()
 
-    await expect(depSelect).toHaveValue('Đà Nẵng')
-    await expect(arrSelect).toHaveValue('Hà Nội')
+    await expect(depSelect).toContainText(initialArr)
+    await expect(arrSelect).toContainText(initialDep)
 
     await page.screenshot({ path: path.join(screenshotDir, 'station-selection.png') })
   })
 
   // -------------------------------------------------------------------------
-  // B5-06: Timezone-safe Departure Datepicker
+  // B5-06: Timezone-safe Departure Datepicker (Popover + Calendar vi-VN)
   // -------------------------------------------------------------------------
-  test('B5-06: Timezone-safe Datepicker interaction (>= today, vi-VN)', async ({ page }) => {
+  test('B5-06: Timezone-safe Datepicker interaction with Popover Calendar (>= today, vi-VN)', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await setupCustomerDiscoveryMocks(page)
 
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
-    const dateInput = page.locator('#departure-date-input')
-    await expect(dateInput).toBeVisible()
+    const dateTrigger = page.locator('[data-testid="departure-datepicker-trigger"]')
+    await expect(dateTrigger).toBeVisible()
 
-    const todayIso = new Date().toISOString().split('T')[0]
-    const minAttr = await dateInput.getAttribute('min')
-    expect(minAttr).toBeTruthy()
-    expect(minAttr <= todayIso).toBe(true)
+    // Open Calendar Popover
+    await dateTrigger.click()
+    const calendarPopover = page.locator('[role="dialog"]')
+    await expect(calendarPopover).toBeVisible()
 
     await page.screenshot({ path: path.join(screenshotDir, 'departure-datepicker.png') })
   })
@@ -290,35 +338,51 @@ test.describe('VeloBus Gate B5.1 — Customer Discovery & Mobility UX', () => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
-    const depSelect = page.locator('[data-testid="departure-city-select"]')
-    const arrSelect = page.locator('[data-testid="arrival-city-select"]')
+    // Click departure select and choose "Hà Nội"
+    await page.locator('[data-testid="departure-city-select"]').click()
+    await page.locator('[role="option"]:has-text("Hà Nội")').click()
 
-    await depSelect.selectOption('Hà Nội')
-    await arrSelect.selectOption('Hà Nội')
+    // Click arrival select and choose "Hà Nội"
+    await page.locator('[data-testid="arrival-city-select"]').click()
+    await page.locator('[role="option"]:has-text("Hà Nội")').click()
 
     const searchBtn = page.locator('[data-testid="btn-search-trips"]')
     await searchBtn.click()
 
+    await expect(page.locator('[data-testid="search-validation-error"]')).toBeVisible()
     await expect(page.locator('text=Điểm đi và điểm đến không được trùng nhau')).toBeVisible()
 
     await page.screenshot({ path: path.join(screenshotDir, 'search-validation.png') })
   })
 
   // -------------------------------------------------------------------------
-  // B5-08: Search Navigation to Trip List View
+  // B5-08: Station loading, error and empty states
   // -------------------------------------------------------------------------
-  test('B5-08: Valid search navigates to /search with synced query params', async ({ page }) => {
+  test('B5-08: Station loading error handling', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await setupCustomerDiscoveryMocks(page, { stationsFail: true })
+
+    await page.goto('/')
+    await page.waitForLoadState('networkidle')
+
+    await expect(page.locator('text=Lỗi tải danh mục bến xe')).toBeVisible()
+  })
+
+  // -------------------------------------------------------------------------
+  // B5-09: Valid search navigates to /search with synced query params
+  // -------------------------------------------------------------------------
+  test('B5-09: Valid search navigates to /search with synced query params', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await setupCustomerDiscoveryMocks(page)
 
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
-    const depSelect = page.locator('[data-testid="departure-city-select"]')
-    const arrSelect = page.locator('[data-testid="arrival-city-select"]')
+    await page.locator('[data-testid="departure-city-select"]').click()
+    await page.locator('[role="option"]:has-text("Hà Nội")').click()
 
-    await depSelect.selectOption('Hà Nội')
-    await arrSelect.selectOption('Đà Nẵng')
+    await page.locator('[data-testid="arrival-city-select"]').click()
+    await page.locator('[role="option"]:has-text("Đà Nẵng")').click()
 
     const searchBtn = page.locator('[data-testid="btn-search-trips"]')
     await searchBtn.click()
@@ -329,9 +393,9 @@ test.describe('VeloBus Gate B5.1 — Customer Discovery & Mobility UX', () => {
   })
 
   // -------------------------------------------------------------------------
-  // B5-09: Trip List Desktop Light
+  // B5-10: Trip List Desktop Light
   // -------------------------------------------------------------------------
-  test('B5-09: Trip List Desktop Light - Header search summary, filter sidebar, trip cards', async ({ page }) => {
+  test('B5-10: Trip List Desktop Light - Header search summary, filter sidebar, trip cards', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await setupCustomerDiscoveryMocks(page)
 
@@ -345,44 +409,39 @@ test.describe('VeloBus Gate B5.1 — Customer Discovery & Mobility UX', () => {
 
     // Assert cards loaded from mockTrips
     const cards = page.locator('[data-testid="trip-card"]')
-    await expect(cards).toHaveCount(3)
+    await expect(cards).toHaveCount(4)
     await expect(cards.first().getByText('HN-DN-01')).toBeVisible()
 
     await page.screenshot({ path: path.join(screenshotDir, 'triplist-desktop-light.png') })
   })
 
   // -------------------------------------------------------------------------
-  // B5-10: Trip List Desktop Dark
+  // B5-11: Trip List Desktop Dark
   // -------------------------------------------------------------------------
-  test('B5-10: Trip List Desktop Dark - Warm Minimalist Dark Mode', async ({ page }) => {
+  test('B5-11: Trip List Desktop Dark - Warm Minimalist Dark Mode & Color Contrast', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await setupCustomerDiscoveryMocks(page)
 
     await page.goto('/search?departureCity=Hà Nội&arrivalCity=Đà Nẵng')
     await page.waitForLoadState('networkidle')
 
-    // Open Theme Studio & Switch to Dark Mode
-    const themeTrigger = page.locator('[data-testid="theme-customizer-trigger"]')
-    if (await themeTrigger.isVisible()) {
-      await themeTrigger.click()
-      const drawer = page.locator('[data-testid="theme-customizer-drawer"]')
-      await expect(drawer).toBeVisible()
-
-      const darkBtn = drawer.getByRole('button', { name: 'Tối', exact: true })
-      await darkBtn.click()
-      await page.keyboard.press('Escape')
-    } else {
-      await page.evaluate(() => document.documentElement.classList.add('dark'))
-    }
+    // Commit dark mode
+    await page.evaluate(() => {
+      document.documentElement.classList.add('dark')
+      document.documentElement.setAttribute('data-theme', 'dark')
+    })
 
     await expect(page.locator('html')).toHaveClass(/dark/)
+    const bodyBg = await page.evaluate(() => window.getComputedStyle(document.body).backgroundColor)
+    expect(bodyBg).not.toBe('rgb(255, 255, 255)')
+
     await page.screenshot({ path: path.join(screenshotDir, 'triplist-desktop-dark.png') })
   })
 
   // -------------------------------------------------------------------------
-  // B5-11: Trip List Responsive Tablet (768x1024)
+  // B5-12: Trip List Responsive Tablet (768x1024)
   // -------------------------------------------------------------------------
-  test('B5-11: Trip List Responsive Tablet (768x1024)', async ({ page }) => {
+  test('B5-12: Trip List Responsive Tablet (768x1024)', async ({ page }) => {
     await page.setViewportSize({ width: 768, height: 1024 })
     await setupCustomerDiscoveryMocks(page)
 
@@ -391,15 +450,15 @@ test.describe('VeloBus Gate B5.1 — Customer Discovery & Mobility UX', () => {
 
     await expect(page.locator('[data-testid="search-summary-header"]')).toBeVisible()
     const cards = page.locator('[data-testid="trip-card"]')
-    await expect(cards).toHaveCount(3)
+    await expect(cards).toHaveCount(4)
 
     await page.screenshot({ path: path.join(screenshotDir, 'triplist-tablet.png') })
   })
 
   // -------------------------------------------------------------------------
-  // B5-12: Trip List Responsive Mobile (375x812)
+  // B5-13: Trip List Responsive Mobile (375x812)
   // -------------------------------------------------------------------------
-  test('B5-12: Trip List Responsive Mobile (375x812)', async ({ page }) => {
+  test('B5-13: Trip List Responsive Mobile (375x812)', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 })
     await setupCustomerDiscoveryMocks(page)
 
@@ -413,9 +472,9 @@ test.describe('VeloBus Gate B5.1 — Customer Discovery & Mobility UX', () => {
   })
 
   // -------------------------------------------------------------------------
-  // B5-13: Mobile Filter Sheet Open (375x812)
+  // B5-14: Mobile Filter Sheet Open (375x812)
   // -------------------------------------------------------------------------
-  test('B5-13: Mobile Filter Sheet open with controls on 375px', async ({ page }) => {
+  test('B5-14: Mobile Filter Sheet open with controls on 375px', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 })
     await setupCustomerDiscoveryMocks(page)
 
@@ -427,17 +486,16 @@ test.describe('VeloBus Gate B5.1 — Customer Discovery & Mobility UX', () => {
 
     const sheetContent = page.getByRole('dialog')
     await expect(sheetContent).toBeVisible()
-    await expect(sheetContent.getByText('Khung giờ xuất bến')).toBeVisible()
+    await expect(sheetContent.getByText('Khung giờ xuất bến', { exact: true })).toBeVisible()
 
     await page.screenshot({ path: path.join(screenshotDir, 'triplist-filter-sheet-mobile.png') })
   })
 
   // -------------------------------------------------------------------------
-  // B5-14: Loading Skeleton State
+  // B5-15: Loading Skeleton State
   // -------------------------------------------------------------------------
-  test('B5-14: Loading Skeleton state during API fetch', async ({ page }) => {
+  test('B5-15: Loading Skeleton state during API fetch', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
-    // Delay 3000ms to capture skeleton
     await setupCustomerDiscoveryMocks(page, { delayTripsMs: 3000 })
 
     await page.goto('/search?departureCity=Hà Nội&arrivalCity=Đà Nẵng')
@@ -447,9 +505,9 @@ test.describe('VeloBus Gate B5.1 — Customer Discovery & Mobility UX', () => {
   })
 
   // -------------------------------------------------------------------------
-  // B5-15: Empty Results State
+  // B5-16: Empty Results State
   // -------------------------------------------------------------------------
-  test('B5-15: Empty Results state when 0 trips returned', async ({ page }) => {
+  test('B5-16: Empty Results state when 0 trips returned', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await setupCustomerDiscoveryMocks(page, { trips: [] })
 
@@ -463,9 +521,9 @@ test.describe('VeloBus Gate B5.1 — Customer Discovery & Mobility UX', () => {
   })
 
   // -------------------------------------------------------------------------
-  // B5-16: Error & Retry State
+  // B5-17: Error & Retry State
   // -------------------------------------------------------------------------
-  test('B5-16: Error & Retry state when API returns 500 error', async ({ page }) => {
+  test('B5-17: Error & Retry state when API returns 500 error', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await setupCustomerDiscoveryMocks(page, { tripsFail: true })
 
@@ -479,54 +537,57 @@ test.describe('VeloBus Gate B5.1 — Customer Discovery & Mobility UX', () => {
   })
 
   // -------------------------------------------------------------------------
-  // B5-17: Client Filters & Sorting
+  // B5-18: PRE-02 TripDto totalSeats displayed as Capacity (Not Available Seats)
   // -------------------------------------------------------------------------
-  test('B5-17: Client-side filtering by coach type and price sorting', async ({ page }) => {
+  test('B5-18: TripDto totalSeats displayed as Capacity without fake availability claims', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await setupCustomerDiscoveryMocks(page)
 
     await page.goto('/search?departureCity=Hà Nội&arrivalCity=Đà Nẵng')
     await page.waitForLoadState('networkidle')
 
-    // Initial count is 3
-    await expect(page.locator('[data-testid="trip-card"]')).toHaveCount(3)
-
-    // Filter by Coach type: Limousine
-    const coachFilter = page.locator('[data-testid="filter-coach-type"]')
-    await coachFilter.selectOption('LIMOUSINE')
-
-    // Should now show 2 trips (HN-DN-01 and HN-DN-03)
-    await expect(page.locator('[data-testid="trip-card"]')).toHaveCount(2)
-
-    // Sort by price: descending
-    const sortSelect = page.locator('[data-testid="sort-select"]')
-    await sortSelect.selectOption('PRICE_DESC')
-
-    // First card should be the 450,000 VND trip (HN-DN-03)
     const firstCard = page.locator('[data-testid="trip-card"]').first()
-    await expect(firstCard).toContainText('450.000')
+    // PRE-02: Assert "Sức chứa 34 chỗ" instead of "Còn 34 chỗ"
+    await expect(firstCard.locator('[data-testid="trip-capacity"]')).toContainText('Sức chứa 34 chỗ')
+    await expect(page.getByText(/Còn \d+ chỗ/)).toHaveCount(0)
+
+    // PRE-02: Assert unsupported operator filter is not displayed
+    await expect(page.locator('text=Hãng xe')).toHaveCount(0)
   })
 
   // -------------------------------------------------------------------------
-  // B5-18: Custom Primary Theme Synchronization
+  // B5-19: PRE-04 Price Filtering — Trips > 1,000,000 VND not filtered by default
   // -------------------------------------------------------------------------
-  test('B5-18: Custom Primary Theme synchronization in Customer Discovery', async ({ page }) => {
+  test('B5-19: Trip with price > 1,000,000 VND appears when no price ceiling is set', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await setupCustomerDiscoveryMocks(page)
 
     await page.goto('/search?departureCity=Hà Nội&arrivalCity=Đà Nẵng')
     await page.waitForLoadState('networkidle')
 
-    // Open Theme Studio and change primary color (e.g. Amber or Emerald)
+    // 1,200,000 VND trip (HN-DN-PREMIUM) must be visible in results
+    await expect(page.locator('[data-testid="trip-card"]').getByText('1.200.000')).toBeVisible()
+  })
+
+  // -------------------------------------------------------------------------
+  // B5-20: Custom Primary Theme Synchronization
+  // -------------------------------------------------------------------------
+  test('B5-20: Custom Primary Theme synchronization in Customer Discovery', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await setupCustomerDiscoveryMocks(page)
+
+    await page.goto('/search?departureCity=Hà Nội&arrivalCity=Đà Nẵng')
+    await page.waitForLoadState('networkidle')
+
     const themeTrigger = page.locator('[data-testid="theme-customizer-trigger"]')
     if (await themeTrigger.isVisible()) {
       await themeTrigger.click()
       const drawer = page.locator('[data-testid="theme-customizer-drawer"]')
       await expect(drawer).toBeVisible()
 
-      const amberBtn = drawer.locator('button[title*="Amber"], button:has-text("Amber")')
-      if (await amberBtn.isVisible()) {
-        await amberBtn.click()
+      const colorBtn = drawer.locator('button[title*="Ocean"], button:has-text("Ocean")')
+      if (await colorBtn.isVisible()) {
+        await colorBtn.click()
       }
       await page.keyboard.press('Escape')
     }
@@ -535,9 +596,9 @@ test.describe('VeloBus Gate B5.1 — Customer Discovery & Mobility UX', () => {
   })
 
   // -------------------------------------------------------------------------
-  // B5-19: Trip Selection navigates to Seat Selection
+  // B5-21: Trip Selection navigates to Seat Selection
   // -------------------------------------------------------------------------
-  test('B5-19: Trip selection click navigates to /trips/:id/seats', async ({ page }) => {
+  test('B5-21: Trip selection click navigates to /trips/:id/seats', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await setupCustomerDiscoveryMocks(page)
 

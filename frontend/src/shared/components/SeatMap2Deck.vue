@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
+import { Bus, Check, Lock, X } from 'lucide-vue-next'
 
 const props = defineProps({
   seats: {
@@ -10,13 +11,17 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
+  heldSeats: {
+    type: Array,
+    default: () => []
+  },
   basePrice: {
     type: Number,
-    default: 350000
+    default: 0
   },
   maxSelectable: {
     type: Number,
-    default: 4
+    default: 10
   },
   readonly: {
     type: Boolean,
@@ -26,76 +31,55 @@ const props = defineProps({
 
 const emit = defineEmits(['toggle-seat'])
 
-// Active Deck Tab: 'LOWER' or 'UPPER' (or 'BOTH' on wide screens)
+// Active Deck Tab: 'LOWER' or 'UPPER'
 const activeDeck = ref('LOWER')
 
-// Fallback seed generator if backend seats not yet loaded
-const defaultLowerSeats = [
-  { code: 'A01', deck: 'LOWER', row: 1, col: 1, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'A02', deck: 'LOWER', row: 1, col: 2, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'A03', deck: 'LOWER', row: 1, col: 3, status: 'SOLD', price: props.basePrice },
-  { code: 'A04', deck: 'LOWER', row: 2, col: 1, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'A05', deck: 'LOWER', row: 2, col: 2, status: 'HELD_BY_OTHER', price: props.basePrice },
-  { code: 'A06', deck: 'LOWER', row: 2, col: 3, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'A07', deck: 'LOWER', row: 3, col: 1, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'A08', deck: 'LOWER', row: 3, col: 2, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'A09', deck: 'LOWER', row: 3, col: 3, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'A10', deck: 'LOWER', row: 4, col: 1, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'A11', deck: 'LOWER', row: 4, col: 2, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'A12', deck: 'LOWER', row: 4, col: 3, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'A13', deck: 'LOWER', row: 5, col: 1, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'A14', deck: 'LOWER', row: 5, col: 2, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'A15', deck: 'LOWER', row: 5, col: 3, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'A16', deck: 'LOWER', row: 6, col: 1, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'A17', deck: 'LOWER', row: 6, col: 2, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'A18', deck: 'LOWER', row: 6, col: 3, status: 'AVAILABLE', price: props.basePrice },
-]
+// Physical seat normalization from backend SeatDto:
+// { id, tripId, seatNumber, seatType, priceMultiplier, finalPrice }
+const normalizedSeats = computed(() => {
+  return (props.seats || []).map(s => {
+    const code = s.seatNumber || s.seatCode || s.code || ''
+    const price = Number(s.finalPrice) || Number(s.price) || props.basePrice || 0
+    let deck = s.deck
+    if (!deck) {
+      if (code.toUpperCase().startsWith('A')) deck = 'LOWER'
+      else if (code.toUpperCase().startsWith('B')) deck = 'UPPER'
+      else deck = 'SINGLE'
+    }
+    return {
+      id: s.id,
+      code,
+      deck,
+      seatType: s.seatType || 'STANDARD',
+      priceMultiplier: s.priceMultiplier || 1.0,
+      price,
+      status: (s.status || '').toUpperCase()
+    }
+  })
+})
 
-const defaultUpperSeats = [
-  { code: 'B01', deck: 'UPPER', row: 1, col: 1, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'B02', deck: 'UPPER', row: 1, col: 2, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'B03', deck: 'UPPER', row: 1, col: 3, status: 'SOLD', price: props.basePrice },
-  { code: 'B04', deck: 'UPPER', row: 2, col: 1, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'B05', deck: 'UPPER', row: 2, col: 2, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'B06', deck: 'UPPER', row: 2, col: 3, status: 'SOLD', price: props.basePrice },
-  { code: 'B07', deck: 'UPPER', row: 3, col: 1, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'B08', deck: 'UPPER', row: 3, col: 2, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'B09', deck: 'UPPER', row: 3, col: 3, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'B10', deck: 'UPPER', row: 4, col: 1, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'B11', deck: 'UPPER', row: 4, col: 2, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'B12', deck: 'UPPER', row: 4, col: 3, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'B13', deck: 'UPPER', row: 5, col: 1, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'B14', deck: 'UPPER', row: 5, col: 2, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'B15', deck: 'UPPER', row: 5, col: 3, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'B16', deck: 'UPPER', row: 6, col: 1, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'B17', deck: 'UPPER', row: 6, col: 2, status: 'AVAILABLE', price: props.basePrice },
-  { code: 'B18', deck: 'UPPER', row: 6, col: 3, status: 'AVAILABLE', price: props.basePrice },
-]
-
-const effectiveSeats = computed(() => {
-  if (props.seats && props.seats.length > 0) return props.seats
-  return [...defaultLowerSeats, ...defaultUpperSeats]
+const hasMultipleDecks = computed(() => {
+  const hasLower = normalizedSeats.value.some(s => s.deck === 'LOWER' || s.code.startsWith('A'))
+  const hasUpper = normalizedSeats.value.some(s => s.deck === 'UPPER' || s.code.startsWith('B'))
+  return hasLower && hasUpper
 })
 
 const lowerDeckSeats = computed(() => {
-  return effectiveSeats.value.filter(s => {
-    const code = s.code || s.seatCode || ''
-    return s.deck === 'LOWER' || s.deck === 1 || code.startsWith('A')
-  }).map(s => ({ ...s, code: s.code || s.seatCode }))
+  if (!hasMultipleDecks.value) return normalizedSeats.value
+  return normalizedSeats.value.filter(s => s.deck === 'LOWER' || s.code.startsWith('A'))
 })
 
 const upperDeckSeats = computed(() => {
-  return effectiveSeats.value.filter(s => {
-    const code = s.code || s.seatCode || ''
-    return s.deck === 'UPPER' || s.deck === 2 || code.startsWith('B')
-  }).map(s => ({ ...s, code: s.code || s.seatCode }))
+  return normalizedSeats.value.filter(s => s.deck === 'UPPER' || s.code.startsWith('B'))
 })
 
 function getSeatStatus(seat) {
-  if (props.selectedSeats.includes(seat.code)) return 'SELECTED'
+  const code = seat.code
+  if (props.selectedSeats.includes(code)) return 'SELECTED'
+  if (props.heldSeats.includes(code)) return 'HELD_BY_ME'
   const rawStatus = (seat.status || '').toUpperCase()
   if (rawStatus === 'HELD' || rawStatus === 'HELD_BY_OTHER') return 'HELD_BY_OTHER'
-  if (rawStatus === 'BOOKED' || rawStatus === 'SOLD' || rawStatus === 'CONFIRMED') return 'SOLD'
+  if (rawStatus === 'BOOKED' || rawStatus === 'SOLD' || rawStatus === 'CONFIRMED' || rawStatus === 'UNAVAILABLE') return 'SOLD'
   return 'AVAILABLE'
 }
 
@@ -105,155 +89,207 @@ function handleSeatClick(seat) {
   if (status === 'SOLD' || status === 'HELD_BY_OTHER') return
   emit('toggle-seat', seat.code)
 }
+
+function formatCurrency(val) {
+  if (val === undefined || val === null) return '0'
+  return Number(val).toLocaleString('vi-VN')
+}
 </script>
 
 <template>
-  <div class="bg-surface rounded-xl border border-border-default p-5 shadow-card">
-    <!-- Top Deck Toggle & Coach Header -->
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-border-default gap-3">
+  <div class="bg-card text-card-foreground rounded-xl border border-border p-5 shadow-sm space-y-5">
+    <!-- Header: Title & Deck Switcher Tabs -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-border gap-3">
       <div>
-        <h3 class="text-base font-semibold text-text-primary flex items-center gap-2">
-          <svg class="w-5 h-5 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <rect x="3" y="4" width="18" height="16" rx="2" stroke-width="2"/>
-            <path d="M7 8h10M7 12h10M7 16h4" stroke-width="2" stroke-linecap="round"/>
-          </svg>
-          Sơ đồ xe Limousine VIP (36 Giường nằm 2 Tầng)
+        <h3 class="text-base font-semibold text-foreground flex items-center gap-2">
+          <Bus class="w-5 h-5 text-primary" />
+          <span>Sơ đồ chỗ ngồi</span>
         </h3>
-        <p class="text-xs text-text-muted mt-0.5">Nhấp vào giường còn trống để chọn chỗ (Tối đa {{ maxSelectable }} vé)</p>
+        <p class="text-xs text-muted-foreground mt-0.5">
+          Chọn giường còn trống trên sơ đồ xe (Tối đa {{ maxSelectable }} giường/vé)
+        </p>
       </div>
 
-      <!-- Deck Switcher Tabs -->
-      <div class="inline-flex rounded-lg border border-border-default p-1 bg-canvas">
+      <!-- Deck Switcher Tabs (Only if multiple decks exist) -->
+      <div v-if="hasMultipleDecks" class="inline-flex rounded-lg border border-border p-1 bg-muted/40 self-start sm:self-auto">
         <button
           type="button"
+          data-testid="deck-tab-lower"
           @click="activeDeck = 'LOWER'"
           :class="[
             'px-3.5 py-1.5 text-xs font-semibold rounded-md transition-all',
             activeDeck === 'LOWER'
-              ? 'bg-primary-600 text-white shadow-sm'
-              : 'text-text-secondary hover:text-text-primary'
+              ? 'bg-primary text-primary-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
           ]"
         >
-          Tầng Dưới (A01 - A18)
+          Tầng Dưới (A)
         </button>
         <button
           type="button"
+          data-testid="deck-tab-upper"
           @click="activeDeck = 'UPPER'"
           :class="[
             'px-3.5 py-1.5 text-xs font-semibold rounded-md transition-all',
             activeDeck === 'UPPER'
-              ? 'bg-primary-600 text-white shadow-sm'
-              : 'text-text-secondary hover:text-text-primary'
+              ? 'bg-primary text-primary-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
           ]"
         >
-          Tầng Trên (B01 - B18)
+          Tầng Trên (B)
         </button>
       </div>
     </div>
 
-    <!-- Visual Status Legend Bar (Single Source of Truth) -->
-    <div class="py-3 px-3.5 my-4 bg-canvas rounded-lg border border-border-default flex flex-wrap items-center justify-between gap-2.5 text-xs">
-      <div class="flex items-center gap-1.5">
-        <div class="w-4 h-4 rounded border border-slate-300 bg-white shadow-sm"></div>
-        <span class="text-text-secondary font-medium">Trống</span>
+    <!-- Visual Status Legend Bar (Accessible with Symbols & Text Labels) -->
+    <div class="py-3 px-3.5 bg-muted/30 rounded-lg border border-border flex flex-wrap items-center justify-between gap-3 text-xs">
+      <div class="flex items-center gap-2">
+        <div class="w-4 h-4 rounded border border-border bg-card shadow-xs"></div>
+        <span class="text-muted-foreground font-medium">Trống</span>
       </div>
-      <div class="flex items-center gap-1.5">
-        <div class="w-4 h-4 rounded bg-primary-600 ring-2 ring-primary-100 flex items-center justify-center text-white text-[10px] font-bold">✓</div>
-        <span class="text-text-secondary font-medium">Đang chọn</span>
+      <div class="flex items-center gap-2">
+        <div class="w-4 h-4 rounded bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">
+          <Check class="w-3 h-3 stroke-[3]" />
+        </div>
+        <span class="text-muted-foreground font-medium">Đang chọn</span>
       </div>
-      <div class="flex items-center gap-1.5">
-        <div class="w-4 h-4 rounded bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-800 text-[10px]">🔒</div>
-        <span class="text-text-secondary font-medium">Đang giữ chỗ</span>
+      <div class="flex items-center gap-2">
+        <div class="w-4 h-4 rounded bg-amber-500/20 border border-amber-500/40 text-amber-600 dark:text-amber-400 flex items-center justify-center text-[10px]">
+          <Lock class="w-2.5 h-2.5" />
+        </div>
+        <span class="text-muted-foreground font-medium">Đang giữ chỗ</span>
       </div>
-      <div class="flex items-center gap-1.5">
-        <div class="w-4 h-4 rounded bg-surface-muted border border-border-default flex items-center justify-center text-slate-400 text-[10px]">✕</div>
-        <span class="text-text-secondary font-medium">Đã bán</span>
+      <div class="flex items-center gap-2">
+        <div class="w-4 h-4 rounded bg-muted border border-border text-muted-foreground/60 flex items-center justify-center text-[10px]">
+          <X class="w-2.5 h-2.5" />
+        </div>
+        <span class="text-muted-foreground font-medium">Đã bán / Khóa</span>
       </div>
     </div>
 
     <!-- Bus Cabin Visualization Body -->
-    <div class="bg-canvas rounded-xl p-4 sm:p-6 border border-border-default flex flex-col items-center">
-      <!-- Front Cab Header (Steering Wheel / Windshield) -->
-      <div class="w-full max-w-md bg-white border border-border-default rounded-t-2xl p-3 mb-4 shadow-sm flex items-center justify-between text-xs text-text-muted">
-        <div class="flex items-center gap-2">
-          <!-- Steering wheel icon -->
-          <svg class="w-5 h-5 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <circle cx="12" cy="12" r="9" stroke-width="2"/>
-            <path d="M12 3v18M3 12h18" stroke-width="2"/>
+    <div class="bg-muted/20 rounded-xl p-4 sm:p-6 border border-border flex flex-col items-center">
+      <!-- Front Cab Header (Driver / Windshield) -->
+      <div class="w-full max-w-md bg-card border border-border rounded-t-2xl p-3 mb-5 shadow-xs flex items-center justify-between text-xs text-muted-foreground">
+        <div class="flex items-center gap-2 font-medium text-foreground">
+          <svg class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M12 3v18M3 12h18"/>
           </svg>
-          <span class="font-medium text-text-secondary">Khu vực Tài xế</span>
+          <span>Khu vực Tài xế</span>
         </div>
-        <span class="text-[11px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-medium">Cửa lên xuống</span>
+        <span class="text-[11px] bg-muted text-muted-foreground px-2 py-0.5 rounded font-medium border border-border">
+          Cửa lên xuống
+        </span>
       </div>
 
-      <!-- Berth Grid: Lower Deck -->
-      <div v-show="activeDeck === 'LOWER'" class="w-full max-w-md space-y-3">
+      <!-- Empty State if no seats in deck -->
+      <div v-if="normalizedSeats.length === 0" class="py-12 text-center text-xs text-muted-foreground" data-testid="deck-empty">
+        Không có dữ liệu ghế cho chuyến xe này.
+      </div>
+
+      <!-- Berth Grid: Lower Deck (or Single Deck) -->
+      <div
+        v-else-if="!hasMultipleDecks || activeDeck === 'LOWER'"
+        class="w-full max-w-md space-y-3"
+        data-testid="seat-grid-lower"
+      >
         <div class="grid grid-cols-3 gap-3 sm:gap-4">
-          <div
+          <button
             v-for="seat in lowerDeckSeats"
             :key="seat.code"
+            type="button"
             :data-testid="'seat-' + seat.code"
+            :disabled="getSeatStatus(seat) === 'SOLD' || getSeatStatus(seat) === 'HELD_BY_OTHER' || readonly"
             @click="handleSeatClick(seat)"
             :class="[
-              'relative rounded-lg p-3 transition-all select-none border text-center flex flex-col items-center justify-center h-20',
-              getSeatStatus(seat) === 'AVAILABLE' && 'bg-white border-border-strong hover:border-primary-600 hover:shadow-md cursor-pointer text-text-primary',
-              getSeatStatus(seat) === 'SELECTED' && 'bg-primary-600 border-primary-600 text-white font-bold ring-2 ring-primary-100 shadow-sm cursor-pointer',
-              getSeatStatus(seat) === 'HELD_BY_OTHER' && 'bg-amber-50 border-amber-300 text-amber-800 cursor-not-allowed',
-              getSeatStatus(seat) === 'SOLD' && 'bg-surface-muted border-border-default text-text-muted cursor-not-allowed opacity-75'
+              'relative rounded-lg p-3 transition-all select-none border text-center flex flex-col items-center justify-center h-20 w-full focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
+              getSeatStatus(seat) === 'AVAILABLE' && 'bg-card border-border hover:border-primary hover:shadow-xs cursor-pointer text-foreground',
+              getSeatStatus(seat) === 'SELECTED' && 'bg-primary border-primary text-primary-foreground font-bold shadow-xs cursor-pointer',
+              getSeatStatus(seat) === 'HELD_BY_ME' && 'bg-primary/10 border-primary text-primary font-bold shadow-xs cursor-pointer',
+              getSeatStatus(seat) === 'HELD_BY_OTHER' && 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400 cursor-not-allowed opacity-90',
+              getSeatStatus(seat) === 'SOLD' && 'bg-muted/60 border-border/60 text-muted-foreground/60 cursor-not-allowed opacity-60'
             ]"
+            :aria-label="`Giường ${seat.code}, ${getSeatStatus(seat)}`"
           >
             <!-- Bed Silhouette / Icon -->
-            <svg class="w-4 h-4 mb-1" :class="getSeatStatus(seat) === 'SELECTED' ? 'text-white' : 'text-slate-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-4 h-4 mb-1" :class="getSeatStatus(seat) === 'SELECTED' ? 'text-primary-foreground' : 'text-muted-foreground'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M3 10h18M3 14h18M5 18h14M3 6h4v4H3z"/>
             </svg>
             <span class="text-sm font-semibold tabular-nums">{{ seat.code }}</span>
-            <span class="text-[10px] tabular-nums mt-0.5" :class="getSeatStatus(seat) === 'SELECTED' ? 'text-blue-100' : 'text-text-muted'">
-              {{ (seat.price || basePrice).toLocaleString('vi-VN') }}đ
+            <span class="text-[10px] tabular-nums mt-0.5" :class="getSeatStatus(seat) === 'SELECTED' ? 'text-primary-foreground/90' : 'text-muted-foreground'">
+              {{ formatCurrency(seat.price) }}đ
             </span>
 
             <!-- Status Indicator Overlay -->
-            <span v-if="getSeatStatus(seat) === 'HELD_BY_OTHER'" class="absolute top-1 right-1 text-[10px]" title="Đang trong phiên giữ chỗ 10 phút của người khác">🔒</span>
-            <span v-if="getSeatStatus(seat) === 'SOLD'" class="absolute top-1 right-1 text-[10px] text-slate-400">✕</span>
-            <span v-if="getSeatStatus(seat) === 'SELECTED'" class="absolute top-1 right-1 text-[10px] text-white">✓</span>
-          </div>
+            <span v-if="getSeatStatus(seat) === 'HELD_BY_OTHER'" class="absolute top-1 right-1 text-[10px]" title="Đang trong phiên giữ chỗ">
+              <Lock class="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" />
+            </span>
+            <span v-else-if="getSeatStatus(seat) === 'HELD_BY_ME'" class="absolute top-1 right-1 text-[10px]" title="Ghế của bạn đã giữ">
+              <Lock class="w-2.5 h-2.5 text-primary" />
+            </span>
+            <span v-else-if="getSeatStatus(seat) === 'SOLD'" class="absolute top-1 right-1 text-[10px]">
+              <X class="w-2.5 h-2.5 text-muted-foreground/60" />
+            </span>
+            <span v-else-if="getSeatStatus(seat) === 'SELECTED'" class="absolute top-1 right-1 text-[10px]">
+              <Check class="w-2.5 h-2.5 stroke-[3] text-primary-foreground" />
+            </span>
+          </button>
         </div>
       </div>
 
       <!-- Berth Grid: Upper Deck -->
-      <div v-show="activeDeck === 'UPPER'" class="w-full max-w-md space-y-3">
+      <div
+        v-else-if="hasMultipleDecks && activeDeck === 'UPPER'"
+        class="w-full max-w-md space-y-3"
+        data-testid="seat-grid-upper"
+      >
         <div class="grid grid-cols-3 gap-3 sm:gap-4">
-          <div
+          <button
             v-for="seat in upperDeckSeats"
             :key="seat.code"
+            type="button"
             :data-testid="'seat-' + seat.code"
+            :disabled="getSeatStatus(seat) === 'SOLD' || getSeatStatus(seat) === 'HELD_BY_OTHER' || readonly"
             @click="handleSeatClick(seat)"
             :class="[
-              'relative rounded-lg p-3 transition-all select-none border text-center flex flex-col items-center justify-center h-20',
-              getSeatStatus(seat) === 'AVAILABLE' && 'bg-white border-border-strong hover:border-primary-600 hover:shadow-md cursor-pointer text-text-primary',
-              getSeatStatus(seat) === 'SELECTED' && 'bg-primary-600 border-primary-600 text-white font-bold ring-2 ring-primary-100 shadow-sm cursor-pointer',
-              getSeatStatus(seat) === 'HELD_BY_OTHER' && 'bg-amber-50 border-amber-300 text-amber-800 cursor-not-allowed',
-              getSeatStatus(seat) === 'SOLD' && 'bg-surface-muted border-border-default text-text-muted cursor-not-allowed opacity-75'
+              'relative rounded-lg p-3 transition-all select-none border text-center flex flex-col items-center justify-center h-20 w-full focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
+              getSeatStatus(seat) === 'AVAILABLE' && 'bg-card border-border hover:border-primary hover:shadow-xs cursor-pointer text-foreground',
+              getSeatStatus(seat) === 'SELECTED' && 'bg-primary border-primary text-primary-foreground font-bold shadow-xs cursor-pointer',
+              getSeatStatus(seat) === 'HELD_BY_ME' && 'bg-primary/10 border-primary text-primary font-bold shadow-xs cursor-pointer',
+              getSeatStatus(seat) === 'HELD_BY_OTHER' && 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400 cursor-not-allowed opacity-90',
+              getSeatStatus(seat) === 'SOLD' && 'bg-muted/60 border-border/60 text-muted-foreground/60 cursor-not-allowed opacity-60'
             ]"
+            :aria-label="`Giường ${seat.code}, ${getSeatStatus(seat)}`"
           >
             <!-- Bed Silhouette / Icon -->
-            <svg class="w-4 h-4 mb-1" :class="getSeatStatus(seat) === 'SELECTED' ? 'text-white' : 'text-slate-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-4 h-4 mb-1" :class="getSeatStatus(seat) === 'SELECTED' ? 'text-primary-foreground' : 'text-muted-foreground'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M3 10h18M3 14h18M5 18h14M3 6h4v4H3z"/>
             </svg>
             <span class="text-sm font-semibold tabular-nums">{{ seat.code }}</span>
-            <span class="text-[10px] tabular-nums mt-0.5" :class="getSeatStatus(seat) === 'SELECTED' ? 'text-blue-100' : 'text-text-muted'">
-              {{ (seat.price || basePrice).toLocaleString('vi-VN') }}đ
+            <span class="text-[10px] tabular-nums mt-0.5" :class="getSeatStatus(seat) === 'SELECTED' ? 'text-primary-foreground/90' : 'text-muted-foreground'">
+              {{ formatCurrency(seat.price) }}đ
             </span>
 
             <!-- Status Indicator Overlay -->
-            <span v-if="getSeatStatus(seat) === 'HELD_BY_OTHER'" class="absolute top-1 right-1 text-[10px]">🔒</span>
-            <span v-if="getSeatStatus(seat) === 'SOLD'" class="absolute top-1 right-1 text-[10px] text-slate-400">✕</span>
-            <span v-if="getSeatStatus(seat) === 'SELECTED'" class="absolute top-1 right-1 text-[10px] text-white">✓</span>
-          </div>
+            <span v-if="getSeatStatus(seat) === 'HELD_BY_OTHER'" class="absolute top-1 right-1 text-[10px]" title="Đang trong phiên giữ chỗ">
+              <Lock class="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" />
+            </span>
+            <span v-else-if="getSeatStatus(seat) === 'HELD_BY_ME'" class="absolute top-1 right-1 text-[10px]" title="Ghế của bạn đã giữ">
+              <Lock class="w-2.5 h-2.5 text-primary" />
+            </span>
+            <span v-else-if="getSeatStatus(seat) === 'SOLD'" class="absolute top-1 right-1 text-[10px]">
+              <X class="w-2.5 h-2.5 text-muted-foreground/60" />
+            </span>
+            <span v-else-if="getSeatStatus(seat) === 'SELECTED'" class="absolute top-1 right-1 text-[10px]">
+              <Check class="w-2.5 h-2.5 stroke-[3] text-primary-foreground" />
+            </span>
+          </button>
         </div>
       </div>
 
       <!-- Bus Rear Tail -->
-      <div class="w-full max-w-md bg-white border border-border-default rounded-b-2xl p-2.5 mt-4 text-center text-[11px] text-text-muted shadow-sm">
+      <div class="w-full max-w-md bg-card border border-border rounded-b-2xl p-2.5 mt-5 text-center text-[11px] text-muted-foreground shadow-xs">
         Đuôi xe khách · Khoang hành lý phía dưới
       </div>
     </div>

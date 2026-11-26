@@ -57,9 +57,6 @@ function handleLogout() {
               VB
             </span>
             <span class="tracking-tight text-foreground font-bold">VeloBus</span>
-            <span class="hidden sm:inline-block text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
-              Mobility SaaS
-            </span>
           </router-link>
 
           <nav class="hidden md:flex items-center gap-1.5">

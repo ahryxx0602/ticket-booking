@@ -6,6 +6,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge, StatusBadge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Slider } from '@/components/ui/slider'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -143,6 +144,7 @@ const sampleRadio = ref('option-1')
 const sampleToggle = ref(false)
 const sampleToggleGroup = ref('day')
 const sampleTime = ref('08:30')
+const sampleSlider = ref([450000])
 const singleDate = ref<any>(today(getLocalTimeZone()))
 
 // Navigation Groups
@@ -610,7 +612,7 @@ function scrollTo(id: string) {
             </p>
           </div>
 
-          <div class="p-5 rounded-lg border border-border bg-card grid grid-cols-1 md:grid-cols-3 gap-6 shadow-xs">
+          <div class="p-5 rounded-lg border border-border bg-card grid grid-cols-1 md:grid-cols-4 gap-6 shadow-xs">
             <!-- Checkbox -->
             <div class="space-y-3">
               <div class="font-bold text-xs text-foreground">Checkbox (Bo góc 4px):</div>
@@ -647,9 +649,25 @@ function scrollTo(id: string) {
               <div class="flex items-center space-x-2">
                 <Switch id="sw-1" v-model:checked="sampleSwitch" />
                 <label for="sw-1" class="text-xs text-foreground font-medium cursor-pointer">
-                  Nhận tin nhắn biến động vé qua Bot Telegram
+                  Nhận tin nhắn biến động vé
                 </label>
               </div>
+            </div>
+
+            <!-- Slider Primitive (PRE-03) -->
+            <div class="space-y-3">
+              <div class="font-bold text-xs text-foreground flex items-center justify-between">
+                <span>Slider (Thanh trượt):</span>
+                <span class="font-mono text-primary font-bold text-xs">{{ sampleSlider[0].toLocaleString('vi-VN') }} đ</span>
+              </div>
+              <Slider
+                v-model="sampleSlider"
+                :min="100000"
+                :max="1000000"
+                :step="50000"
+                class="pt-1.5"
+                data-testid="showcase-slider-demo"
+              />
             </div>
           </div>
         </section>

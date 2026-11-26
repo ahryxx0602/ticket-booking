@@ -195,6 +195,7 @@
 }
 
 .dark, .app-dark {
+  color-scheme: dark;
   /* Dark Mode Palette (OKLCH Source of Truth) */
   --background: oklch(0.2679 0.0036 106.6427);       /* #262624 */
   --foreground: oklch(0.9576 0.0027 106.4494);       /* #F1F1EF */
@@ -202,6 +203,17 @@
   --card-foreground: oklch(0.9818 0.0054 95.0986);   /* #FAF9F5 */
   --popover: oklch(0.3085 0.0035 106.6039);         /* #30302E */
   --popover-foreground: oklch(0.9211 0.0040 106.4781);
+  
+  /* PRE-05: Legacy compatibility tokens mapped to dark theme tokens */
+  --canvas: oklch(0.2679 0.0036 106.6427);
+  --surface: oklch(0.2928 0.0018 106.5092);
+  --surface-muted: oklch(0.2213 0.0038 106.7070);
+  --border-default: oklch(0.3618 0.0101 106.8928);
+  --border-strong: oklch(0.4336 0.0113 100.2195);
+  --text-primary: oklch(0.9576 0.0027 106.4494);
+  --text-secondary: oklch(0.7713 0.0169 99.0657);
+  --text-muted: oklch(0.7713 0.0169 99.0657);
+  --text-inverse: oklch(0.1908 0.0020 106.5859);
   
   --primary: oklch(0.6724 0.1308 38.7559);          /* #D97757 */
   --primary-foreground: oklch(0.1908 0.0020 106.5859); /* #141413 (WCAG AA 5.90:1 contrast with #D97757) */

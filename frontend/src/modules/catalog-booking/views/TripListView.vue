@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { catalogBookingApi } from '@/modules/catalog-booking/api'
 import TripCard from '../components/TripCard.vue'
+import TripSearchForm from '../components/TripSearchForm.vue'
 import EmptyState from '@/shared/components/EmptyState.vue'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -10,6 +11,14 @@ import { Badge } from '@/components/ui/badge'
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Slider } from '@/components/ui/slider'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select'
 import {
   Sheet,
   SheetContent,
@@ -23,18 +32,11 @@ import {
 import {
   Search,
   ArrowRight,
-  ArrowLeftRight,
   Calendar,
-  MapPin,
-  Clock,
-  Filter,
   SlidersHorizontal,
   RefreshCw,
   RotateCcw,
-  AlertCircle,
-  Bus,
-  Armchair,
-  CheckCircle2
+  AlertCircle
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -51,25 +53,23 @@ function getTodayIsoDate() {
   return `${year}-${month}-${day}`
 }
 
+function normalizeDate(dateVal) {
+  const todayIso = getTodayIsoDate()
+  if (!dateVal || dateVal < todayIso) {
+    return todayIso
+  }
+  return dateVal
+}
+
 const departureCity = ref(route.query.departureCity || route.query.from || 'Hà Nội')
 const arrivalCity = ref(route.query.arrivalCity || route.query.to || 'Đà Nẵng')
-const departureDate = ref(route.query.departureDate || route.query.date || getTodayIsoDate())
+const departureDate = ref(normalizeDate(route.query.departureDate || route.query.date))
 
 // Editable search header state
 const isEditingSearch = ref(false)
-const editFrom = ref(departureCity.value)
-const editTo = ref(arrivalCity.value)
-const editDate = ref(departureDate.value)
-const editError = ref('')
-
 const stations = ref([])
-const availableCities = computed(() => {
-  if (!stations.value || stations.value.length === 0) {
-    return ['Hà Nội', 'Đà Nẵng', 'Sài Gòn', 'Hải Phòng', 'Đà Lạt', 'Nha Trang']
-  }
-  const citySet = new Set(stations.value.map(s => s.city).filter(Boolean))
-  return Array.from(citySet)
-})
+const isLoadingStations = ref(false)
+const stationsError = ref(null)
 
 // =========================================================================
 // 2. TRIPS LOADING & OUT-OF-ORDER CANCELLATION
@@ -92,11 +92,22 @@ async function fetchTrips() {
     }
 
     const res = await catalogBookingApi.searchTrips(params)
-    // Discard response if a newer search was initiated
+    // Discard response if a newer search was initiated (Out-of-order response cancellation)
     if (currentReqId !== activeRequestId) return
 
     const data = res?.data || res || []
     rawTrips.value = Array.isArray(data) ? data : []
+
+    // PRE-04: Initialize price ceiling to highest price found (avoid excluding >1,000,000 VND trips)
+    if (rawTrips.value.length > 0) {
+      const prices = rawTrips.value.map(getTripPrice).filter(p => p > 0)
+      if (prices.length > 0) {
+        const highest = Math.max(...prices)
+        if (highest > maxPrice.value) {
+          maxPrice.value = highest
+        }
+      }
+    }
   } catch (err) {
     if (currentReqId !== activeRequestId) return
     searchError.value = err?.message || 'Không thể tải danh sách chuyến xe từ máy chủ. Vui lòng thử lại.'
@@ -109,12 +120,16 @@ async function fetchTrips() {
 }
 
 async function fetchStationsList() {
+  isLoadingStations.value = true
+  stationsError.value = null
   try {
     const res = await catalogBookingApi.getStations()
     const list = res?.data || res || []
     stations.value = Array.isArray(list) ? list : []
-  } catch (_) {
-    // Non-critical background loader
+  } catch (err) {
+    stationsError.value = err?.message || 'Không thể tải danh bạ bến xe'
+  } finally {
+    isLoadingStations.value = false
   }
 }
 
@@ -123,78 +138,58 @@ onMounted(() => {
   fetchTrips()
 })
 
-// Watch route changes to support back/forward navigation
+// Watch route changes to support browser back/forward navigation
 watch(
   () => [route.query.departureCity, route.query.arrivalCity, route.query.departureDate, route.query.from, route.query.to, route.query.date],
   () => {
     const newFrom = route.query.departureCity || route.query.from
     const newTo = route.query.arrivalCity || route.query.to
-    const newDate = route.query.departureDate || route.query.date
+    const newDate = normalizeDate(route.query.departureDate || route.query.date)
 
     if (newFrom && newFrom !== departureCity.value) departureCity.value = newFrom
     if (newTo && newTo !== arrivalCity.value) arrivalCity.value = newTo
     if (newDate && newDate !== departureDate.value) departureDate.value = newDate
 
-    editFrom.value = departureCity.value
-    editTo.value = arrivalCity.value
-    editDate.value = departureDate.value
-
     fetchTrips()
   }
 )
 
-function submitSearchModification() {
-  editError.value = ''
-  if (!editFrom.value || !editFrom.value.trim()) {
-    editError.value = 'Vui lòng chọn nơi xuất phát'
-    return
-  }
-  if (!editTo.value || !editTo.value.trim()) {
-    editError.value = 'Vui lòng chọn nơi đến'
-    return
-  }
-  if (editFrom.value.trim().toLowerCase() === editTo.value.trim().toLowerCase()) {
-    editError.value = 'Điểm đi và điểm đến không được trùng nhau'
-    return
-  }
-  if (!editDate.value) {
-    editError.value = 'Vui lòng chọn ngày đi'
-    return
-  }
-
+function onHeaderSearchSubmit({ departureCity: from, arrivalCity: to, departureDate: date }) {
   isEditingSearch.value = false
-  departureCity.value = editFrom.value
-  arrivalCity.value = editTo.value
-  departureDate.value = editDate.value
+  departureCity.value = from
+  arrivalCity.value = to
+  departureDate.value = date
 
   router.push({
     path: '/search',
     query: {
-      departureCity: departureCity.value,
-      arrivalCity: arrivalCity.value,
-      departureDate: departureDate.value,
-      from: departureCity.value,
-      to: arrivalCity.value,
-      date: departureDate.value
+      departureCity: from,
+      arrivalCity: to,
+      departureDate: date,
+      from,
+      to,
+      date
     }
   })
-}
-
-function handleSwapEdit() {
-  editError.value = ''
-  const tmp = editFrom.value
-  editFrom.value = editTo.value
-  editTo.value = tmp
 }
 
 // =========================================================================
 // 3. FILTERING & SORTING LOGIC
 // =========================================================================
 const selectedTimeSlots = ref([])
-const selectedOperators = ref([])
 const coachTypeFilter = ref('ALL')
 const sortBy = ref('DEPARTURE_ASC')
-const maxPrice = ref(1000000)
+const maxPrice = ref(2000000)
+
+function parseTripTimestamp(trip) {
+  const timeVal = trip.departureTime
+  if (!timeVal) return 0
+  try {
+    const d = new Date(timeVal)
+    if (!isNaN(d.getTime())) return d.getTime()
+  } catch (_) {}
+  return 0
+}
 
 function parseTripHour(trip) {
   const timeVal = trip.departureTime
@@ -222,42 +217,34 @@ function getTripPrice(trip) {
   return Number(trip.price || 0)
 }
 
-function getTripOperator(trip) {
-  return trip.operator || trip.tripCode || 'VeloBus Partner'
-}
-
 function getTripCoachCategory(trip) {
   if (trip.coachCategory) return trip.coachCategory
   const type = (trip.transportType || trip.coachType || '').toLowerCase()
   if (type.includes('limousine')) return 'LIMOUSINE'
   if (type.includes('giường') || type.includes('sleeper')) return 'SLEEPER'
   if (type.includes('ghế') || type.includes('seat')) return 'SEAT'
-  return 'ALL'
+  return 'OTHER'
 }
 
-// Operators extracted dynamically from raw trips
-const availableOperators = computed(() => {
-  const ops = new Set(rawTrips.value.map(getTripOperator).filter(Boolean))
-  return Array.from(ops)
-})
-
-// Dynamic price ceiling from data
+// Dynamic price bounds
 const minAvailablePrice = computed(() => {
   if (rawTrips.value.length === 0) return 100000
-  return Math.min(...rawTrips.value.map(getTripPrice))
+  const prices = rawTrips.value.map(getTripPrice).filter(p => p > 0)
+  return prices.length > 0 ? Math.min(...prices) : 100000
 })
 
 const maxAvailablePrice = computed(() => {
-  if (rawTrips.value.length === 0) return 1000000
-  const max = Math.max(...rawTrips.value.map(getTripPrice))
-  return max > 0 ? max : 1000000
+  if (rawTrips.value.length === 0) return 2000000
+  const prices = rawTrips.value.map(getTripPrice).filter(p => p > 0)
+  const max = prices.length > 0 ? Math.max(...prices) : 2000000
+  return Math.max(max, 1000000)
 })
 
 // Filtered & sorted trips
 const filteredTrips = computed(() => {
   return rawTrips.value
     .filter(trip => {
-      // Price
+      // Price filter
       const price = getTripPrice(trip)
       if (price > maxPrice.value) return false
 
@@ -267,16 +254,10 @@ const filteredTrips = computed(() => {
         if (!selectedTimeSlots.value.includes(slot)) return false
       }
 
-      // Operator
-      if (selectedOperators.value.length > 0) {
-        const op = getTripOperator(trip)
-        if (!selectedOperators.value.includes(op)) return false
-      }
-
       // Coach Category
       if (coachTypeFilter.value !== 'ALL') {
         const cat = getTripCoachCategory(trip)
-        if (cat !== coachTypeFilter.value && cat !== 'ALL') return false
+        if (cat !== coachTypeFilter.value) return false
       }
 
       return true
@@ -289,19 +270,18 @@ const filteredTrips = computed(() => {
         return getTripPrice(b) - getTripPrice(a)
       }
       if (sortBy.value === 'DEPARTURE_DESC') {
-        return parseTripHour(b) - parseTripHour(a)
+        return parseTripTimestamp(b) - parseTripTimestamp(a)
       }
-      // Default: DEPARTURE_ASC
-      return parseTripHour(a) - parseTripHour(b)
+      // Default: DEPARTURE_ASC (Sort by full timestamp)
+      return parseTripTimestamp(a) - parseTripTimestamp(b)
     })
 })
 
 function resetFilters() {
   selectedTimeSlots.value = []
-  selectedOperators.value = []
   coachTypeFilter.value = 'ALL'
   sortBy.value = 'DEPARTURE_ASC'
-  maxPrice.value = maxAvailablePrice.value || 1000000
+  maxPrice.value = maxAvailablePrice.value || 2000000
 }
 
 function toggleTimeSlot(slot) {
@@ -310,15 +290,6 @@ function toggleTimeSlot(slot) {
     selectedTimeSlots.value.splice(idx, 1)
   } else {
     selectedTimeSlots.value.push(slot)
-  }
-}
-
-function toggleOperator(op) {
-  const idx = selectedOperators.value.indexOf(op)
-  if (idx > -1) {
-    selectedOperators.value.splice(idx, 1)
-  } else {
-    selectedOperators.value.push(op)
   }
 }
 </script>
@@ -337,9 +308,9 @@ function toggleOperator(op) {
         <div class="space-y-1">
           <div class="flex items-center gap-2">
             <Badge variant="outline" class="text-[11px] font-semibold border-primary/30 text-primary bg-primary/5 uppercase tracking-wider">
-              Tìm kiếm chuyến xe
+              Lịch Trình Chuyến Xe
             </Badge>
-            <span class="text-xs text-muted-foreground">• Khởi hành theo lịch trình</span>
+            <span class="text-xs text-muted-foreground">• Khởi hành theo tuyến đường</span>
           </div>
 
           <h1 class="text-xl sm:text-2xl font-bold text-foreground flex items-center gap-2.5">
@@ -358,7 +329,7 @@ function toggleOperator(op) {
               Tìm thấy <strong class="text-primary font-bold font-mono tabular-nums">{{ filteredTrips.length }}</strong> chuyến xe phù hợp
             </span>
             <span v-else-if="isLoading" class="text-muted-foreground animate-pulse">
-              Đang tìm kiếm chuyến xe từ nhà xe...
+              Đang truy vấn lịch trình từ hệ thống...
             </span>
           </p>
         </div>
@@ -372,25 +343,24 @@ function toggleOperator(op) {
                 <Button variant="outline" size="sm" class="gap-1.5 text-xs h-9" data-testid="filter-sheet-trigger">
                   <SlidersHorizontal class="w-3.5 h-3.5" />
                   <span>Bộ lọc</span>
-                  <Badge v-if="selectedTimeSlots.length + selectedOperators.length > 0" class="ml-1 px-1.5 py-0 text-[10px] bg-primary text-primary-foreground">
-                    {{ selectedTimeSlots.length + selectedOperators.length }}
+                  <Badge v-if="selectedTimeSlots.length > 0 || coachTypeFilter !== 'ALL'" class="ml-1 px-1.5 py-0 text-[10px] bg-primary text-primary-foreground">
+                    {{ selectedTimeSlots.length + (coachTypeFilter !== 'ALL' ? 1 : 0) }}
                   </Badge>
                 </Button>
               </SheetTrigger>
-              <SheetContent side="bottom" class="max-h-[85vh] overflow-y-auto rounded-t-2xl p-6">
-                <div data-testid="filter-sheet-content" class="h-full">
-                  <SheetHeader class="text-left pb-4 border-b border-border">
-                    <SheetTitle class="flex items-center gap-2 text-base font-bold">
-                      <SlidersHorizontal class="w-4 h-4 text-primary" />
-                      <span>Bộ lọc chuyến xe</span>
-                    </SheetTitle>
-                    <SheetDescription class="text-xs">
-                      Lọc theo khung giờ, hãng xe và mức giá vé phù hợp.
-                    </SheetDescription>
-                  </SheetHeader>
+              <SheetContent side="bottom" class="max-h-[85vh] overflow-y-auto rounded-t-2xl p-6" data-testid="filter-sheet-content">
+                <SheetHeader class="text-left pb-4 border-b border-border">
+                  <SheetTitle class="flex items-center gap-2 text-base font-bold">
+                    <SlidersHorizontal class="w-4 h-4 text-primary" />
+                    <span>Bộ lọc chuyến xe</span>
+                  </SheetTitle>
+                  <SheetDescription class="text-xs">
+                    Lọc theo khung giờ xuất bến, loại xe và mức giá vé.
+                  </SheetDescription>
+                </SheetHeader>
 
-                  <!-- Mobile Filter Content -->
-                  <div class="space-y-5 py-4">
+                <!-- Mobile Filter Content -->
+                <div class="space-y-5 py-4">
                   <!-- Khung giờ -->
                   <div class="space-y-2">
                     <label class="text-xs font-semibold text-foreground uppercase tracking-wider block">Khung giờ xuất bến</label>
@@ -428,52 +398,36 @@ function toggleOperator(op) {
                     </div>
                   </div>
 
-                  <!-- Loại xe -->
+                  <!-- Loại xe (Approved Select Component) -->
                   <div class="space-y-2 pt-3 border-t border-border">
                     <label class="text-xs font-semibold text-foreground uppercase tracking-wider block">Loại xe</label>
-                    <select
-                      v-model="coachTypeFilter"
-                      class="w-full h-9 px-3 rounded-lg border border-input text-xs text-foreground bg-background focus:ring-1 focus:ring-primary"
-                    >
-                      <option value="ALL">Tất cả loại xe</option>
-                      <option value="LIMOUSINE">Xe Limousine VIP</option>
-                      <option value="SLEEPER">Xe Giường Nằm</option>
-                      <option value="SEAT">Xe Ghế Ngồi</option>
-                    </select>
+                    <Select v-model="coachTypeFilter">
+                      <SelectTrigger class="w-full h-9 bg-card border-border text-xs">
+                        <SelectValue placeholder="Chọn loại xe" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ALL" class="text-xs">Tất cả loại xe</SelectItem>
+                        <SelectItem value="LIMOUSINE" class="text-xs">Xe Limousine VIP</SelectItem>
+                        <SelectItem value="SLEEPER" class="text-xs">Xe Giường Nằm</SelectItem>
+                        <SelectItem value="SEAT" class="text-xs">Xe Ghế Ngồi</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
 
-                  <!-- Mức giá -->
-                  <div class="space-y-2 pt-3 border-t border-border">
+                  <!-- Mức giá (Approved Slider Component) -->
+                  <div class="space-y-3 pt-3 border-t border-border">
                     <div class="flex items-center justify-between text-xs">
                       <span class="font-semibold text-foreground uppercase tracking-wider">Mức giá tối đa</span>
                       <span class="font-bold text-primary font-mono tabular-nums">{{ maxPrice.toLocaleString('vi-VN') }} đ</span>
                     </div>
-                    <input
-                      type="range"
+                    <Slider
+                      :model-value="[maxPrice]"
                       :min="minAvailablePrice"
                       :max="maxAvailablePrice"
-                      step="25000"
-                      v-model.number="maxPrice"
-                      class="w-full accent-primary cursor-pointer h-2 bg-muted rounded-lg"
+                      :step="25000"
+                      @update:model-value="(val) => maxPrice = val[0]"
+                      data-testid="filter-max-price-slider-mobile"
                     />
-                  </div>
-
-                  <!-- Hãng xe -->
-                  <div v-if="availableOperators.length > 0" class="space-y-2 pt-3 border-t border-border">
-                    <label class="text-xs font-semibold text-foreground uppercase tracking-wider block">Hãng xe</label>
-                    <div class="space-y-1.5 max-h-36 overflow-y-auto">
-                      <label
-                        v-for="op in availableOperators"
-                        :key="op"
-                        class="flex items-center gap-2 text-xs cursor-pointer p-1.5 rounded hover:bg-muted/40"
-                      >
-                        <Checkbox
-                          :checked="selectedOperators.includes(op)"
-                          @update:checked="toggleOperator(op)"
-                        />
-                        <span>{{ op }}</span>
-                      </label>
-                    </div>
                   </div>
                 </div>
 
@@ -487,7 +441,6 @@ function toggleOperator(op) {
                     </Button>
                   </SheetClose>
                 </SheetFooter>
-                </div>
               </SheetContent>
             </Sheet>
           </div>
@@ -506,69 +459,17 @@ function toggleOperator(op) {
         </div>
       </div>
 
-      <!-- Expandable inline search modifier -->
+      <!-- Expandable TripSearchForm modifier -->
       <div v-if="isEditingSearch" class="mt-4 pt-4 border-t border-border" data-testid="edit-search-panel">
-        <form @submit.prevent="submitSearchModification" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
-          <div class="space-y-1.5">
-            <label class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Điểm đi</label>
-            <select
-              v-model="editFrom"
-              class="w-full h-9 px-3 rounded-lg border border-input text-xs text-foreground bg-background focus:ring-1 focus:ring-primary"
-              data-testid="edit-departure-city"
-            >
-              <option v-for="c in availableCities" :key="c" :value="c">{{ c }}</option>
-            </select>
-          </div>
-
-          <div class="space-y-1.5">
-            <label class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Điểm đến</label>
-            <select
-              v-model="editTo"
-              class="w-full h-9 px-3 rounded-lg border border-input text-xs text-foreground bg-background focus:ring-1 focus:ring-primary"
-              data-testid="edit-arrival-city"
-            >
-              <option v-for="c in availableCities" :key="c" :value="c">{{ c }}</option>
-            </select>
-          </div>
-
-          <div class="space-y-1.5">
-            <label class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Ngày khởi hành</label>
-            <input
-              type="date"
-              v-model="editDate"
-              :min="getTodayIsoDate()"
-              class="w-full h-9 px-3 rounded-lg border border-input text-xs text-foreground bg-background focus:ring-1 focus:ring-primary"
-              data-testid="edit-departure-date"
-            />
-          </div>
-
-          <div class="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              @click="handleSwapEdit"
-              class="h-9 px-2.5 shrink-0"
-              title="Đổi chiều đi/đến"
-            >
-              <ArrowLeftRight class="w-3.5 h-3.5 text-muted-foreground" />
-            </Button>
-            <Button
-              type="submit"
-              size="sm"
-              class="h-9 flex-1 text-xs gap-1.5 font-medium"
-              data-testid="apply-search-modification-btn"
-            >
-              <Search class="w-3.5 h-3.5" />
-              <span>Tìm lại</span>
-            </Button>
-          </div>
-        </form>
-
-        <p v-if="editError" class="text-xs text-destructive mt-2 flex items-center gap-1">
-          <AlertCircle class="w-3.5 h-3.5" />
-          <span>{{ editError }}</span>
-        </p>
+        <TripSearchForm
+          :initial-departure-city="departureCity"
+          :initial-arrival-city="arrivalCity"
+          :initial-departure-date="departureDate"
+          :stations="stations"
+          :is-loading-stations="isLoadingStations"
+          :stations-error="stationsError"
+          @search="onHeaderSearchSubmit"
+        />
       </div>
     </div>
 
@@ -634,58 +535,39 @@ function toggleOperator(op) {
           </div>
         </div>
 
-        <!-- Loại Xe -->
+        <!-- Loại Xe (Approved Select Component) -->
         <div class="space-y-2.5 pt-4 border-t border-border">
           <label class="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">Loại Xe</label>
-          <select
-            v-model="coachTypeFilter"
-            class="w-full h-9 px-2.5 rounded-lg border border-input text-xs text-foreground bg-background focus:ring-1 focus:ring-primary"
-            data-testid="filter-coach-type"
-          >
-            <option value="ALL">Tất cả loại xe</option>
-            <option value="LIMOUSINE">Xe Limousine VIP</option>
-            <option value="SLEEPER">Xe Giường Nằm</option>
-            <option value="SEAT">Xe Ghế Ngồi</option>
-          </select>
+          <Select v-model="coachTypeFilter">
+            <SelectTrigger data-testid="filter-coach-type" class="w-full h-9 bg-card border-border text-xs">
+              <SelectValue placeholder="Chọn loại xe" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL" class="text-xs">Tất cả loại xe</SelectItem>
+              <SelectItem value="LIMOUSINE" class="text-xs">Xe Limousine VIP</SelectItem>
+              <SelectItem value="SLEEPER" class="text-xs">Xe Giường Nằm</SelectItem>
+              <SelectItem value="SEAT" class="text-xs">Xe Ghế Ngồi</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
-        <!-- Mức Giá Vé Tối Đa -->
-        <div class="space-y-2.5 pt-4 border-t border-border">
+        <!-- Mức Giá Vé Tối Đa (Approved Slider Primitive) -->
+        <div class="space-y-3 pt-4 border-t border-border">
           <div class="flex items-center justify-between text-xs">
             <label class="font-semibold text-muted-foreground uppercase tracking-wider">Mức Giá Tối Đa</label>
             <span class="font-bold text-primary font-mono tabular-nums">{{ maxPrice.toLocaleString('vi-VN') }} đ</span>
           </div>
-          <input
-            type="range"
+          <Slider
+            :model-value="[maxPrice]"
             :min="minAvailablePrice"
             :max="maxAvailablePrice"
-            step="25000"
-            v-model.number="maxPrice"
-            class="w-full accent-primary cursor-pointer h-2 bg-muted rounded-lg"
-            data-testid="filter-max-price"
+            :step="25000"
+            @update:model-value="(val) => maxPrice = val[0]"
+            data-testid="filter-max-price-slider"
           />
           <div class="flex justify-between text-[11px] text-muted-foreground font-mono tabular-nums">
             <span>{{ minAvailablePrice.toLocaleString('vi-VN') }} đ</span>
             <span>{{ maxAvailablePrice.toLocaleString('vi-VN') }} đ</span>
-          </div>
-        </div>
-
-        <!-- Nhà Xe / Hãng Xe -->
-        <div v-if="availableOperators.length > 0" class="space-y-2.5 pt-4 border-t border-border">
-          <label class="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">Hãng Xe</label>
-          <div class="space-y-1.5 text-xs max-h-48 overflow-y-auto pr-1">
-            <label
-              v-for="op in availableOperators"
-              :key="op"
-              class="flex items-center gap-2 cursor-pointer p-1.5 rounded-md hover:bg-muted/50 transition-colors"
-              :class="selectedOperators.includes(op) ? 'bg-primary/5 text-primary font-medium' : 'text-foreground'"
-            >
-              <Checkbox
-                :checked="selectedOperators.includes(op)"
-                @update:checked="toggleOperator(op)"
-              />
-              <span class="truncate">{{ op }}</span>
-            </label>
           </div>
         </div>
       </aside>
@@ -696,20 +578,21 @@ function toggleOperator(op) {
         <div class="flex flex-wrap items-center justify-between gap-3 bg-card p-3 rounded-xl border border-border shadow-xs">
           <div class="flex items-center gap-2 flex-wrap">
             <span class="text-xs font-medium text-muted-foreground">Sắp xếp theo:</span>
-            <select
-              v-model="sortBy"
-              class="h-8 px-2.5 rounded-md border border-input text-xs text-foreground bg-background focus:ring-1 focus:ring-primary font-medium"
-              data-testid="sort-select"
-            >
-              <option value="DEPARTURE_ASC">Giờ xuất phát: Sớm nhất</option>
-              <option value="DEPARTURE_DESC">Giờ xuất phát: Muộn nhất</option>
-              <option value="PRICE_ASC">Giá vé: Thấp đến cao</option>
-              <option value="PRICE_DESC">Giá vé: Cao đến thấp</option>
-            </select>
+            <Select v-model="sortBy">
+              <SelectTrigger data-testid="sort-select" class="h-8 w-48 text-xs bg-card border-border font-medium">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="DEPARTURE_ASC" class="text-xs">Giờ xuất phát: Sớm nhất</SelectItem>
+                <SelectItem value="DEPARTURE_DESC" class="text-xs">Giờ xuất phát: Muộn nhất</SelectItem>
+                <SelectItem value="PRICE_ASC" class="text-xs">Giá vé: Thấp đến cao</SelectItem>
+                <SelectItem value="PRICE_DESC" class="text-xs">Giá vé: Cao đến thấp</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <!-- Active filter pills indicator -->
-          <div v-if="selectedTimeSlots.length > 0 || selectedOperators.length > 0 || coachTypeFilter !== 'ALL'" class="flex items-center gap-1.5 flex-wrap">
+          <div v-if="selectedTimeSlots.length > 0 || coachTypeFilter !== 'ALL'" class="flex items-center gap-1.5 flex-wrap">
             <Badge
               v-for="slot in selectedTimeSlots"
               :key="slot"

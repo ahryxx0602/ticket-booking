@@ -1245,8 +1245,9 @@ test.describe('Gate B3 Final: Contract & Acceptance Tests', () => {
     await verifyBtn.click()
     await page.waitForTimeout(300)
 
-    // Since server booking is still CONFIRMED, guard unlocks
-    await expect(confirmBtn).toBeEnabled()
+    // PRE-01: When server booking is still CONFIRMED, guard does NOT auto-unlock; maintains fail-closed lock!
+    await expect(confirmBtn).toBeDisabled()
+    await expect(page.locator('text=TIẾP TỤC KHÓA').first()).toBeVisible()
   })
 
   // B3-16: Theme Customizer — Desktop Light/Dark, Compact Density, Custom Primary

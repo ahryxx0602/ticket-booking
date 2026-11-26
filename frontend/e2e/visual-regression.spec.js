@@ -97,7 +97,7 @@ test.describe('E2E: Visual Regression & Layout Responsive Check', () => {
       await page.goto('/admin')
 
       // Đảm bảo các khối KPI render
-      await expect(page.locator('text=Doanh Thu Gộp')).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Doanh Thu Gộp' })).toBeVisible()
       await expect(page.getByRole('heading', { name: 'Cần Đối Soát' })).toBeVisible()
     })
   }

@@ -47,19 +47,21 @@ describe('Customer Booking Flow Tests', () => {
 
   describe('TripCard.vue Component', () => {
     const mockTrip = {
-      id: 'TRIP-99',
+      id: 99,
+      tripCode: 'HN-DN-99',
       route: 'Hà Nội → Đà Nẵng',
       operator: 'Hoàng Long Limousine',
       plate: '29B-888.99',
-      departureTime: '19:00',
-      arrivalTime: '09:00 (+1 ngày)',
+      departureTime: '2026-11-26T19:00:00',
+      arrivalTime: '2026-11-27T09:00:00',
       duration: '14 giờ',
-      coachType: 'VIP Luxury 36 Giường',
-      availableSeats: 5,
-      price: 350000
+      transportType: 'VIP Luxury 36 Giường',
+      totalSeats: 36,
+      basePrice: 350000,
+      status: 'SCHEDULED'
     }
 
-    it('renders trip information and formatted price in tabular-nums', () => {
+    it('renders authentic trip information, totalSeats capacity and formatted price', () => {
       const wrapper = mount(TripCard, {
         props: { trip: mockTrip }
       })
@@ -68,7 +70,8 @@ describe('Customer Booking Flow Tests', () => {
       expect(wrapper.text()).toContain('Hoàng Long Limousine')
       expect(wrapper.text()).toContain('29B-888.99')
       expect(wrapper.text()).toContain('350.000')
-      expect(wrapper.text()).toContain('Còn 5 chỗ')
+      expect(wrapper.text()).toContain('Sức chứa 36 chỗ')
+      expect(wrapper.text()).toContain('+1 ngày')
     })
 
     it('navigates to seat selection view when clicking Chọn Chỗ', async () => {
@@ -80,18 +83,18 @@ describe('Customer Booking Flow Tests', () => {
       expect(btn.exists()).toBe(true)
       await btn.trigger('click')
 
-      expect(pushMock).toHaveBeenCalledWith('/trips/TRIP-99/seats')
+      expect(pushMock).toHaveBeenCalledWith('/trips/99/seats')
     })
 
-    it('disables button when available seats is 0', () => {
-      const soldOutTrip = { ...mockTrip, availableSeats: 0 }
+    it('disables button when trip status is not SCHEDULED', () => {
+      const cancelledTrip = { ...mockTrip, status: 'CANCELLED' }
       const wrapper = mount(TripCard, {
-        props: { trip: soldOutTrip }
+        props: { trip: cancelledTrip }
       })
 
       const btn = wrapper.find('[data-testid="btn-select-trip"]')
       expect(btn.attributes('disabled')).toBeDefined()
-      expect(wrapper.text()).toContain('Hết chỗ')
+      expect(wrapper.text()).toContain('Không khả dụng')
     })
   })
 
@@ -136,30 +139,44 @@ describe('Customer Booking Flow Tests', () => {
     })
   })
 
-  describe('HomeView.vue Component Form & Discovery', () => {
+  describe('TripSearchForm.vue Component Form & Discovery', () => {
     it('validates duplicate departure and arrival cities', async () => {
-      const { default: HomeView } = await import('../views/HomeView.vue')
-      const wrapper = mount(HomeView, {
-        global: {
-          stubs: {
-            'router-link': true
-          }
+      const { default: TripSearchForm } = await import('../components/TripSearchForm.vue')
+      const wrapper = mount(TripSearchForm, {
+        props: {
+          initialDepartureCity: 'Hà Nội',
+          initialArrivalCity: 'Hà Nội',
+          stations: [
+            { id: 1, code: 'HN', city: 'Hà Nội' },
+            { id: 2, code: 'DN', city: 'Đà Nẵng' }
+          ]
         }
       })
 
-      // Set same city
-      const departureSelect = wrapper.find('[data-testid="departure-city-select"]')
-      const arrivalSelect = wrapper.find('[data-testid="arrival-city-select"]')
+      const form = wrapper.find('form')
+      await form.trigger('submit')
 
-      if (departureSelect.exists() && arrivalSelect.exists()) {
-        await departureSelect.setValue('Hà Nội')
-        await arrivalSelect.setValue('Hà Nội')
+      expect(wrapper.text()).toContain('Điểm đi và điểm đến không được trùng nhau')
+    })
 
-        const form = wrapper.find('form')
-        await form.trigger('submit')
+    it('validates past departure date', async () => {
+      const { default: TripSearchForm } = await import('../components/TripSearchForm.vue')
+      const wrapper = mount(TripSearchForm, {
+        props: {
+          initialDepartureCity: 'Hà Nội',
+          initialArrivalCity: 'Đà Nẵng',
+          initialDepartureDate: '2020-01-01',
+          stations: [
+            { id: 1, code: 'HN', city: 'Hà Nội' },
+            { id: 2, code: 'DN', city: 'Đà Nẵng' }
+          ]
+        }
+      })
 
-        expect(wrapper.text()).toContain('Điểm đi và điểm đến không được trùng nhau')
-      }
+      const form = wrapper.find('form')
+      await form.trigger('submit')
+
+      expect(wrapper.text()).toContain('Ngày khởi hành không được ở trong quá khứ')
     })
   })
 

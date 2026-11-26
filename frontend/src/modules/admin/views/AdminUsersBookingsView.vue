@@ -807,6 +807,9 @@ function openRefundModal(booking) {
   isRefundModalOpen.value = true
 }
 
+// PRE-01 Security Notice: sessionStorage guard is a defense-in-depth UI mechanism,
+// it does not replace backend idempotency and does not guarantee cross-tab/cross-device safety.
+// Fail-closed policy is enforced when mutation outcome is unknown.
 async function verifyBookingServerState() {
   const target = selectedBookingForRefund.value
   if (!target || !target.bookingReference) return
@@ -824,9 +827,10 @@ async function verifyBookingServerState() {
         isRefundModalOpen.value = false
         return
       } else if (updated.status === 'CONFIRMED') {
-        clearUnknownOutcome(bookingRef)
-        refundError.value = ''
-        notify(`Máy chủ xác nhận đơn #${bookingRef} vẫn ở trạng thái CONFIRMED (chưa bị hoàn tiền). Đã mở khóa cho phép thao tác.`, 'info')
+        // PRE-01: CONFIRMED read does NOT prove in-flight mutation or gateway refund failed!
+        // Maintain fail-closed lock and instruct manual gateway reconciliation.
+        refundError.value = `Máy chủ phản hồi đơn #${bookingRef} hiện vẫn mang trạng thái CONFIRMED. Do yêu cầu hoàn tiền trước đó bị timeout/mất kết nối, giao dịch có thể đang được xử lý ở cổng thanh toán hoặc ngân hàng. Hệ thống giữ cơ chế an toàn fail-closed và TIẾP TỤC KHÓA gửi lại. Vui lòng đối soát thủ công qua cổng thanh toán.`
+        notify('Đơn vé vẫn ở trạng thái CONFIRMED nhưng giao dịch hoàn tiền chưa rõ kết quả. Tiếp tục KHÓA để phòng ngừa hoàn tiền trùng lặp.', 'warning')
         return
       }
     }

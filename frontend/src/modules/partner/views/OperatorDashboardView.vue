@@ -210,17 +210,17 @@ function restoreUnknownWithdrawOutcome() {
 
 function recordUnknownOutcome(payload, customReason) {
   isUnknownOutcome.value = true
+  const opId = walletData.value?.operatorId || auth.user?.operatorId || auth.user?.id
   const context = {
-    operatorId: walletData.value?.operatorId || null,
+    operatorId: opId || null,
     amount: Number(payload.amount),
     bankName: payload.bankName,
     maskedAccount: maskAccountNumber(payload.accountNumber),
-    accountHolderName: payload.accountHolderName,
     timestamp: Date.now()
   }
   pendingMutationContext.value = context
   const prefix = customReason ? `${customReason} ` : 'Yêu cầu rút tiền bị mất kết nối mạng hoặc quá hạn phản hồi (Network Timeout). '
-  withdrawError.value = `${prefix}Kết quả tại máy chủ chưa xác định, hệ thống đã KHÓA gửi lại để phòng ngừa tạo nhiều lệnh rút trùng lặp. Vui lòng bấm "Kiểm tra trạng thái ví" để đối soát.`
+  withdrawError.value = `${prefix}Do backend chưa hỗ trợ Idempotency Key, kết quả giao dịch tại máy chủ chưa thể xác định. Hệ thống giữ khóa an toàn fail-closed để phòng ngừa trừ tiền trùng lặp (KHÓA gửi lại). Vui lòng bấm "Kiểm tra trạng thái ví" hoặc đối soát thủ công với Admin.`
 
   try {
     const key = getUnknownWithdrawStorageKey()
@@ -427,10 +427,10 @@ async function verifyWalletServerState() {
       }
     }
 
-    // No matching withdrawal found: authoritative empty or unrelated records
-    clearUnknownOutcome()
-    withdrawError.value = ''
-    toast.success('Máy chủ xác nhận chưa có lệnh rút nào được tạo cho yêu cầu này. Đã mở khóa cho phép gửi lại.')
+    // No matching authoritative withdrawal found: PRE-01 Fail-Closed Policy
+    // Empty list or non-match is NOT evidence that mutation didn't happen on backend/gateway!
+    withdrawError.value = 'Không tìm thấy bản ghi rút tiền trùng khớp đã hoàn tất trên máy chủ. Do thiếu mã định danh duy nhất (Idempotency Key), hệ thống tiếp tục KHÓA lệnh rút để phòng ngừa trừ tiền trùng lặp. Vui lòng đối soát thủ công với Ban quản trị.'
+    toast.warning('Chưa có bằng chứng giao dịch trước đã kết thúc. Tiếp tục KHÓA thao tác để bảo vệ số dư ví.')
   } catch (err) {
     toast.error('Lỗi khi kiểm tra trạng thái máy chủ: ' + (err?.message || ''))
   } finally {

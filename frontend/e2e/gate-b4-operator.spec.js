@@ -655,8 +655,8 @@ test.describe('Gate B4: Controlled Operator Pilot & Financial Contract Integrati
     await verifyBtn.click()
     await page.waitForTimeout(300)
 
-    // Unlocks when server state is verified
-    await expect(submitBtn).toBeEnabled()
+    // PRE-01: Maintains fail-closed lock when server state does not confirm completion
+    await expect(submitBtn).toBeDisabled()
   })
 
   // B4-11: Withdrawal Verification API Failure — Preserves Unknown Outcome Lock
@@ -745,9 +745,48 @@ test.describe('Gate B4: Controlled Operator Pilot & Financial Contract Integrati
     await verifyBtn.click()
     await page.waitForTimeout(300)
 
-    // Unrelated withdrawal is ignored; server confirms no matching withdrawal for 5,000,000
-    const submitBtn = page.locator('[data-testid="btn-submit-withdraw"]')
-    await expect(submitBtn).toBeEnabled()
+    // PRE-01 Fail-closed: Unrelated withdrawal does NOT clear lock; lack of authoritative idempotency maintains fail-closed lock
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toContainText('KHÓA')
+  })
+
+  // B4-20: Empty Verification List Does Not Clear Lock (PRE-01)
+  test('B4-20: Withdrawal Flow — Empty Verification List Maintains Fail-Closed Lock', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await setupOperatorMocks(page, { withdrawTimeout: true })
+    await loginAsRole(page, 'ROLE_OPERATOR', 'operator1')
+
+    await page.goto('/operator')
+    await page.waitForLoadState('networkidle')
+
+    await page.locator('[data-testid="btn-open-withdraw"]').click()
+    await page.locator('[data-testid="input-withdraw-amount"]').fill('3000000')
+    await page.locator('[data-testid="input-withdraw-bank"]').fill('Vietcombank')
+    await page.locator('[data-testid="input-withdraw-account-number"]').fill('0071001234567')
+    await page.locator('[data-testid="input-withdraw-account-holder"]').fill('CONG TY HOANG LONG')
+    await page.locator('[data-testid="btn-submit-withdraw"]').click()
+    await page.locator('[data-testid="btn-confirm-withdraw-action"]').click()
+    await page.waitForTimeout(300)
+
+    const dialog = page.locator('[role="dialog"]')
+    await expect(dialog).toBeVisible()
+
+    // Re-mock withdrawals to return empty array
+    await page.route('**/api/v1/partners/wallet/withdrawals*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([])
+      })
+    })
+
+    const verifyBtn = page.locator('[data-testid="btn-verify-wallet-state"]')
+    await verifyBtn.click()
+    await page.waitForTimeout(300)
+
+    // Must maintain fail-closed lock per PRE-01
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toContainText('KHÓA')
   })
 
   // B4-13: Matched Withdrawal Transitioned to APPROVED or REJECTED
