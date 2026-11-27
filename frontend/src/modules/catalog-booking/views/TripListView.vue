@@ -36,7 +36,9 @@ import {
   SlidersHorizontal,
   RefreshCw,
   RotateCcw,
-  AlertCircle
+  AlertCircle,
+  X,
+  Bus
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -597,18 +599,20 @@ function toggleTimeSlot(slot) {
               v-for="slot in selectedTimeSlots"
               :key="slot"
               variant="secondary"
-              class="text-[11px] cursor-pointer hover:bg-destructive/10"
+              class="text-[11px] cursor-pointer hover:bg-destructive/10 inline-flex items-center gap-1"
               @click="toggleTimeSlot(slot)"
             >
-              {{ slot === 'MORNING' ? 'Sáng' : slot === 'AFTERNOON' ? 'Chiều' : 'Tối' }} ✕
+              <span>{{ slot === 'MORNING' ? 'Sáng' : slot === 'AFTERNOON' ? 'Chiều' : 'Tối' }}</span>
+              <X class="w-3 h-3 text-muted-foreground" />
             </Badge>
             <Badge
               v-if="coachTypeFilter !== 'ALL'"
               variant="secondary"
-              class="text-[11px] cursor-pointer hover:bg-destructive/10"
+              class="text-[11px] cursor-pointer hover:bg-destructive/10 inline-flex items-center gap-1"
               @click="coachTypeFilter = 'ALL'"
             >
-              {{ coachTypeFilter }} ✕
+              <span>{{ coachTypeFilter }}</span>
+              <X class="w-3 h-3 text-muted-foreground" />
             </Badge>
           </div>
         </div>
@@ -692,7 +696,6 @@ function toggleTimeSlot(slot) {
           <EmptyState
             title="Không tìm thấy chuyến xe phù hợp"
             description="Hãy thử nới lỏng bộ lọc mức giá, chọn khung giờ khác hoặc đổi ngày khởi hành để tìm thấy lịch trình khả dụng."
-            icon="🚌"
           />
           <div class="flex items-center justify-center gap-3 pt-2">
             <Button

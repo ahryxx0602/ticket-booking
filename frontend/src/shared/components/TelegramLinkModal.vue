@@ -1,9 +1,9 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import QRCode from 'qrcode'
-import { Send, X, ShieldCheck } from 'lucide-vue-next'
+import { Send, X, ShieldCheck, Loader2 } from 'lucide-vue-next'
 import { useNotificationStore } from '@/shared/stores/notificationStore'
-import AppButton from '@/shared/components/AppButton.vue'
+import { Button } from '@/components/ui/button'
 
 const emit = defineEmits(['close'])
 const notiStore = useNotificationStore()
@@ -84,15 +84,16 @@ function handleSimulateLink() {
           Mở Telegram Bot Ngay
         </a>
 
-        <AppButton
+        <Button
           variant="secondary"
           class="w-full h-10 text-xs font-semibold"
           data-testid="btn-verify-telegram"
-          :loading="isChecking"
+          :disabled="isChecking"
           @click="handleSimulateLink"
         >
-          Xác Nhận Đã Kết Nối
-        </AppButton>
+          <Loader2 v-if="isChecking" class="w-4 h-4 mr-1.5 animate-spin" />
+          <span>{{ isChecking ? 'Đang xác thực kết nối...' : 'Xác Nhận Đã Kết Nối' }}</span>
+        </Button>
       </div>
 
       <p class="text-[11px] text-muted-foreground flex items-center justify-center gap-1 italic">

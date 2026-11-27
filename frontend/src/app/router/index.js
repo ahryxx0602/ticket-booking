@@ -28,7 +28,7 @@ const routes = [
         meta: { requiresAuth: false },
       },
       {
-        path: 'checkout/:bookingId',
+        path: 'checkout/:bookingId?',
         name: 'customer-checkout',
         component: () => import('@/modules/catalog-booking/views/CheckoutView.vue'),
         meta: { requiresAuth: true, roles: ['ROLE_CUSTOMER'] },

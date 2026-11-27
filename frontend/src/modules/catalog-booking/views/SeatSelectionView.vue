@@ -18,7 +18,8 @@ import {
   Loader2,
   Trash2,
   ArrowRight,
-  ShieldAlert
+  ShieldAlert,
+  X
 } from 'lucide-vue-next'
 import {
   AlertDialog,
@@ -894,7 +895,7 @@ onMounted(async () => {
                     class="text-muted-foreground hover:text-destructive transition-colors p-1"
                     title="Bỏ chọn"
                   >
-                    ✕
+                    <X class="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>

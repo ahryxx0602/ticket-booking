@@ -11,8 +11,9 @@ const __dirname = path.dirname(__filename)
 const screenshotDir = path.resolve(__dirname, '../../docs/frontend-v2/screenshots-gate-b5-3-enhancement')
 const legacyScreenshotDir = path.resolve(__dirname, '../../docs/frontend-v2/screenshots-gate-b5-3')
 const closureScreenshotDir = path.resolve(__dirname, '../../docs/frontend-v2/screenshots-gate-b5-3-closure')
+const gateD0ScreenshotDir = path.resolve(__dirname, '../../docs/frontend-v2/screenshots-gate-d0')
 
-for (const dir of [screenshotDir, legacyScreenshotDir, closureScreenshotDir]) {
+for (const dir of [screenshotDir, legacyScreenshotDir, closureScreenshotDir, gateD0ScreenshotDir]) {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true })
   }
@@ -22,6 +23,10 @@ async function captureDual(page, filename, options = {}) {
   await page.screenshot({ path: path.join(screenshotDir, filename), ...options })
   await page.screenshot({ path: path.join(legacyScreenshotDir, filename), ...options })
   await page.screenshot({ path: path.join(closureScreenshotDir, filename), ...options })
+}
+
+async function captureD0(page, filename, options = {}) {
+  await page.screenshot({ path: path.join(gateD0ScreenshotDir, filename), ...options })
 }
 
 const mockHeldBooking = {
@@ -568,5 +573,217 @@ test.describe('Gate B5.3-E: Payment Lifecycle Closure & Electronic Ticket Integr
 
     // 12. my-bookings-unauthorized-ticket.png
     await captureDual(page, 'my-bookings-unauthorized-ticket.png')
+  })
+
+  // =========================================================================
+  // GATE D0 PREFLIGHT BEHAVIORAL REGRESSION TESTS (D0-PRE-01..D0-PRE-04)
+  // =========================================================================
+
+  test('E2E-D0-01: Payment button disabled when isPaymentUnresolved and explicit verify button works', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+
+    await page.route('**/api/v1/bookings/BKG-CHK-881', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: mockHeldBooking })
+      })
+    })
+
+    await page.route('**/api/v1/payments/bookings/BKG-CHK-881/status', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            hasPaymentAttempt: true,
+            paymentReference: 'PAY-88100',
+            paymentStatus: 'PENDING',
+            reconciliationRequired: false
+          }
+        })
+      })
+    })
+
+    await loginAsRole(page, 'ROLE_CUSTOMER', 'customer1')
+    await page.goto('/checkout/BKG-CHK-881')
+    await page.waitForLoadState('networkidle')
+
+    // Inject unresolved payment
+    await page.evaluate(() => {
+      sessionStorage.setItem('velobus_guard_u1_payment_unresolved_BKG-CHK-881', JSON.stringify({
+        initiatedAt: Date.now() - 20000,
+        status: 'INITIATED'
+      }))
+    })
+    await page.reload()
+    await page.waitForLoadState('networkidle')
+
+    // Expect alert and verify button
+    await expect(page.locator('text=Đang Có Giao Dịch Thanh Toán Chưa Rõ Kết Quả')).toBeVisible()
+    const verifyBtn = page.getByRole('button', { name: 'Kiểm Tra Lại Trạng Thái' })
+    await expect(verifyBtn).toBeVisible()
+
+    // Expect payment submit button to be DISABLED with text "Giao dịch trước chưa hoàn tất"
+    const ctaBtn = page.getByRole('button', { name: 'Giao dịch trước chưa hoàn tất' })
+    await expect(ctaBtn).toBeVisible()
+    await expect(ctaBtn).toBeDisabled()
+
+    await captureD0(page, 'd0-unresolved-lock-disabled-cta.png', { fullPage: true })
+  })
+
+  test('E2E-D0-02: Direct Checkout without browser recovery metadata queries server payment state', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+
+    await page.route('**/api/v1/bookings/BKG-CHK-881', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: mockHeldBooking })
+      })
+    })
+
+    // Server says active PENDING payment attempt exists
+    await page.route('**/api/v1/payments/bookings/BKG-CHK-881/status', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            hasPaymentAttempt: true,
+            paymentReference: 'PAY-SERVER-PENDING-99',
+            paymentStatus: 'PENDING',
+            reconciliationRequired: false
+          }
+        })
+      })
+    })
+
+    await loginAsRole(page, 'ROLE_CUSTOMER', 'customer1')
+    await page.goto('/checkout/BKG-CHK-881')
+    await page.evaluate(() => sessionStorage.clear())
+    await page.reload()
+    await page.waitForLoadState('networkidle')
+
+    // Automatically established lock from server query
+    await expect(page.locator('text=Đang Có Giao Dịch Thanh Toán Chưa Rõ Kết Quả')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Giao dịch trước chưa hoàn tất' })).toBeDisabled()
+
+    await captureD0(page, 'd0-direct-checkout-server-sync.png', { fullPage: true })
+  })
+
+  test('E2E-D0-03: CONFIRMED booking preserves reconciliation warning (D0-PRE-02)', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+
+    await page.route('**/api/v1/bookings/BKG-CONF-883', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: mockConfirmedBooking })
+      })
+    })
+
+    // Server payment status has reconciliationRequired: true
+    await page.route('**/api/v1/payments/bookings/BKG-CONF-883/status', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            hasPaymentAttempt: true,
+            hasSuccessfulPayment: true,
+            paymentReference: 'PAY-CONF-REC',
+            paymentStatus: 'SUCCESS',
+            reconciliationRequired: true
+          }
+        })
+      })
+    })
+
+    await loginAsRole(page, 'ROLE_CUSTOMER', 'customer1')
+    await page.goto('/checkout/BKG-CONF-883?vnp_ResponseCode=00&vnp_TxnRef=PAY-CONF-REC')
+    await page.waitForLoadState('networkidle')
+
+    // Both confirmed state AND reconciliation banner are visible!
+    await expect(page.locator('text=Thanh Toán Thành Công & Đã Xác Nhận Vé')).toBeVisible()
+    await expect(page.locator('text=Đang Đối Soát Giao Dịch')).toBeVisible()
+
+    await captureD0(page, 'd0-confirmed-with-reconciliation.png', { fullPage: true })
+  })
+
+  test('E2E-D0-04: Mismatched electronic ticket bookingReference rejection (D0-PRE-03)', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+
+    await page.route('**/api/v1/bookings/my-bookings*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: mockPageBookingsPage0 })
+      })
+    })
+
+    // Return mismatched bookingReference
+    await page.route('**/api/v1/bookings/BKG-CONF-883/ticket', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            ...mockQrData,
+            bookingReference: 'BKG-MISMATCH-DIFFERENT-REF'
+          }
+        })
+      })
+    })
+
+    await loginAsRole(page, 'ROLE_CUSTOMER', 'customer1')
+    await page.goto('/my-bookings')
+    await page.waitForLoadState('networkidle')
+
+    // Open ticket
+    const viewTicketBtn = page.locator('button:has-text("Xem Chi Tiết & Vé Điện Tử")').first()
+    await viewTicketBtn.click()
+
+    // Must show error and reject rendering mismatched ticket
+    await expect(page.locator('text=Không Thể Cấp Vé Điện Tử')).toBeVisible()
+    await expect(page.locator('text=Mã vé không khớp')).toBeVisible()
+
+    await captureD0(page, 'd0-ticket-mismatch-rejection.png')
+    await page.locator('button:has-text("Đóng")').first().click()
+  })
+
+  test('E2E-D0-05: Cancellation guard across SeatSelection, Checkout, MyBookings (D0-PRE-03)', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+
+    await page.route('**/api/v1/bookings/BKG-CHK-881', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: mockHeldBooking })
+      })
+    })
+
+    await loginAsRole(page, 'ROLE_CUSTOMER', 'customer1')
+    await page.goto('/checkout/BKG-CHK-881')
+    await page.waitForLoadState('networkidle')
+
+    // Set unresolved cancel in storage
+    await page.evaluate(() => {
+      sessionStorage.setItem('velobus_guard_u1_cancel_unresolved_BKG-CHK-881', JSON.stringify({
+        message: 'Lỗi timeout khi gửi yêu cầu hủy vé'
+      }))
+    })
+    await page.reload()
+    await page.waitForLoadState('networkidle')
+
+    // Expect cancellation lock alert and button blocked
+    await expect(page.locator('text=Thao Tác Bị Khóa Do Yêu Cầu Hủy Vé')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Đang khóa thanh toán do hủy vé' })).toBeDisabled()
+
+    await captureD0(page, 'd0-cancellation-cross-view-guard.png', { fullPage: true })
   })
 })

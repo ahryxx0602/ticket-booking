@@ -1,7 +1,7 @@
 <template>
   <div class="space-y-2">
     <div
-      class="border-2 border-dashed border-slate-300 rounded-xl p-4 text-center hover:border-blue-500 transition cursor-pointer bg-white"
+      class="border-2 border-dashed border-border rounded-xl p-4 text-center hover:border-primary transition cursor-pointer bg-card"
       @click="fileInput?.click()"
     >
       <input
@@ -11,26 +11,30 @@
         class="hidden"
         @change="onFileSelected"
       />
-      <div v-if="uploading" class="py-3 text-sm text-blue-600 font-medium flex items-center justify-center gap-2">
-        <i class="pi pi-spin pi-spinner"></i>
-        <span>Đang tải ảnh lên Firebase Storage...</span>
+      <div v-if="uploading" class="py-3 text-sm text-primary font-medium flex items-center justify-center gap-2">
+        <Loader2 class="w-5 h-5 animate-spin" />
+        <span>Đang tải ảnh lên Cloud CDN...</span>
       </div>
       <div v-else-if="modelValue" class="space-y-2">
-        <img :src="modelValue" alt="Preview" class="max-h-36 mx-auto rounded-lg object-contain border border-slate-200" />
-        <p class="text-xs text-emerald-600 font-medium">Đã tải lên Cloud CDN • Nhấn để thay đổi ảnh</p>
+        <img :src="modelValue" alt="Preview" class="max-h-36 mx-auto rounded-lg object-contain border border-border" />
+        <p class="text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center justify-center gap-1">
+          <CheckCircle2 class="w-3.5 h-3.5" />
+          <span>Đã tải lên Cloud CDN • Nhấn để thay đổi ảnh</span>
+        </p>
       </div>
       <div v-else class="py-3 space-y-1">
-        <i class="pi pi-cloud-upload text-2xl text-slate-400"></i>
-        <p class="text-sm font-medium text-slate-700">{{ label }}</p>
-        <p class="text-xs text-slate-400">Hỗ trợ PNG, JPG, WebP (Tối đa 10MB • Lưu trữ trên Firebase Cloud)</p>
+        <UploadCloud class="w-8 h-8 mx-auto text-muted-foreground" />
+        <p class="text-sm font-medium text-foreground">{{ label }}</p>
+        <p class="text-xs text-muted-foreground">Hỗ trợ PNG, JPG, WebP, GIF (Tối đa 10MB • Lưu trữ Cloud Storage)</p>
       </div>
     </div>
-    <p v-if="errorMsg" class="text-xs text-rose-600">{{ errorMsg }}</p>
+    <p v-if="errorMsg" class="text-xs text-destructive font-medium">{{ errorMsg }}</p>
   </div>
 </template>
 
 <script setup>
 import { ref } from 'vue'
+import { Loader2, UploadCloud, CheckCircle2 } from 'lucide-vue-next'
 import httpClient from '@/shared/api/httpClient'
 
 const props = defineProps({
@@ -73,7 +77,7 @@ async function onFileSelected(event) {
     emit('update:modelValue', uploadedUrl)
     emit('uploaded', uploadedUrl)
   } catch (err) {
-    errorMsg.value = err?.message || 'Lỗi tải ảnh lên Firebase Storage'
+    errorMsg.value = err?.message || 'Lỗi tải ảnh lên Cloud CDN'
   } finally {
     uploading.value = false
   }

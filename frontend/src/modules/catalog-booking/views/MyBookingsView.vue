@@ -169,7 +169,13 @@ async function confirmCancelBooking() {
   } catch (err) {
     console.error('[MyBookings] Cancel failed:', err)
     operationGuard.clearCancelPending(refCode)
-    operationGuard.setUnresolvedCancel(refCode, err)
+    const status = err.response?.status
+    // D0-PRE-03: Distinguish definitive business rejection (4xx) from ambiguous outcome (5xx or network disconnect)
+    if (status && status >= 400 && status < 500) {
+      operationGuard.clearUnresolvedCancel(refCode)
+    } else {
+      operationGuard.setUnresolvedCancel(refCode, err)
+    }
     const msg = err.response?.data?.message || err.message || 'Không thể hủy đơn đặt chỗ trên máy chủ.'
     toast.error(msg)
   } finally {
@@ -190,8 +196,15 @@ async function openTicketDetail(booking) {
     const res = await catalogBookingApi.getElectronicTicket(booking.bookingReference)
     if (currentTicketSeq !== ticketSequence) return
     const data = res.data?.data || res.data
-    if (!data || !data.qrImageBase64 || !data.qrPayload) {
-      throw new Error('Dữ liệu vé điện tử từ máy chủ không đầy đủ thông tin mã QR.')
+    // D0-PRE-03: Verify returned bookingReference against requested booking and validate canonical fields
+    if (!data || typeof data !== 'object') {
+      throw new Error('Dữ liệu vé điện tử từ máy chủ không hợp lệ.')
+    }
+    if (data.bookingReference !== booking.bookingReference) {
+      throw new Error(`Mã vé không khớp: yêu cầu ${booking.bookingReference} nhưng máy chủ trả về ${data.bookingReference}`)
+    }
+    if (!data.qrImageBase64 || !data.tripId || !data.seatNumbers || !data.status) {
+      throw new Error('Dữ liệu vé điện tử từ máy chủ không đầy đủ thông tin chuẩn hóa.')
     }
     ticketData.value = data
   } catch (err) {
@@ -506,8 +519,8 @@ onMounted(() => {
               <ShieldCheck class="w-4 h-4" />
               <span>Vé Điện Tử Hợp Lệ & Có Chữ Ký Số</span>
             </div>
-            <p class="text-[10px] text-muted-foreground font-mono text-center break-all px-2">
-              {{ ticketData.qrPayload }}
+            <p class="text-[11px] text-muted-foreground text-center px-2">
+              Mã QR đã được ký số bảo mật điện tử. Xuất trình khi lên xe.
             </p>
           </div>
 

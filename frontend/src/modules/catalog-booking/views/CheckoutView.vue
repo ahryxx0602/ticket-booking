@@ -136,7 +136,11 @@ async function pollAuthoritativeConfirmation(attempt = 1) {
     if (currentGen !== pollGeneration.value) return
 
     const bookingData = resBooking.data?.data || resBooking.data
+    let isBookingConfirmed = false
     if (bookingData) {
+      if (bookingData.bookingReference && bookingData.bookingReference !== bookingReference.value) {
+        throw new Error('Mã tham chiếu đơn đặt chỗ từ máy chủ không khớp')
+      }
       const validation = validateBookingResponse(bookingData, {
         expectedUserId: authStore.user?.id,
         allowTerminalReplay: true,
@@ -145,15 +149,12 @@ async function pollAuthoritativeConfirmation(attempt = 1) {
       if (validation.valid) {
         booking.value = bookingData
         if (bookingData.status === 'CONFIRMED') {
-          stopPolling()
-          operationGuard.clearUnresolvedPayment(bookingReference.value)
-          toast.success('Xác nhận thanh toán thành công! Vé của bạn đã được đảm bảo.')
-          return
+          isBookingConfirmed = true
         }
       }
     }
 
-    // 2. Authoritative payment status query
+    // 2. Authoritative payment status query (D0-PRE-02: verify independently, preserve reconciliation even when CONFIRMED)
     const resPayment = await catalogBookingApi.getPaymentStatus(bookingReference.value)
     if (currentGen !== pollGeneration.value) return
 
@@ -162,6 +163,13 @@ async function pollAuthoritativeConfirmation(attempt = 1) {
       paymentStatusInfo.value = payData
       if (payData.reconciliationRequired) {
         isReconciliationRequired.value = true
+      }
+
+      if (isBookingConfirmed) {
+        stopPolling()
+        operationGuard.clearUnresolvedPayment(bookingReference.value)
+        toast.success('Xác nhận thanh toán thành công! Vé của bạn đã được đảm bảo.')
+        return
       }
 
       // BLOCKER-01: Supported backend status combinations without synthetic booking mutation
@@ -196,13 +204,18 @@ async function pollAuthoritativeConfirmation(attempt = 1) {
           paymentGatewayError.value = 'Đơn giữ chỗ đã bị hủy trước khi nhận được phản hồi thanh toán. Khoản tiền sẽ được đối soát hoàn trả.'
           return
         }
-      } else if (payData.paymentStatus === 'FAILED') {
+      } else if (payData.paymentStatus === 'FAILED' && !payData.hasPaymentAttempt) {
         stopPolling()
         operationGuard.clearUnresolvedPayment(bookingReference.value)
         paymentGatewayError.value = 'Giao dịch thanh toán đã bị cổng VNPay từ chối hoặc hết hạn.'
         toast.error('Thanh toán không thành công')
         return
       }
+    } else if (isBookingConfirmed) {
+      stopPolling()
+      operationGuard.clearUnresolvedPayment(bookingReference.value)
+      toast.success('Xác nhận thanh toán thành công! Vé của bạn đã được đảm bảo.')
+      return
     }
   } catch (err) {
     console.warn('[Checkout] Confirmation poll warning:', err)
@@ -218,7 +231,12 @@ async function pollAuthoritativeConfirmation(attempt = 1) {
 // Load Booking Details
 async function fetchBookingDetail() {
   if (!bookingReference.value) {
-    loadError.value = 'Mã tham chiếu đơn đặt chỗ không hợp lệ'
+    const vnpError = route.query.vnp_Error
+    if (vnpError) {
+      paymentGatewayError.value = 'Phát hiện phản hồi không hợp lệ từ cổng thanh toán. Vui lòng kiểm tra lại đơn vé tại mục Vé Của Tôi.'
+    } else {
+      loadError.value = 'Mã tham chiếu đơn đặt chỗ không hợp lệ'
+    }
     isLoading.value = false
     return
   }
@@ -275,7 +293,7 @@ async function fetchBookingDetail() {
   }
 }
 
-// PRE-04 & BLOCKER-05: Strict Redirect Security Validation
+// PRE-04, BLOCKER-05 & D0-PRE-03: Strict Redirect Security Validation
 function validateRedirectUrl(redirectUrl) {
   if (!redirectUrl || typeof redirectUrl !== 'string') {
     throw new Error('Máy chủ không cung cấp đường dẫn chuyển tiếp VNPay hợp lệ.')
@@ -298,10 +316,15 @@ function validateRedirectUrl(redirectUrl) {
     throw new Error('URL chuyển tiếp chứa thông tin đăng nhập không được phép.')
   }
 
-  // Trusted host verification (exact approved sandbox or live vnpayment.vn)
-  const trustedHosts = ['sandbox.vnpayment.vn', 'vnpayment.vn', 'pay.vnpay.vn']
-  if (!trustedHosts.includes(parsed.hostname)) {
-    throw new Error(`Cổng thanh toán không thuộc danh sách tin cậy được phê duyệt: ${parsed.hostname}`)
+  // Reject arbitrary non-standard ports
+  if (parsed.port && parsed.port !== '443') {
+    throw new Error(`Cổng mạng ${parsed.port} không được phép cho giao dịch thanh toán trực tuyến.`)
+  }
+
+  // Trusted host verification (exact approved sandbox or live vnpayment.vn origins)
+  const trustedOrigins = ['https://sandbox.vnpayment.vn', 'https://vnpayment.vn', 'https://pay.vnpay.vn']
+  if (!trustedOrigins.includes(parsed.origin)) {
+    throw new Error(`Nguồn cổng thanh toán không thuộc danh sách tin cậy được phê duyệt: ${parsed.origin}`)
   }
 
   return parsed.toString()
@@ -311,6 +334,12 @@ function validateRedirectUrl(redirectUrl) {
 async function handleProceedPayment() {
   // BLOCKER-03: Synchronous submit guard
   if (isSubmittingPayment.value) return
+
+  // D0-PRE-01: Prevent new payment mutations while previous payment outcome is unresolved
+  if (isPaymentUnresolved.value) {
+    toast.error('Giao dịch thanh toán trước đó chưa hoàn tất xác nhận. Vui lòng bấm kiểm tra trạng thái trước khi thực hiện giao dịch mới.')
+    return
+  }
 
   if (isBlockedByCancel.value) {
     toast.error('Đơn đặt chỗ này đang trong tiến trình hủy. Không thể thực hiện thanh toán.')
@@ -348,17 +377,17 @@ async function handleProceedPayment() {
     })
 
     const data = res.data?.data || res.data
-    if (!data || typeof data !== 'object' || !data.paymentReference) {
+    if (!data || typeof data !== 'object' || !data.paymentReference || typeof data.paymentReference !== 'string') {
       throw new Error('Phản hồi khởi tạo giao dịch từ máy chủ không hợp lệ.')
     }
 
     const redirectUrl = validateRedirectUrl(data?.redirectPaymentUrl)
 
-    // Save unresolved payment state before navigating away
+    // D0-PRE-03: Save minimal recovery state without serializing sensitive gateway URLs
     operationGuard.setUnresolvedPayment(booking.value.bookingReference, {
-      paymentReference: data?.paymentReference,
+      paymentReference: data.paymentReference,
       startedAt: Date.now(),
-      redirectPaymentUrl: redirectUrl
+      status: 'REDIRECTED'
     })
 
     toast.info('Đang chuyển hướng sang cổng thanh toán VNPay...')
@@ -389,8 +418,8 @@ async function handleProceedPayment() {
 onMounted(async () => {
   await fetchBookingDetail()
 
-  // BLOCKER-03: Inspect relevant server payment state on initial load & restore context
-  if (bookingReference.value && operationGuard.isPaymentUnresolved(bookingReference.value)) {
+  // D0-PRE-02: Check relevant server payment state on initial Checkout load regardless of browser storage
+  if (bookingReference.value) {
     try {
       const resPayment = await catalogBookingApi.getPaymentStatus(bookingReference.value)
       const payData = resPayment.data?.data || resPayment.data
@@ -401,6 +430,13 @@ onMounted(async () => {
         }
         if (payData.hasSuccessfulPayment || payData.paymentStatus === 'SUCCESS') {
           await pollAuthoritativeConfirmation(1)
+        } else if (payData.hasPaymentAttempt && payData.paymentStatus === 'PENDING') {
+          // Establish lock if server confirms active pending attempt exists
+          operationGuard.setUnresolvedPayment(bookingReference.value, {
+            paymentReference: payData.paymentReference || payData.activePaymentReference,
+            status: 'PENDING',
+            startedAt: Date.now()
+          })
         }
       }
     } catch (err) {
@@ -408,6 +444,11 @@ onMounted(async () => {
     }
   }
 })
+
+// D0-PRE-01: Explicit read-only verification action
+async function handleVerifyPaymentOutcome() {
+  await pollAuthoritativeConfirmation(1)
+}
 
 onUnmounted(() => {
   // BLOCKER-03: Invalidate polling generation to cancel stale handlers
@@ -444,13 +485,27 @@ onUnmounted(() => {
       </AlertDescription>
     </Alert>
 
-    <!-- Unresolved Payment Recovery Banner (BLOCKER-03) -->
+    <!-- Unresolved Payment Recovery Banner (BLOCKER-03 & D0-PRE-01) -->
     <Alert v-if="isPaymentUnresolved && !paymentGatewayError && booking?.status === 'HELD' && !isVerifyingPayment" class="border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300">
       <RefreshCw class="w-4 h-4 text-blue-600 animate-spin" />
-      <AlertTitle>Đang Có Giao Dịch Thanh Toán Chưa Rõ Kết Quả</AlertTitle>
-      <AlertDescription>
-        Hệ thống phát hiện giao dịch thanh toán trước đó chưa hoàn tất xác nhận. Đang đối soát hoặc bạn có thể bấm "Làm Mới" để cập nhật trạng thái.
-      </AlertDescription>
+      <div class="flex-1 space-y-2">
+        <AlertTitle>Đang Có Giao Dịch Thanh Toán Chưa Rõ Kết Quả</AlertTitle>
+        <AlertDescription>
+          Hệ thống phát hiện giao dịch thanh toán trước đó chưa hoàn tất xác nhận. Đang đối soát hoặc bạn có thể bấm kiểm tra lại để cập nhật trạng thái từ máy chủ.
+        </AlertDescription>
+        <div class="pt-1">
+          <Button
+            variant="outline"
+            size="sm"
+            class="h-7 text-xs bg-background/80"
+            :disabled="isVerifyingPayment"
+            @click="handleVerifyPaymentOutcome"
+          >
+            <RefreshCw class="w-3.5 h-3.5 mr-1" :class="{ 'animate-spin': isVerifyingPayment }" />
+            Kiểm Tra Lại Trạng Thái
+          </Button>
+        </div>
+      </div>
     </Alert>
 
     <!-- Loading Skeleton -->
@@ -773,7 +828,7 @@ onUnmounted(() => {
             <!-- Submit VNPay Button (Shadcn Button) -->
             <Button
               class="w-full h-11 text-xs font-bold"
-              :disabled="isSubmittingPayment || isVerifyingPayment || isExpiringSoon || isExpired || isBlockedByCancel"
+              :disabled="isSubmittingPayment || isVerifyingPayment || isExpiringSoon || isExpired || isBlockedByCancel || isPaymentUnresolved"
               @click="handleProceedPayment"
             >
               <Loader2 v-if="isSubmittingPayment" class="w-4 h-4 animate-spin mr-1.5" />
@@ -786,9 +841,11 @@ onUnmounted(() => {
                       ? 'Phiên giữ chỗ đã hết hạn'
                       : isExpiringSoon
                         ? 'Thời gian < 60s - Vui lòng chọn lại'
-                        : isSubmittingPayment
-                          ? 'Đang chuyển sang VNPay...'
-                          : 'Thanh Toán Qua VNPay'
+                        : isPaymentUnresolved
+                          ? 'Giao dịch trước chưa hoàn tất'
+                          : isSubmittingPayment
+                            ? 'Đang chuyển sang VNPay...'
+                            : 'Thanh Toán Qua VNPay'
                 }}
               </span>
             </Button>

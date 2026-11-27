@@ -6,8 +6,28 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const srcDir = path.resolve(__dirname, '../src')
+const registryPath = path.resolve(srcDir, 'config/migration-registry.json')
 
-// Target scan directories and components for strict Claude+ Design System compliance (REV-08, B3, B5.3-E)
+// Load central migration registry
+export function loadRegistry() {
+  if (fs.existsSync(registryPath)) {
+    const raw = fs.readFileSync(registryPath, 'utf-8')
+    return JSON.parse(raw)
+  }
+  return { views: [], documentedExceptions: [] }
+}
+
+const registry = loadRegistry()
+
+// Documented exceptions from registry
+export const documentedExceptions = registry.documentedExceptions.map((e) => e.component)
+
+// Migrated view paths from registry
+export const migratedViews = registry.views
+  .filter((v) => v.migrationStatus === 'MIGRATED')
+  .map((v) => path.resolve(__dirname, '..', v.viewPath))
+
+// Scan targets: shared UI components + layouts + all migrated production views
 export const scanTargets = [
   path.join(srcDir, 'components/ui'),
   path.join(srcDir, 'showcase'),
@@ -15,48 +35,58 @@ export const scanTargets = [
   path.join(srcDir, 'shared/components/NotificationCenter.vue'),
   path.join(srcDir, 'shared/components/feedback'),
   path.join(srcDir, 'app/layouts'),
-  path.join(srcDir, 'modules/admin/views/AdminDashboardView.vue'),
-  path.join(srcDir, 'modules/admin/views/AdminUsersBookingsView.vue'),
-  path.join(srcDir, 'modules/catalog-booking/views/CheckoutView.vue'),
-  path.join(srcDir, 'modules/catalog-booking/views/MyBookingsView.vue')
+  ...migratedViews
 ]
 
-// Documented exceptions for legacy or non-migrated components (REV-08)
-export const documentedExceptions = [
-  'FirebaseUploader.vue', // Legacy PrimeVue uploader scheduled for Phase 2
-  'IconRegistryDemo.vue'   // Contains icon metadata display
-]
-
-// Stateless regular expressions (no global /g flag to avoid RegExp.test() statefulness bugs)
+// Stateless regular expressions
 export const forbiddenPatterns = [
   {
     id: 'forbidden-emoji',
     regex: /[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/u,
-    message: 'Forbidden emoji in UI component. Use Lucide icons instead.'
+    message: 'Forbidden emoji in UI component. Use Lucide icons instead.',
+    migratedOnly: false
   },
   {
     id: 'forbidden-primeicons',
     regex: /from ['"]primeicons['"]|pi pi-/,
-    message: 'Forbidden PrimeIcons in Design System components. Use Lucide icons.'
+    message: 'Forbidden PrimeIcons in Design System components. Use Lucide icons.',
+    migratedOnly: false
   },
   {
     id: 'forbidden-hardcoded-color',
     regex: /\bbg-(?:blue|orange|red|green|emerald|indigo|slate|gray)-(?:400|500|600|700|800)(?!\/)\b/,
-    message: 'Forbidden hardcoded palette class. Use Claude+ semantic tokens (bg-primary, bg-muted, bg-card, bg-destructive).'
+    message: 'Forbidden hardcoded palette class. Use Claude+ semantic tokens (bg-primary, bg-muted, bg-card, bg-destructive).',
+    migratedOnly: false
   },
   {
     id: 'forbidden-legacy-components',
     regex: /import\s+.*\b(AppButton|FormField)\b.*from\s+['"]@\/shared\/components\/(AppButton|FormField)(\.vue)?['"]/,
-    message: 'Forbidden legacy component import in migrated view. Use Shadcn Button / Input / Label instead.'
+    message: 'Forbidden legacy component import in migrated view. Use Shadcn Button / Input / Label instead.',
+    migratedOnly: true
+  },
+  {
+    id: 'forbidden-primevue-imports',
+    regex: /from ['"]primevue(\/.*)?['"]/,
+    message: 'Forbidden PrimeVue import in migrated view. Use Shadcn Vue / Reka UI primitives.',
+    migratedOnly: true
+  },
+  {
+    id: 'forbidden-native-select',
+    regex: /<select[\s>]/,
+    message: 'Forbidden native <select> in migrated view. Use approved Shadcn Select primitive.',
+    migratedOnly: true
   }
 ]
-
-export const migratedViews = ['CheckoutView.vue', 'MyBookingsView.vue']
 
 export function scanContent(content, filePath = '') {
   const violations = []
   const lines = content.split('\n')
-  const isMigratedView = migratedViews.some((v) => filePath.endsWith(v))
+  const resolvedPath = filePath ? path.resolve(filePath) : ''
+  const viewEntry = registry.views.find(
+    (v) => resolvedPath === path.resolve(__dirname, '..', v.viewPath) || resolvedPath.endsWith(path.basename(v.viewPath))
+  )
+  const isMigratedView = viewEntry ? viewEntry.migrationStatus === 'MIGRATED' : migratedViews.some((v) => resolvedPath === v || resolvedPath.endsWith(path.basename(v)))
+  const viewExceptions = viewEntry?.exceptions || []
 
   lines.forEach((line, index) => {
     const trimmed = line.trim()
@@ -64,13 +94,20 @@ export function scanContent(content, filePath = '') {
       return
     }
 
-    forbiddenPatterns.forEach(({ id, regex, message }) => {
-      // Rule 'forbidden-legacy-components' applies strictly to migrated production views
-      if (id === 'forbidden-legacy-components' && filePath && !isMigratedView) {
+    forbiddenPatterns.forEach(({ id, regex, message, migratedOnly }) => {
+      // Rule applies strictly to migrated production views when migratedOnly is true
+      if (migratedOnly && (!filePath || !isMigratedView)) {
         return
       }
 
-      // Create a fresh regex check without statefulness
+      // Check documented exceptions for this specific view
+      if (id === 'forbidden-legacy-components' && line.includes('FormField') && viewExceptions.includes('legacy-formfield')) {
+        return
+      }
+      if (id === 'forbidden-native-select' && viewExceptions.includes('legacy-native-select')) {
+        return
+      }
+
       if (regex.test(line)) {
         violations.push({
           id,
@@ -125,7 +162,8 @@ export function runLint() {
     }
   }
 
-  console.log('--- Running Strengthened Design System Guardrail Lint (REV-08) ---')
+  console.log('--- Running Strengthened Central Migration Registry Linter (D0-PRE-05) ---')
+  console.log(`Auditing ${migratedViews.length} migrated views and design system components...`)
   scanTargets.forEach((target) => traverse(target))
 
   if (errorCount > 0) {

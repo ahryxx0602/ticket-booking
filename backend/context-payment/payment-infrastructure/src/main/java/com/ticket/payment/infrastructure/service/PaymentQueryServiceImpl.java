@@ -29,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -65,6 +66,11 @@ public class PaymentQueryServiceImpl implements GetPaymentReportUseCase, AdminGe
 
         List<Payment> payments = paymentRepository.findAllByBookingIdOrderByIdDesc(booking.id());
 
+        LocalDateTime now = LocalDateTime.now();
+        boolean isHeldAndNotExpiring = booking.isHeld()
+                && !booking.isExpired(now)
+                && (booking.expiresAt() == null || Duration.between(now, booking.expiresAt()).getSeconds() >= 60);
+
         if (payments.isEmpty()) {
             return CustomerPaymentStatusResponse.builder()
                     .bookingReference(booking.bookingReference())
@@ -72,14 +78,14 @@ public class PaymentQueryServiceImpl implements GetPaymentReportUseCase, AdminGe
                     .hasPaymentAttempt(false)
                     .hasSuccessfulPayment(false)
                     .totalAttempts(0)
-                    .canAttemptPayment("HELD".equalsIgnoreCase(booking.status()))
+                    .canAttemptPayment(isHeldAndNotExpiring)
                     .amount(booking.totalAmount())
                     .currency("VND")
                     .reconciliationRequired(false)
                     .build();
         }
 
-        // BLOCKER-02: Deterministic multiple attempts aggregation
+        // BLOCKER-02 & D0-PRE-02: Deterministic multiple attempts aggregation
         boolean anyReconciliationRequired = payments.stream().anyMatch(Payment::isReconciliationRequired);
         Optional<Payment> successfulPayment = payments.stream().filter(p -> p.getStatus() == PaymentStatus.SUCCESS).findFirst();
         Optional<Payment> pendingPayment = payments.stream().filter(p -> p.getStatus() == PaymentStatus.PENDING).findFirst();
@@ -87,7 +93,7 @@ public class PaymentQueryServiceImpl implements GetPaymentReportUseCase, AdminGe
         // Priority: SUCCESS > PENDING > Most Recent
         Payment selectedPayment = successfulPayment.orElseGet(() -> pendingPayment.orElseGet(() -> payments.get(0)));
         boolean hasSuccessful = successfulPayment.isPresent();
-        boolean canAttempt = !hasSuccessful && "HELD".equalsIgnoreCase(booking.status());
+        boolean canAttempt = !hasSuccessful && isHeldAndNotExpiring && !anyReconciliationRequired;
 
         return CustomerPaymentStatusResponse.builder()
                 .bookingReference(booking.bookingReference())
