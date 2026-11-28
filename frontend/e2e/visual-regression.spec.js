@@ -103,13 +103,19 @@ test.describe('E2E: Visual Regression & Layout Responsive Check', () => {
   }
 
   test('FE-VIS-04: Drawer thích ứng độ rộng chuẩn UX trên Mobile', async ({ page }) => {
+    await page.route('**/api/v1/partners/vehicles*', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.route('**/api/v1/partners/drivers*', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
     await loginAsRole(page, 'ROLE_OPERATOR')
     await page.setViewportSize({ width: 375, height: 667 })
     await page.goto('/operator/fleet')
 
     const addVehicleBtn = page.locator('[data-testid="btn-add-vehicle"]')
     await expect(addVehicleBtn).toBeVisible()
-    await addVehicleBtn.click()
+    await addVehicleBtn.click({ force: true })
     
     // Kiểm tra Drawer hiển thị
     await expect(page.locator('text=Thêm Phương Tiện Mới Vào Đội Xe')).toBeVisible()

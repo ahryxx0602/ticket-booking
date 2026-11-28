@@ -54,6 +54,9 @@ jobs:
         run: |
           mvn clean verify -B
           grep -q "Tests run: 6, Failures: 0, Errors: 0, Skipped: 0" ticket-start/target/surefire-reports/com.ticket.concurrency.RealMySqlConcurrencyAndTransactionIT.txt
+          grep -q "Tests run: 5, Failures: 0, Errors: 0, Skipped: 0" ticket-start/target/surefire-reports/com.ticket.concurrency.RealMySqlWithdrawalConcurrencyIT.txt
+          grep -q "Tests run: 14, Failures: 0, Errors: 0, Skipped: 0" ticket-start/target/surefire-reports/com.ticket.concurrency.RealRedisAndMySqlIdempotencyIT.txt
+          grep -q "Tests run: 7, Failures: 0, Errors: 0, Skipped: 0" ticket-start/target/surefire-reports/com.ticket.concurrency.GateB53CapabilityIT.txt
         env:
           MYSQL_HOST: 127.0.0.1
           MYSQL_PORT: 3307

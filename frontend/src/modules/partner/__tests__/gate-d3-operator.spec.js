@@ -244,7 +244,20 @@ describe('Gate D3 Operator Operations Unit Tests', () => {
       vi.spyOn(partnerApi, 'getVehicles').mockResolvedValue({ data: { code: 'OK', data: mockVehicles } })
       vi.spyOn(catalogBookingApi, 'getStations').mockResolvedValue({ data: { code: 'OK', data: mockStations } })
       vi.spyOn(partnerApi, 'createPartnerTrip').mockResolvedValue({
-        data: { code: 'OK', data: { id: 501 } }
+        data: {
+          code: 'OK',
+          data: {
+            id: 501,
+            tripCode: 'SG-DL-02',
+            vehicleId: 1,
+            departureStationId: 1,
+            arrivalStationId: 2,
+            departureTime: '2026-11-24T10:00:00',
+            arrivalTime: '2026-11-24T16:00:00',
+            basePrice: 320000,
+            status: 'SCHEDULED'
+          }
+        }
       })
 
       const wrapper = mount(OperatorTripsView, { global: { stubs: commonStubs } })
@@ -291,7 +304,7 @@ describe('Gate D3 Operator Operations Unit Tests', () => {
       expect(getMyTripsSpy).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'RUNNING' }))
     })
 
-    it('strictly parses and validates pagination metadata and filters valid trips', async () => {
+    it('strictly parses and validates pagination metadata and populates valid trips', async () => {
       vi.spyOn(partnerApi, 'getVehicles').mockResolvedValue({ data: { code: 'OK', data: mockVehicles } })
       vi.spyOn(catalogBookingApi, 'getStations').mockResolvedValue({ data: { code: 'OK', data: mockStations } })
       vi.spyOn(partnerApi, 'getMyTrips').mockResolvedValue({
@@ -299,9 +312,7 @@ describe('Gate D3 Operator Operations Unit Tests', () => {
           code: 'OK',
           data: {
             items: [
-              { id: 991, tripCode: 'TRIP-VALID', departureStationId: 1, arrivalStationId: 2 },
-              null, // null item
-              { id: null } // invalid ID
+              { id: 991, tripCode: 'TRIP-VALID', departureStationId: 1, arrivalStationId: 2, status: 'SCHEDULED' }
             ],
             totalPages: 5,
             totalElements: 12,
@@ -315,12 +326,33 @@ describe('Gate D3 Operator Operations Unit Tests', () => {
 
       await wrapper.vm.fetchTrips(2)
 
-      // Only valid item retained
       expect(wrapper.vm.sessionTrips.length).toBe(1)
       expect(wrapper.vm.sessionTrips[0].tripCode).toBe('TRIP-VALID')
       expect(wrapper.vm.totalPages).toBe(5)
       expect(wrapper.vm.totalElements).toBe(12)
       expect(wrapper.vm.currentPage).toBe(2)
+    })
+
+    it('rejects responses with malformed items or invalid pagination metadata', async () => {
+      vi.spyOn(partnerApi, 'getVehicles').mockResolvedValue({ data: { code: 'OK', data: mockVehicles } })
+      vi.spyOn(catalogBookingApi, 'getStations').mockResolvedValue({ data: { code: 'OK', data: mockStations } })
+      vi.spyOn(partnerApi, 'getMyTrips').mockResolvedValue({
+        data: {
+          code: 'OK',
+          data: {
+            items: [{ id: null }],
+            totalPages: 1,
+            totalElements: 1,
+            page: 0
+          }
+        }
+      })
+
+      const wrapper = mount(OperatorTripsView, { global: { stubs: commonStubs } })
+      await flushPromises()
+
+      await wrapper.vm.fetchTrips(0)
+      expect(wrapper.vm.tripsError).toContain('chứa bản ghi không hợp lệ')
     })
   })
 

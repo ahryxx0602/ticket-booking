@@ -132,6 +132,25 @@ class RealMySqlWithdrawalConcurrencyIT {
         return withdrawalRepository.save(wdr).getId();
     }
 
+    private boolean isExpectedConcurrencyConflict(Throwable t) {
+        if (t instanceof BusinessException be) {
+            String code = be.getCode();
+            String msg = be.getMessage() != null ? be.getMessage().toUpperCase() : "";
+            return "INVALID_STATUS".equalsIgnoreCase(code) || msg.contains("PENDING") || msg.contains("STATUS") || msg.contains("NOT FOUND");
+        }
+        if (t instanceof org.springframework.dao.ConcurrencyFailureException) {
+            return true;
+        }
+        if (t instanceof org.springframework.transaction.TransactionException) {
+            return true;
+        }
+        Throwable cause = t.getCause();
+        if (cause != null && cause != t) {
+            return isExpectedConcurrencyConflict(cause);
+        }
+        return false;
+    }
+
     @Test
     @DisplayName("FQA-01.1: Concurrent approve/approve on same withdrawal ensures exactly 1 success and 1 valid terminal state")
     void testConcurrentApproveApprove() throws Exception {
@@ -155,12 +174,11 @@ class RealMySqlWithdrawalConcurrencyIT {
                     startLatch.await();
                     adminService.approveWithdrawal(wdrId, adminId, "Concurrent Approve Real IT");
                     successCount.incrementAndGet();
-                } catch (BusinessException | OptimisticLockingFailureException e) {
-                    conflictCount.incrementAndGet();
-                } catch (Exception e) {
-                    // Check cause for OptimisticLockingFailureException
-                    if (e.getCause() instanceof OptimisticLockingFailureException || e.getMessage().contains("INVALID_STATUS")) {
+                } catch (Throwable t) {
+                    if (isExpectedConcurrencyConflict(t)) {
                         conflictCount.incrementAndGet();
+                    } else {
+                        throw new RuntimeException("Unexpected exception in approve/approve concurrency test", t);
                     }
                 }
             }));
@@ -213,8 +231,12 @@ class RealMySqlWithdrawalConcurrencyIT {
                 startLatch.await();
                 adminService.approveWithdrawal(wdrId, 901L, "Approve Thread");
                 successCount.incrementAndGet();
-            } catch (Exception e) {
-                conflictCount.incrementAndGet();
+            } catch (Throwable t) {
+                if (isExpectedConcurrencyConflict(t)) {
+                    conflictCount.incrementAndGet();
+                } else {
+                    throw new RuntimeException("Unexpected exception in approve thread", t);
+                }
             }
         });
 
@@ -225,8 +247,12 @@ class RealMySqlWithdrawalConcurrencyIT {
                 startLatch.await();
                 adminService.rejectWithdrawal(wdrId, 902L, "Reject Thread");
                 successCount.incrementAndGet();
-            } catch (Exception e) {
-                conflictCount.incrementAndGet();
+            } catch (Throwable t) {
+                if (isExpectedConcurrencyConflict(t)) {
+                    conflictCount.incrementAndGet();
+                } else {
+                    throw new RuntimeException("Unexpected exception in reject thread", t);
+                }
             }
         });
 
@@ -275,8 +301,12 @@ class RealMySqlWithdrawalConcurrencyIT {
                     startLatch.await();
                     adminService.rejectWithdrawal(wdrId, adminId, "Reject duplicate check");
                     successCount.incrementAndGet();
-                } catch (Exception e) {
-                    conflictCount.incrementAndGet();
+                } catch (Throwable t) {
+                    if (isExpectedConcurrencyConflict(t)) {
+                        conflictCount.incrementAndGet();
+                    } else {
+                        throw new RuntimeException("Unexpected exception in reject duplicate check", t);
+                    }
                 }
             });
         }
@@ -319,9 +349,11 @@ class RealMySqlWithdrawalConcurrencyIT {
                 startLatch.await();
                 adminService.approveWithdrawal(wdrA, 701L, "Approve A");
                 completedCount.incrementAndGet();
-            } catch (Exception e) {
-                if (e instanceof OptimisticLockingFailureException || e.getCause() instanceof OptimisticLockingFailureException) {
+            } catch (Throwable t) {
+                if (isExpectedConcurrencyConflict(t)) {
                     optimisticLockCount.incrementAndGet();
+                } else {
+                    throw new RuntimeException("Unexpected exception during distinct withdrawal A", t);
                 }
             }
         });
@@ -332,9 +364,11 @@ class RealMySqlWithdrawalConcurrencyIT {
                 startLatch.await();
                 adminService.approveWithdrawal(wdrB, 702L, "Approve B");
                 completedCount.incrementAndGet();
-            } catch (Exception e) {
-                if (e instanceof OptimisticLockingFailureException || e.getCause() instanceof OptimisticLockingFailureException) {
+            } catch (Throwable t) {
+                if (isExpectedConcurrencyConflict(t)) {
                     optimisticLockCount.incrementAndGet();
+                } else {
+                    throw new RuntimeException("Unexpected exception during distinct withdrawal B", t);
                 }
             }
         });

@@ -30,4 +30,30 @@ export async function loginAsRole(page, role, username) {
     window.localStorage.setItem('velobus_access_token', token)
     window.localStorage.setItem('velobus_user', JSON.stringify(user))
   }, { token, user })
+
+  await page.route('**/api/v1/auth/me', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          id: 1,
+          username: resolvedUsername,
+          role,
+          customRole: role,
+          roleName: role === 'ROLE_ADMIN' ? 'Quản trị viên tối cao' : role === 'ROLE_OPERATOR' ? 'Đối tác nhà xe' : 'Hành khách',
+          permissions: role === 'ROLE_ADMIN' ? [
+            'PAYMENT_REPORT_VIEW', 'PAYMENT_LIST_VIEW', 'PAYMENT_RECONCILE_RESOLVE',
+            'OPERATOR_VIEW', 'OPERATOR_CREATE_UPDATE', 'OPERATOR_APPROVE_REJECT', 'OPERATOR_SUSPEND', 'OPERATOR_COMMISSION_MANAGE',
+            'WITHDRAWAL_VIEW', 'WITHDRAWAL_APPROVE', 'WITHDRAWAL_REJECT',
+            'BANNER_VIEW', 'BANNER_CREATE_DELETE', 'BANNER_APPROVE_REJECT',
+            'USER_VIEW', 'USER_CREATE_UPDATE', 'USER_ROLE_CHANGE', 'USER_STATUS_CHANGE', 'USER_PASSWORD_RESET', 'BOOKING_LOOKUP', 'BOOKING_REFUND',
+            'ROLE_VIEW', 'ROLE_CREATE_UPDATE', 'ROLE_DELETE',
+            'TRIP_SYSTEM_VIEW', 'SYSTEM_CONFIG_MANAGE'
+          ] : []
+        }
+      })
+    })
+  })
 }

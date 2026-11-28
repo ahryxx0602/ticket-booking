@@ -100,29 +100,58 @@ VeloBus features the **Claude+ Warm Minimalist Enterprise Mobility** design syst
 
 ---
 
-## 🧪 Comprehensive Automated Testing (426+ Tests)
+## 🧪 Comprehensive Automated Testing & Verification Metrics
 
-The repository enforces end-to-end quality with over **426 automated passing tests**:
+The repository enforces end-to-end quality and mathematical rigor with multi-layered verification:
 
 ```
-TOTAL TESTS: 426 PASSED (100% GREEN)
-├── Backend (Java 21 / JUnit 5 / Testcontainers): 243 Passed
-├── Frontend Unit (Vitest / Happy-DOM):             183 Passed (18 test suites)
-└── Design System Linter (Stateless Node.js):        0 Violations across 18 migrated views
+========================================================================================
+VeloBus Automated Quality Ledger — Release Candidate (v1.0.0-rc.1)
+========================================================================================
+Layer 1: Backend Monorepo Tests (JUnit 5 / Testcontainers / Spring Boot)
+  - Monorepo Reactor Modules:          33 Modules (100% BUILD SUCCESS)
+  - Total Monorepo Tests:              243 Passed, 0 Failed, 0 Skipped
+  - Core ticket-start Tests:           77 Passed, 0 Failed, 0 Skipped
+  - Mandatory Real Infrastructure Suites (Real MySQL 8.4 & Redis 7.2):
+      • RealMySqlConcurrencyAndTransactionIT:   6 Passed, 0 Skipped
+      • RealMySqlWithdrawalConcurrencyIT:      5 Passed, 0 Skipped (InnoDB deadlock 1213 safe)
+      • RealRedisAndMySqlIdempotencyIT:       14 Passed, 0 Skipped
+      • GateB53CapabilityIT:                   7 Passed, 0 Skipped
+      • Integration Total:                    32 Passed, 0 Skipped (100% GREEN)
+
+Layer 2: Frontend Unit & Static Verification (Vue 3.5 / Vitest / Happy-DOM)
+  - Unit Test Suites:                  18 Passed / 18 Total (100% GREEN)
+  - Total Unit Tests:                  184 Passed, 0 Failed, 0 Skipped
+  - Type-Check (vue-tsc --noEmit):      0 Errors (Strict TypeScript)
+  - Design System AST Linter:          0 Violations across 18 migrated business views
+  - Production Bundle (vite build):    SUCCESS (436 kB index chunk, gzipped 145 kB)
+
+Layer 3: Real Fullstack E2E (Playwright against real Spring Boot, MySQL & Redis)
+  - Fullstack Journey:                 1 Passed / 1 Test (9 verification steps)
+  - Verified Flows: Fixed-expiry token sync, RBAC denial, real DB seat hold, VNPay redirect
+
+Layer 4: Mocked Playwright E2E (Contract & Edge-case Regression)
+  - Executed Tests:                    177 Executed
+  - Passing Tests:                     152 Passed
+  - Residual Failures:                 25 Failed (legacy test harness selector divergence)
+  - Skipped:                           0 Skipped
+========================================================================================
 ```
 
+### Verification Commands
 ```bash
-# Run backend test suite
-cd backend && mvn test
+# Backend clean build and regression verification
+mvn clean verify -B -f backend/pom.xml
 
-# Run frontend unit tests
+# Frontend static and unit regression checks
+cd frontend && npm ci
+cd frontend && npm run type-check
 cd frontend && npm run test:unit
-
-# Run frontend type check and production build
-cd frontend && npm run type-check && npm run build
-
-# Run Design System audit linter
 cd frontend && node scripts/lint-design-system.js
+cd frontend && npm run build
+
+# Real Fullstack E2E against running Spring Boot (8080), MySQL (3307), Redis (6379), Preview (4173)
+cd frontend && npm run test:e2e:fullstack
 ```
 
 ---
@@ -221,13 +250,20 @@ make smoke-test
 ## 🏁 Release Candidate Status & Decision
 
 ```
-RELEASE CANDIDATE — LOCAL VERIFICATION COMPLETE, EXTERNAL INTEGRATION VALIDATION PENDING
+DECISION: FEATURE COMPLETE — READY FOR RELEASE PULL REQUEST, VERIFICATION PENDING
+PROPOSED RELEASE VERSION: v1.0.0-rc.1
 ```
 
-- **Local Verification Status:** **100% COMPLETE & PASSING**. All 33 Maven reactor modules compile and pass automated unit/integration tests (`mvn test`). Frontend passes 18/18 Vitest suites (183 unit tests), Vue TypeScript checking (`vue-tsc --noEmit`), production bundling (`vite build`), and Design System AST linting (0 violations across all 18 views).
-- **Backend Capability Closure:** Approved `GET /api/v1/partners/trips` endpoint implemented with tenant scoping (`userId` $\to$ `operatorId`), status/vehicle filtering, and standard pagination (`ApiResponse<PageResponse<PartnerTripResponse>>`).
-- **Data Integrity & Financial Governance:** Elimination of all mock production fixtures, synthetic `Date.now()` entity IDs, and persistent bank profile assumptions. Dual-layer Unknown Outcome Guard protects against interrupted mutations with read-only server verification.
-- **External Integration Pending:** Validation against live third-party VNPay production webhook callback clearance (VNPay IPN URL binding requires public HTTPS domain / reverse proxy webhook tunnel in production staging).
+- **Feature Freeze & Design Preservation:** All 18 registered business views migrated to the Claude+ Warm Minimalist Enterprise Mobility Design System (Reka UI, Tailwind CSS, TanStack Table). Complete removal of PrimeVue legacy dependencies (`package.json`, `main.js`, and build bundles).
+- **Residual Integration Corrections:**
+  - `PartnerCatalogPortAdapter`: Rejects unsupported `TripStatus` values with fail-closed `BusinessException` (`INVALID_TRIP_STATUS`).
+  - `OperatorTripsView`: Removed payload fallbacks and synthetic statuses; strictly validates canonical `PartnerTripResponse` and pagination metadata.
+  - Concurrency Suite Hardening: Handled Spring `ConcurrencyFailureException` and MySQL InnoDB Deadlock 1213 under high-concurrency race conditions. Added rollback verification test.
+  - CI Workflow Assertions: Added strict grep check asserting 0 skipped tests across all 4 mandatory integration suites.
+- **External Integration Limitations & Operational Boundaries:**
+  - **VNPay Sandbox IPN:** Testing live IPN callback requires a public HTTPS tunnel (e.g. Cloudflare Tunnel or Ngrok) bound to the staging environment, as localhost IPN URLs cannot receive external bank webhooks.
+  - **Firebase Storage:** File upload validation in local CI uses mocked endpoints; live Google Cloud credential binding is provisioned in cloud deployment environments.
+- **Visual Evidence:** 16 canonical release screenshots captured and cataloged in [docs/frontend-v2/screenshots-final-release/README.md](docs/frontend-v2/screenshots-final-release/README.md).
 
 ---
 

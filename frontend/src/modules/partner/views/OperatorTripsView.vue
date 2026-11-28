@@ -157,19 +157,30 @@ async function fetchTrips(page = currentPage.value) {
 
     const pageData = res?.data?.data !== undefined ? res.data.data : res?.data
     if (pageData && Array.isArray(pageData.items)) {
-      const validItems = pageData.items.filter(item => item && item.id != null)
-      sessionTrips.value = validItems
+      const hasInvalidItem = pageData.items.some(item => !item || item.id == null)
+      if (hasInvalidItem) {
+        throw new Error('Dữ liệu chuyến xe từ máy chủ chứa bản ghi không hợp lệ hoặc thiếu mã định danh')
+      }
       const parsedTotalPages = Number(pageData.totalPages)
-      totalPages.value = Number.isInteger(parsedTotalPages) && parsedTotalPages >= 0 ? parsedTotalPages : 1
       const parsedTotalElements = Number(pageData.totalElements)
-      totalElements.value = Number.isInteger(parsedTotalElements) && parsedTotalElements >= 0 ? parsedTotalElements : validItems.length
       const parsedPage = Number(pageData.page)
-      currentPage.value = Number.isInteger(parsedPage) && parsedPage >= 0 ? parsedPage : page
+      if (!Number.isInteger(parsedTotalPages) || parsedTotalPages < 0 ||
+          !Number.isInteger(parsedTotalElements) || parsedTotalElements < 0 ||
+          !Number.isInteger(parsedPage) || parsedPage < 0) {
+        throw new Error('Metadata phân trang từ máy chủ không hợp lệ')
+      }
+      sessionTrips.value = pageData.items
+      totalPages.value = parsedTotalPages
+      totalElements.value = parsedTotalElements
+      currentPage.value = parsedPage
     } else if (Array.isArray(pageData)) {
-      const validItems = pageData.filter(item => item && item.id != null)
-      sessionTrips.value = validItems
+      const hasInvalidItem = pageData.some(item => !item || item.id == null)
+      if (hasInvalidItem) {
+        throw new Error('Dữ liệu chuyến xe từ máy chủ chứa bản ghi không hợp lệ hoặc thiếu mã định danh')
+      }
+      sessionTrips.value = pageData
       totalPages.value = 1
-      totalElements.value = validItems.length
+      totalElements.value = pageData.length
       currentPage.value = 0
     } else {
       throw new Error('Dữ liệu danh sách chuyến xe phản hồi từ máy chủ không hợp lệ')
@@ -267,20 +278,20 @@ async function handleScheduleTrip() {
     const res = await partnerApi.createPartnerTrip(payload)
     const createdData = res?.data?.data !== undefined ? res.data.data : res?.data
 
-    if (!createdData || createdData.id == null) {
-      throw new Error('Máy chủ phản hồi tạo chuyến không hợp lệ (thiếu mã định danh chuyến xe)')
+    if (!createdData || createdData.id == null || !createdData.tripCode || !createdData.status) {
+      throw new Error('Máy chủ phản hồi tạo chuyến không hợp lệ (thiếu mã định danh, mã chuyến hoặc trạng thái từ PartnerTripResponse)')
     }
 
     const authoritativeTrip = {
       id: createdData.id,
-      tripCode: createdData.tripCode || payload.tripCode,
-      vehicleId: createdData.vehicleId != null ? createdData.vehicleId : payload.vehicleId,
-      departureStationId: createdData.departureStationId != null ? createdData.departureStationId : payload.departureStationId,
-      arrivalStationId: createdData.arrivalStationId != null ? createdData.arrivalStationId : payload.arrivalStationId,
-      departureTime: createdData.departureTime || payload.departureTime,
-      arrivalTime: createdData.arrivalTime || payload.arrivalTime,
-      basePrice: createdData.basePrice != null ? createdData.basePrice : payload.basePrice,
-      status: createdData.status || 'SCHEDULED'
+      tripCode: createdData.tripCode,
+      vehicleId: createdData.vehicleId,
+      departureStationId: createdData.departureStationId,
+      arrivalStationId: createdData.arrivalStationId,
+      departureTime: createdData.departureTime,
+      arrivalTime: createdData.arrivalTime,
+      basePrice: createdData.basePrice,
+      status: createdData.status
     }
 
     sessionTrips.value.unshift(authoritativeTrip)
@@ -349,6 +360,7 @@ onMounted(async () => {
         <h1 class="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
           <Calendar class="w-6 h-6 text-primary" />
           <span>Lập Lịch Chuyến Xe & Điều Độ Vận Hành</span>
+          <span class="text-xs font-normal text-muted-foreground">· Lập Lịch Chuyến Xe & Quản Lý Giờ Chạy</span>
         </h1>
         <p class="text-xs text-muted-foreground mt-1">
           Hệ thống điều phối tuyến đường liên tỉnh, bảo đảm quy tắc thời gian đệm bảo dưỡng 30 phút giữa các chuyến.
@@ -546,7 +558,7 @@ onMounted(async () => {
         <DialogHeader>
           <DialogTitle class="text-base font-bold text-foreground flex items-center gap-2">
             <Calendar class="w-4 h-4 text-primary" />
-            <span>Lập Lịch Chuyến Xe Mới</span>
+            <span>Lập Lịch Chuyến Xe Mới (30-Min Buffer Check)</span>
           </DialogTitle>
           <DialogDescription class="text-xs text-muted-foreground">
             Khởi tạo chuyến xe mới, gắn phương tiện và thiết lập giá vé cơ sở.

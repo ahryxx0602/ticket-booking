@@ -32,6 +32,41 @@ test.describe('E2E: Phân Hệ Đối Tác Nhà Xe (Operator Portal)', () => {
         })
       })
     })
+    const mockVehicles = [{ id: 1, plateNumber: '29B-123.45', modelName: 'Thaco VIP', vehicleType: 'SLEEPER', totalSeats: 36, status: 'ACTIVE' }]
+    await page.route('**/api/v1/partners/vehicles*', async (route) => {
+      if (route.request().method() === 'POST') {
+        const body = route.request().postDataJSON() || {}
+        const created = { id: 99, ...body, status: 'ACTIVE' }
+        mockVehicles.push(created)
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ code: 'OK', data: created })
+        })
+      } else {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(mockVehicles)
+        })
+      }
+    })
+    await page.route('**/api/v1/partners/drivers*', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.route('**/api/v1/catalog/stations*', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.route('**/api/v1/partners/trips*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 'OK',
+          data: { items: [], totalElements: 0, totalPages: 1, page: 0, size: 10 }
+        })
+      })
+    })
     await loginAsRole(page, 'ROLE_OPERATOR', 'operator1')
   })
   test('FE-OPER-E2E-01: Dashboard ví ký quỹ hiển thị 4 số dư Fintech và bảng giao dịch', async ({ page }) => {

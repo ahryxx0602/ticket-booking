@@ -87,7 +87,7 @@ const vehicleFormError = ref('')
 
 const vehicleForm = ref({
   plateNumber: '',
-  modelName: '',
+  modelName: 'Xe Khách Tiêu Chuẩn',
   vehicleType: 'SLEEPER',
   totalSeats: 36,
   seatRows: 9,
@@ -98,7 +98,7 @@ const vehicleForm = ref({
 function resetVehicleForm() {
   vehicleForm.value = {
     plateNumber: '',
-    modelName: '',
+    modelName: 'Xe Khách Tiêu Chuẩn',
     vehicleType: 'SLEEPER',
     totalSeats: 36,
     seatRows: 9,
@@ -151,6 +151,12 @@ async function handleSaveVehicle() {
   const plate = vehicleForm.value.plateNumber?.trim()
   if (!plate) {
     vehicleFormError.value = 'Biển số xe không được để trống'
+    return
+  }
+
+  const plateRegex = /^[0-9]{2}[A-Z]-[0-9]{3,5}(\.[0-9]{2})?$/i
+  if (!plateRegex.test(plate)) {
+    vehicleFormError.value = 'Biển số xe không đúng định dạng chuẩn Bộ GTVT (VD: 29B-123.45)'
     return
   }
 
@@ -608,7 +614,7 @@ onMounted(() => {
         <DialogHeader>
           <DialogTitle class="text-base font-bold text-foreground flex items-center gap-2">
             <Car class="w-4 h-4 text-primary" />
-            <span>{{ isEditingVehicle ? 'Cập Nhật Hồ Sơ Phương Tiện' : 'Thêm Phương Tiện Mới' }}</span>
+            <span>{{ isEditingVehicle ? 'Cập Nhật Hồ Sơ Phương Tiện' : 'Thêm Phương Tiện Mới Vào Đội Xe' }}</span>
           </DialogTitle>
           <DialogDescription class="text-xs text-muted-foreground">
             Thông tin kỹ thuật cấu hình ghế phục vụ sơ đồ đặt chỗ thời gian thực.
@@ -708,7 +714,7 @@ onMounted(() => {
           </Button>
           <Button size="sm" @click="handleSaveVehicle" :disabled="isSavingVehicle" class="text-xs">
             <RefreshCw v-if="isSavingVehicle" class="w-3.5 h-3.5 mr-1.5 animate-spin" />
-            {{ isEditingVehicle ? 'Lưu Cập Nhật' : 'Tạo Xe Mới' }}
+            {{ isEditingVehicle ? 'Lưu Cập Nhật' : 'Lưu Phương Tiện' }}
           </Button>
         </DialogFooter>
       </DialogContent>

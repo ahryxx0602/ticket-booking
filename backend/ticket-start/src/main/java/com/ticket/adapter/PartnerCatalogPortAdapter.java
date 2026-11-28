@@ -105,7 +105,11 @@ public class PartnerCatalogPortAdapter implements PartnerCatalogPort {
         if (status != null && !status.isBlank()) {
             try {
                 tripStatus = com.ticket.catalog.domain.model.TripStatus.valueOf(status.trim().toUpperCase());
-            } catch (IllegalArgumentException ignored) {
+            } catch (IllegalArgumentException e) {
+                throw new com.ticket.shared.exception.BusinessException(
+                        "INVALID_TRIP_STATUS",
+                        "Trạng thái chuyến xe không hợp lệ hoặc không được hỗ trợ: " + status
+                );
             }
         }
 

@@ -111,6 +111,27 @@ test.describe('Gate D3 Operator Operations Evidence', () => {
         body: JSON.stringify({ code: 'OK', data: mockProfile })
       })
     })
+
+    await page.route('**/api/v1/partners/trips*', async route => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 'OK',
+            data: {
+              items: [],
+              totalElements: 0,
+              totalPages: 1,
+              page: 0,
+              size: 10
+            }
+          })
+        })
+      } else {
+        await route.fallback()
+      }
+    })
   })
 
   test('D3-01: Capture FleetAndDriversView Evidence', async ({ page }) => {
@@ -156,14 +177,44 @@ test.describe('Gate D3 Operator Operations Evidence', () => {
     await page.screenshot({ path: path.join(d3ScreenshotDir, 'trip-schedule-modal.png') })
 
     // 3. Create a first trip to establish baseline schedule
-    await page.route('**/api/v1/partners/trips', async route => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ code: 'OK', data: { id: 101, tripCode: 'SG-DL-01' } })
-      })
+    await page.route('**/api/v1/partners/trips*', async route => {
+      if (route.request().method() === 'POST') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ code: 'OK', data: { id: 101, tripCode: 'SG-DL-01', status: 'SCHEDULED' } })
+        })
+      } else {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 'OK',
+            data: {
+              items: [
+                {
+                  id: 101,
+                  tripCode: 'SG-DL-01',
+                  vehicleId: 1,
+                  departureTime: '2026-11-25T04:00',
+                  arrivalTime: '2026-11-25T09:00',
+                  status: 'SCHEDULED'
+                }
+              ],
+              totalElements: 1,
+              totalPages: 1,
+              page: 0,
+              size: 10
+            }
+          })
+        })
+      }
     })
 
+    const selects = page.locator('select')
+    await selects.nth(0).selectOption('1')
+    await selects.nth(1).selectOption('1')
+    await selects.nth(2).selectOption('2')
     await page.locator('input[placeholder="VD: SG-DL-0800"]').fill('SG-DL-01')
     await page.locator('input[type="datetime-local"]').first().fill('2026-11-25T04:00')
     await page.locator('input[type="datetime-local"]').nth(1).fill('2026-11-25T09:00')
@@ -171,6 +222,10 @@ test.describe('Gate D3 Operator Operations Evidence', () => {
 
     // 4. Try scheduling a second trip for the same vehicle violating the 30-min buffer (at 09:15)
     await page.locator('[data-testid="btn-open-schedule"]').click()
+    const selects2 = page.locator('select')
+    await selects2.nth(0).selectOption('1')
+    await selects2.nth(1).selectOption('1')
+    await selects2.nth(2).selectOption('2')
     await page.locator('input[placeholder="VD: SG-DL-0800"]').fill('SG-DL-02')
     await page.locator('input[type="datetime-local"]').first().fill('2026-11-25T09:15')
     await page.locator('input[type="datetime-local"]').nth(1).fill('2026-11-25T15:00')
