@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { toast } from 'vue-sonner'
 import {
   Building2,
@@ -18,7 +18,9 @@ import {
   Loader2,
   Phone,
   Mail,
-  FileText
+  FileText,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -145,6 +147,25 @@ const filteredOperators = computed(() => {
     })
   }
   return list
+})
+
+// =========================================================================
+// OPERATOR PAGINATION
+// =========================================================================
+const operatorCurrentPage = ref(1)
+const operatorPageSize = ref(10)
+
+watch([searchQuery, selectedStatusFilter, operatorPageSize], () => {
+  operatorCurrentPage.value = 1
+})
+
+const operatorTotalPages = computed(() => {
+  return Math.max(1, Math.ceil(filteredOperators.value.length / operatorPageSize.value))
+})
+
+const paginatedOperators = computed(() => {
+  const start = (operatorCurrentPage.value - 1) * operatorPageSize.value
+  return filteredOperators.value.slice(start, start + operatorPageSize.value)
 })
 
 // =========================================================================
@@ -512,7 +533,7 @@ onMounted(() => {
           </TableHeader>
           <TableBody>
             <TableRow
-              v-for="op in filteredOperators"
+              v-for="op in paginatedOperators"
               :key="op.id"
               class="hover:bg-muted/30 transition-colors"
             >
@@ -648,6 +669,64 @@ onMounted(() => {
             </TableRow>
           </TableBody>
         </Table>
+      </div>
+
+      <!-- Operator Pagination Toolbar -->
+      <div
+        v-if="filteredOperators.length > 0"
+        class="p-3 border-t border-border bg-muted/10 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-muted-foreground"
+        data-testid="operators-pagination"
+      >
+        <div class="flex items-center gap-2">
+          <span>
+            Hiển thị 
+            <strong class="text-foreground font-mono">
+              {{ (operatorCurrentPage - 1) * operatorPageSize + 1 }} - {{ Math.min(operatorCurrentPage * operatorPageSize, filteredOperators.length) }}
+            </strong> 
+            trên tổng số <strong class="text-foreground font-mono">{{ filteredOperators.length }}</strong> đối tác
+          </span>
+          <div class="flex items-center gap-1.5 ml-2">
+            <label for="op-page-size" class="text-xs">Mỗi trang:</label>
+            <select
+              id="op-page-size"
+              v-model.number="operatorPageSize"
+              class="h-7 px-1.5 text-xs rounded border border-input bg-background text-foreground focus:outline-none"
+            >
+              <option :value="10">10</option>
+              <option :value="25">25</option>
+              <option :value="50">50</option>
+              <option :value="100">100</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-1">
+          <Button
+            size="sm"
+            variant="outline"
+            class="h-7 text-xs"
+            :disabled="operatorCurrentPage <= 1"
+            @click="operatorCurrentPage--"
+            data-testid="btn-operator-prev-page"
+          >
+            <ChevronLeft class="w-3.5 h-3.5 mr-0.5" /> Trước
+          </Button>
+
+          <span class="px-2 font-mono font-semibold text-foreground text-xs">
+            {{ operatorCurrentPage }} / {{ operatorTotalPages }}
+          </span>
+
+          <Button
+            size="sm"
+            variant="outline"
+            class="h-7 text-xs"
+            :disabled="operatorCurrentPage >= operatorTotalPages"
+            @click="operatorCurrentPage++"
+            data-testid="btn-operator-next-page"
+          >
+            Sau <ChevronRight class="w-3.5 h-3.5 ml-0.5" />
+          </Button>
+        </div>
       </div>
     </Card>
 

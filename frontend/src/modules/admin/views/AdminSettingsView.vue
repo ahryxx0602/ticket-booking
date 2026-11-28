@@ -280,6 +280,43 @@ async function fetchTrips() {
   }
 }
 
+// =========================================================================
+// 2.1 TRIPS SEARCH, FILTER & PAGINATION
+// =========================================================================
+const tripSearchQuery = ref('')
+const tripStatusFilter = ref('ALL')
+const tripCurrentPage = ref(1)
+const tripPageSize = ref(10)
+
+const filteredTrips = computed(() => {
+  let list = trips.value
+  const query = tripSearchQuery.value.trim().toLowerCase()
+  if (query) {
+    list = list.filter(t =>
+      (t.tripCode && t.tripCode.toLowerCase().includes(query)) ||
+      (t.route && t.route.toLowerCase().includes(query)) ||
+      (t.transportType && t.transportType.toLowerCase().includes(query))
+    )
+  }
+  if (tripStatusFilter.value !== 'ALL') {
+    list = list.filter(t => t.status === tripStatusFilter.value)
+  }
+  return list
+})
+
+watch([tripSearchQuery, tripStatusFilter, tripPageSize], () => {
+  tripCurrentPage.value = 1
+})
+
+const tripTotalPages = computed(() => {
+  return Math.max(1, Math.ceil(filteredTrips.value.length / tripPageSize.value))
+})
+
+const paginatedTrips = computed(() => {
+  const start = (tripCurrentPage.value - 1) * tripPageSize.value
+  return filteredTrips.value.slice(start, start + tripPageSize.value)
+})
+
 async function handleAddTrip() {
   if (!hasPermission('TRIP_MANAGE_CRUD')) {
     toast.error('Bạn không có quyền quản lý chuyến xe (Yêu cầu TRIP_MANAGE_CRUD).')
@@ -1147,21 +1184,63 @@ onMounted(async () => {
           </CardContent>
         </Card>
 
-        <!-- Table Trips -->
+        <!-- Table Trips with Search, Filter & Pagination -->
         <div class="lg:col-span-2 space-y-3">
           <Card class="border-border shadow-sm overflow-hidden">
-            <CardHeader class="p-4 border-b border-border flex flex-row items-center justify-between">
-              <div>
-                <CardTitle class="text-sm font-bold text-foreground">
-                  Danh Mục Tuyến & Chuyến Vận Hành ({{ trips.length }})
-                </CardTitle>
-                <p class="text-[11px] text-muted-foreground mt-0.5">
-                  Lưu ý: Không hỗ trợ sửa sơ đồ chuyến đã tạo do thiếu thông tin hình học ghế gốc trong hợp đồng đọc.
-                </p>
+            <CardHeader class="p-4 border-b border-border space-y-3">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <CardTitle class="text-sm font-bold text-foreground flex items-center gap-2">
+                    <span>Danh Mục Tuyến & Chuyến Vận Hành ({{ trips.length }})</span>
+                    <Badge v-if="filteredTrips.length !== trips.length" variant="secondary" class="text-[10px]">
+                      Khớp {{ filteredTrips.length }}
+                    </Badge>
+                  </CardTitle>
+                  <p class="text-[11px] text-muted-foreground mt-0.5">
+                    Quản lý danh sách lịch trình, giờ xuất bến và kiểm soát trạng thái vận hành.
+                  </p>
+                </div>
+                <Button variant="ghost" size="sm" :disabled="tripsLoading" @click="fetchTrips" class="h-8 text-xs shrink-0 self-start sm:self-auto">
+                  <RefreshCw class="w-3.5 h-3.5 mr-1" :class="{ 'animate-spin': tripsLoading }" /> Làm mới
+                </Button>
               </div>
-              <Button variant="ghost" size="sm" :disabled="tripsLoading" @click="fetchTrips" class="h-8 text-xs">
-                <RefreshCw class="w-3.5 h-3.5 mr-1" :class="{ 'animate-spin': tripsLoading }" /> Làm mới
-              </Button>
+
+              <!-- Search & Filter Controls -->
+              <div v-if="trips.length > 0" class="grid grid-cols-1 sm:grid-cols-12 gap-2 pt-1">
+                <!-- Search by tripCode, route -->
+                <div class="sm:col-span-8 relative">
+                  <Search class="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    v-model="tripSearchQuery"
+                    placeholder="Tìm theo mã chuyến, lộ trình, loại xe..."
+                    class="h-8 text-xs pl-8 bg-background"
+                    data-testid="input-trip-search"
+                  />
+                  <button
+                    v-if="tripSearchQuery"
+                    @click="tripSearchQuery = ''"
+                    class="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs"
+                    title="Xóa tìm kiếm"
+                  >
+                    <X class="w-3 h-3" />
+                  </button>
+                </div>
+
+                <!-- Status Filter -->
+                <div class="sm:col-span-4">
+                  <select
+                    v-model="tripStatusFilter"
+                    class="w-full h-8 px-2 text-xs rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                    data-testid="select-trip-status-filter"
+                  >
+                    <option value="ALL">Mọi trạng thái</option>
+                    <option value="SCHEDULED">Đã lên lịch (SCHEDULED)</option>
+                    <option value="RUNNING">Đang chạy (RUNNING)</option>
+                    <option value="COMPLETED">Hoàn thành (COMPLETED)</option>
+                    <option value="CANCELLED">Đã hủy (CANCELLED)</option>
+                  </select>
+                </div>
+              </div>
             </CardHeader>
 
             <div v-if="tripsLoading" class="p-8 text-center text-xs text-muted-foreground">
@@ -1179,6 +1258,18 @@ onMounted(async () => {
               <EmptyState title="Chưa có chuyến xe nào" description="Nhập thông tin bên trái để tạo lịch trình chuyến xe mới." />
             </div>
 
+            <div v-else-if="filteredTrips.length === 0" class="p-8 text-center text-xs text-muted-foreground space-y-2">
+              <p>Không tìm thấy chuyến xe nào khớp với tiêu chí tìm kiếm.</p>
+              <Button
+                variant="outline"
+                size="sm"
+                @click="tripSearchQuery = ''; tripStatusFilter = 'ALL'"
+                class="text-xs"
+              >
+                Đặt lại bộ lọc
+              </Button>
+            </div>
+
             <div v-else class="overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -1192,7 +1283,7 @@ onMounted(async () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  <TableRow v-for="t in trips" :key="t.id" class="hover:bg-muted/30">
+                  <TableRow v-for="t in paginatedTrips" :key="t.id" class="hover:bg-muted/30">
                     <TableCell class="font-bold text-primary tabular-nums text-xs">
                       {{ t.tripCode }}
                     </TableCell>
@@ -1225,6 +1316,64 @@ onMounted(async () => {
                   </TableRow>
                 </TableBody>
               </Table>
+            </div>
+
+            <!-- Trip Pagination Toolbar -->
+            <div
+              v-if="filteredTrips.length > 0"
+              class="p-3 border-t border-border bg-muted/10 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-muted-foreground"
+              data-testid="trips-pagination"
+            >
+              <div class="flex items-center gap-2">
+                <span>
+                  Hiển thị 
+                  <strong class="text-foreground font-mono">
+                    {{ (tripCurrentPage - 1) * tripPageSize + 1 }} - {{ Math.min(tripCurrentPage * tripPageSize, filteredTrips.length) }}
+                  </strong> 
+                  trên tổng số <strong class="text-foreground font-mono">{{ filteredTrips.length }}</strong> chuyến xe
+                </span>
+                <div class="flex items-center gap-1.5 ml-2">
+                  <label for="trip-page-size" class="text-xs">Mỗi trang:</label>
+                  <select
+                    id="trip-page-size"
+                    v-model.number="tripPageSize"
+                    class="h-7 px-1.5 text-xs rounded border border-input bg-background text-foreground focus:outline-none"
+                  >
+                    <option :value="10">10</option>
+                    <option :value="25">25</option>
+                    <option :value="50">50</option>
+                    <option :value="100">100</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  class="h-7 text-xs"
+                  :disabled="tripCurrentPage <= 1"
+                  @click="tripCurrentPage--"
+                  data-testid="btn-trip-prev-page"
+                >
+                  <ChevronLeft class="w-3.5 h-3.5 mr-0.5" /> Trước
+                </Button>
+
+                <span class="px-2 font-mono font-semibold text-foreground text-xs">
+                  {{ tripCurrentPage }} / {{ tripTotalPages }}
+                </span>
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  class="h-7 text-xs"
+                  :disabled="tripCurrentPage >= tripTotalPages"
+                  @click="tripCurrentPage++"
+                  data-testid="btn-trip-next-page"
+                >
+                  Sau <ChevronRight class="w-3.5 h-3.5 ml-0.5" />
+                </Button>
+              </div>
             </div>
           </Card>
         </div>

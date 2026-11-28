@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { toast } from 'vue-sonner'
 import {
   Image as ImageIcon,
@@ -13,7 +13,11 @@ import {
   Loader2,
   Filter,
   Ban,
-  AlertCircle
+  AlertCircle,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  X
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -102,9 +106,41 @@ onMounted(() => {
   fetchBanners()
 })
 
+// =========================================================================
+// BANNER SEARCH, FILTER & PAGINATION
+// =========================================================================
+const bannerSearchQuery = ref('')
+const bannerCurrentPage = ref(1)
+const bannerPageSize = ref(10)
+
 const filteredBanners = computed(() => {
-  if (selectedStatusFilter.value === 'ALL') return banners.value
-  return banners.value.filter(b => b.status === selectedStatusFilter.value)
+  let list = banners.value
+  if (selectedStatusFilter.value !== 'ALL') {
+    list = list.filter(b => b.status === selectedStatusFilter.value)
+  }
+  if (bannerSearchQuery.value.trim()) {
+    const q = bannerSearchQuery.value.trim().toLowerCase()
+    list = list.filter(b =>
+      (b.title && b.title.toLowerCase().includes(q)) ||
+      (b.operatorName && b.operatorName.toLowerCase().includes(q)) ||
+      (b.position && b.position.toLowerCase().includes(q)) ||
+      (b.targetUrl && b.targetUrl.toLowerCase().includes(q))
+    )
+  }
+  return list
+})
+
+watch([bannerSearchQuery, selectedStatusFilter, bannerPageSize], () => {
+  bannerCurrentPage.value = 1
+})
+
+const bannerTotalPages = computed(() => {
+  return Math.max(1, Math.ceil(filteredBanners.value.length / bannerPageSize.value))
+})
+
+const paginatedBanners = computed(() => {
+  const start = (bannerCurrentPage.value - 1) * bannerPageSize.value
+  return filteredBanners.value.slice(start, start + bannerPageSize.value)
 })
 
 // Modal Form State: Create / Edit
@@ -416,30 +452,52 @@ function getPositionLabel(pos) {
       </AlertDescription>
     </Alert>
 
-    <!-- Filter Bar -->
+    <!-- Filter & Search Bar -->
     <Card class="shadow-sm">
-      <CardContent class="p-3 sm:p-4">
-        <div class="flex flex-wrap items-center gap-3">
-          <div class="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
-            <Filter class="w-3.5 h-3.5" />
-            <span>Trạng thái lọc:</span>
-          </div>
-          <div class="flex flex-wrap gap-1.5">
-            <Button
-              v-for="f in [
-                { id: 'ALL', label: 'Tất Cả' },
-                { id: 'PENDING_APPROVAL', label: 'Chờ Duyệt' },
-                { id: 'ACTIVE', label: 'Đang Hiển Thị' },
-                { id: 'REJECTED', label: 'Bị Từ Chối' }
-              ]"
-              :key="f.id"
-              size="sm"
-              :variant="selectedStatusFilter === f.id ? 'default' : 'outline'"
-              class="h-7 text-xs font-medium"
-              @click="() => { selectedStatusFilter = f.id; fetchBanners(); }"
+      <CardContent class="p-3 sm:p-4 space-y-3">
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <!-- Search input -->
+          <div class="relative flex-1 sm:max-w-xs">
+            <Search class="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              v-model="bannerSearchQuery"
+              placeholder="Tìm theo tiêu đề, vị trí, liên kết..."
+              class="h-8 text-xs pl-8 bg-background"
+              data-testid="input-banner-search"
+            />
+            <button
+              v-if="bannerSearchQuery"
+              @click="bannerSearchQuery = ''"
+              class="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs"
+              title="Xóa tìm kiếm"
             >
-              {{ f.label }}
-            </Button>
+              <X class="w-3 h-3" />
+            </button>
+          </div>
+
+          <!-- Status Filter Tabs -->
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
+              <Filter class="w-3.5 h-3.5" />
+              <span>Trạng thái:</span>
+            </div>
+            <div class="flex flex-wrap gap-1.5">
+              <Button
+                v-for="f in [
+                  { id: 'ALL', label: 'Tất Cả' },
+                  { id: 'PENDING_APPROVAL', label: 'Chờ Duyệt' },
+                  { id: 'ACTIVE', label: 'Đang Hiển Thị' },
+                  { id: 'REJECTED', label: 'Bị Từ Chối' }
+                ]"
+                :key="f.id"
+                size="sm"
+                :variant="selectedStatusFilter === f.id ? 'default' : 'outline'"
+                class="h-7 text-xs font-medium"
+                @click="() => { selectedStatusFilter = f.id; fetchBanners(); }"
+              >
+                {{ f.label }}
+              </Button>
+            </div>
           </div>
         </div>
       </CardContent>
@@ -494,9 +552,10 @@ function getPositionLabel(pos) {
               </TableRow>
 
               <TableRow
-                v-for="b in filteredBanners"
+                v-for="b in paginatedBanners"
                 :key="b.id"
                 class="hover:bg-muted/40 transition-colors"
+                :data-testid="`banner-row-${b.id}`"
               >
                 <!-- Thumbnail -->
                 <TableCell class="py-3">
@@ -618,6 +677,63 @@ function getPositionLabel(pos) {
               </TableRow>
             </TableBody>
           </Table>
+        </div>
+
+        <!-- Banner Pagination Toolbar -->
+        <div
+          v-if="filteredBanners.length > 0"
+          class="p-3 border-t border-border bg-muted/10 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-muted-foreground"
+          data-testid="banners-pagination"
+        >
+          <div class="flex items-center gap-2">
+            <span>
+              Hiển thị 
+              <strong class="text-foreground font-mono">
+                {{ (bannerCurrentPage - 1) * bannerPageSize + 1 }} - {{ Math.min(bannerCurrentPage * bannerPageSize, filteredBanners.length) }}
+              </strong> 
+              trên tổng số <strong class="text-foreground font-mono">{{ filteredBanners.length }}</strong> banner
+            </span>
+            <div class="flex items-center gap-1.5 ml-2">
+              <label for="banner-page-size" class="text-xs">Mỗi trang:</label>
+              <select
+                id="banner-page-size"
+                v-model.number="bannerPageSize"
+                class="h-7 px-1.5 text-xs rounded border border-input bg-background text-foreground focus:outline-none"
+              >
+                <option :value="10">10</option>
+                <option :value="25">25</option>
+                <option :value="50">50</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-1">
+            <Button
+              size="sm"
+              variant="outline"
+              class="h-7 text-xs"
+              :disabled="bannerCurrentPage <= 1"
+              @click="bannerCurrentPage--"
+              data-testid="btn-banner-prev-page"
+            >
+              <ChevronLeft class="w-3.5 h-3.5 mr-0.5" /> Trước
+            </Button>
+
+            <span class="px-2 font-mono font-semibold text-foreground text-xs">
+              {{ bannerCurrentPage }} / {{ bannerTotalPages }}
+            </span>
+
+            <Button
+              size="sm"
+              variant="outline"
+              class="h-7 text-xs"
+              :disabled="bannerCurrentPage >= bannerTotalPages"
+              @click="bannerCurrentPage++"
+              data-testid="btn-banner-next-page"
+            >
+              Sau <ChevronRight class="w-3.5 h-3.5 ml-0.5" />
+            </Button>
+          </div>
         </div>
       </CardContent>
     </Card>
