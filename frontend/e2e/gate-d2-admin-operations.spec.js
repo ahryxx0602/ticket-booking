@@ -82,6 +82,17 @@ const mockWithdrawals = [
     status: 'PENDING'
   },
   {
+    id: 'WDR-20261123-02',
+    operatorId: 1,
+    operatorName: 'Hoàng Long Limousine',
+    amount: 20000000,
+    bankName: 'Vietcombank',
+    accountNumber: '0071001234567',
+    accountHolderName: 'Hoàng Long Ltd',
+    createdAt: '2026-11-23 11:00',
+    status: 'PENDING'
+  },
+  {
     id: 'WDR-20261122-09',
     operatorId: 2,
     operatorName: 'Phương Trang Velo',
@@ -213,6 +224,10 @@ test.describe('Gate D2: Administration and Financial Operations E2E Suite', () =
     // 1. System Settings Section
     await expect(page.locator('text=Cấu Hình Tham Số Vận Hành Toàn Sàn')).toBeVisible()
     await page.locator('[data-testid="btn-save-settings"]').click()
+    const confirmSaveBtn = page.locator('button:has-text("Lưu Cấu Hình")')
+    if (await confirmSaveBtn.isVisible()) {
+      await confirmSaveBtn.click()
+    }
     await expect(page.locator('[data-testid="settings-saved-alert"]')).toBeVisible()
     await page.screenshot({
       path: path.join(d2ScreenshotDir, 'd2-settings-system.png')
@@ -258,7 +273,7 @@ test.describe('Gate D2: Administration and Financial Operations E2E Suite', () =
 
     // 1. Withdrawal List with Bank Account Masking (••••4567)
     await expect(page.locator('h1')).toContainText('Kiểm Duyệt Lệnh Rút Tiền Ví Ký Quỹ Escrow')
-    await expect(page.locator('text=••••4567')).toBeVisible()
+    await expect(page.locator('text=••••4567').first()).toBeVisible()
     await page.screenshot({
       path: path.join(d2ScreenshotDir, 'd2-withdrawal-list.png'),
       fullPage: true
@@ -280,13 +295,25 @@ test.describe('Gate D2: Administration and Financial Operations E2E Suite', () =
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ code: 'OK', data: { id: 'WDR-20261123-01', status: 'APPROVED' } })
+        body: JSON.stringify({
+          code: 'OK',
+          data: {
+            id: 'WDR-20261123-01',
+            operatorId: 1,
+            amount: 15000000,
+            status: 'APPROVED'
+          }
+        })
       })
     })
 
-    const approveBtn = page.locator('[data-testid="btn-approve-withdraw-WDR-20261123-01"]')
+    const approveBtn = page.locator('[data-testid="btn-approve-withdraw-WDR-20261123-01"]').first()
     if (await approveBtn.isVisible()) {
       await approveBtn.click()
+      const confirmActionBtn = page.locator('[data-testid="btn-confirm-withdrawal-action"]')
+      if (await confirmActionBtn.isVisible()) {
+        await confirmActionBtn.click()
+      }
       await expect(page.locator('text=Đã đóng lệnh').first()).toBeVisible()
       await page.screenshot({
         path: path.join(d2ScreenshotDir, 'd2-withdrawal-approval-confirmation.png')
@@ -308,15 +335,22 @@ test.describe('Gate D2: Administration and Financial Operations E2E Suite', () =
       await route.abort('timedout')
     })
 
-    const rejectBtn = page.locator('[data-testid="btn-reject-withdraw-WDR-20261123-01"]')
-    if (await rejectBtn.isVisible()) {
-      await rejectBtn.click()
-      await page.waitForTimeout(300)
-      await expect(page.locator('text=Cảnh báo an toàn tài chính: Kết quả chưa xác định')).toBeVisible()
-      await page.screenshot({
-        path: path.join(d2ScreenshotDir, 'd2-withdrawal-unknown-outcome.png')
-      })
-    }
+    const rejectBtn = page.locator('[data-testid="btn-reject-withdraw-WDR-20261123-02"]').first()
+    await expect(rejectBtn).toBeVisible()
+    await rejectBtn.click()
+
+    const reasonBox = page.locator('textarea')
+    await expect(reasonBox).toBeVisible()
+    await reasonBox.fill('Thông tin tài khoản thụ hưởng không chính xác')
+
+    const confirmActionBtn = page.locator('[data-testid="btn-confirm-withdrawal-action"]')
+    await expect(confirmActionBtn).toBeVisible()
+    await confirmActionBtn.click()
+
+    await expect(page.locator('text=Cảnh báo an toàn tài chính: Kết quả chưa xác định')).toBeVisible()
+    await page.screenshot({
+      path: path.join(d2ScreenshotDir, 'd2-withdrawal-unknown-outcome.png')
+    })
 
     // 5. Error & Retry State
     await page.route('**/api/v1/admin/partners/withdrawals*', async route => {

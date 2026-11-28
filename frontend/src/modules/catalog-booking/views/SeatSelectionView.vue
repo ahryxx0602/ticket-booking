@@ -222,7 +222,7 @@ async function verifyHoldServerState() {
         expectedTripId: tripId.value,
         expectedUserId: auth.user?.id,
         expectedSeats: targetSeats,
-        expectedClientRequestId: reqKey,
+        expectedClientRequestId: b.clientRequestId != null ? reqKey : undefined,
         allowTerminalReplay: true
       })
       return validation.valid
@@ -634,7 +634,7 @@ onMounted(async () => {
 
   // 4. Restore Cancel Unresolved state if previously interrupted
   const storedCancel = operationGuard.getUnresolvedCancel(tripId.value)
-  if (storedCancel && String(storedCancel.tripId) === String(tripId.value)) {
+  if (storedCancel && (storedCancel.tripId == null || String(storedCancel.tripId) === String(tripId.value))) {
     isCancelUnresolved.value = true
   }
 

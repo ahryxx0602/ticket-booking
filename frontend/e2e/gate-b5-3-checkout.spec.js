@@ -172,6 +172,27 @@ test.describe('Gate B5.3-E: Payment Lifecycle Closure & Electronic Ticket Integr
         body: JSON.stringify({ success: true, data: { brandName: 'VeloBus' } })
       })
     })
+
+    await page.route('**/api/v1/payments/bookings/*/status', async (route) => {
+      const url = new URL(route.request().url())
+      const parts = url.pathname.split('/')
+      const bookingRef = parts[parts.length - 2] || 'BKG-CHK-881'
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 'OK',
+          data: {
+            bookingReference: bookingRef,
+            canAttemptPayment: true,
+            hasSuccessfulPayment: false,
+            hasPaymentAttempt: false,
+            reconciliationRequired: false,
+            paymentStatus: null
+          }
+        })
+      })
+    })
   })
 
   test('E2E-CHK-01: Active hold layout, light, dark, mobile & semantic CTA', async ({ page }) => {
@@ -252,6 +273,7 @@ test.describe('Gate B5.3-E: Payment Lifecycle Closure & Electronic Ticket Integr
         body: JSON.stringify({
           success: true,
           data: {
+            bookingReference: 'BKG-CHK-881',
             hasPaymentAttempt: true,
             paymentReference: 'PAY-88100',
             paymentStatus: 'PENDING',
@@ -413,6 +435,7 @@ test.describe('Gate B5.3-E: Payment Lifecycle Closure & Electronic Ticket Integr
         body: JSON.stringify({
           success: true,
           data: {
+            bookingReference: 'BKG-EXP-886',
             hasPaymentAttempt: true,
             hasSuccessfulPayment: true,
             paymentReference: 'PAY-88600',
@@ -652,6 +675,7 @@ test.describe('Gate B5.3-E: Payment Lifecycle Closure & Electronic Ticket Integr
         body: JSON.stringify({
           success: true,
           data: {
+            bookingReference: 'BKG-CHK-881',
             hasPaymentAttempt: true,
             paymentReference: 'PAY-SERVER-PENDING-99',
             paymentStatus: 'PENDING',
@@ -693,6 +717,7 @@ test.describe('Gate B5.3-E: Payment Lifecycle Closure & Electronic Ticket Integr
         body: JSON.stringify({
           success: true,
           data: {
+            bookingReference: 'BKG-CONF-883',
             hasPaymentAttempt: true,
             hasSuccessfulPayment: true,
             paymentReference: 'PAY-CONF-REC',

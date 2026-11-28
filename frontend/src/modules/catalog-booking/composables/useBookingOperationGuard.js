@@ -187,7 +187,8 @@ export function useBookingOperationGuard() {
     const message = typeof errorInfo === 'string'
       ? errorInfo
       : errorInfo?.response?.data?.message || errorInfo?.message || 'Lỗi thao tác hủy đơn đặt chỗ'
-    writeState('cancel_unresolved', bookingReference, { message })
+    const tripId = errorInfo?.tripId
+    writeState('cancel_unresolved', bookingReference, { message, ...(tripId != null ? { tripId } : {}) })
   }
 
   function clearUnresolvedCancel(bookingReference) {

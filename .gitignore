@@ -11,18 +11,68 @@ docs/plans/
 reviews/
 reports/
 
-# Maven
+# Maven Build & Temp Artifacts
 target/
 !.mvn/wrapper/maven-wrapper.jar
 *.class
+.flattened-pom.xml
+dependency-reduced-pom.xml
+release.properties
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.backup
+pom.xml.versionsBackup
 
-# Frontend (Node / Vite / Playwright)
+# Frontend (Node / Vite / Bundler)
 node_modules/
+dist/
 frontend/node_modules/
 frontend/dist/
+.vite/
 frontend/.vite/
+*.tsbuildinfo
+.eslintcache
+.stylelintcache
+vite.config.*.timestamp-*
+
+# Testing, Coverage & Playwright Artifacts
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+coverage/
 frontend/test-results/
 frontend/playwright-report/
+frontend/coverage/
+.nyc_output/
+
+# Screenshots & Visual Testing Evidence (Local Artifacts Only)
+screenshots/
+**/screenshots/
+**/test-results/**
+**/playwright-report/**
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+!**/src/**/*.png
+!**/src/**/*.jpg
+!**/src/**/*.jpeg
+!**/src/**/*.webp
+!**/src/**/*.svg
+!**/src/**/*.ico
+!**/public/**/*.png
+!**/public/**/*.jpg
+!**/public/**/*.jpeg
+!**/public/**/*.webp
+!**/public/**/*.svg
+!**/public/**/*.ico
+!docs/frontend-v2/**/*.png
+!docs/frontend-v2/**/*.jpg
+!docs/frontend-v2/**/*.jpeg
+!docs/frontend-v2/**/*.webp
+!docs/frontend-v2/**/*.svg
 
 # Environment Variables & Secrets
 .env
@@ -31,22 +81,41 @@ frontend/playwright-report/
 !frontend/.env.development
 !frontend/.env.production
 
-# Logs & Local Dev Process PIDs
+# Logs, Debug Traces & Local Dev Process PIDs
 *.log
 logs/
 .dev-pids/
 .dev-logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# Firebase & Cloud Credentials
+# Firebase, Keystores & Cloud Credentials
 *firebase*.json
 *serviceAccountKey*.json
-*:Zone.Identifier
 *.pem
 *.key
+*.p12
+*.pfx
+*.jks
+*.keystore
 
-# Operating System
+# Operating System & WSL Artifacts
 .DS_Store
 Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*:Zone.Identifier
+*.Zone.Identifier
+
+# Backup & Editor Swap Files
+*.bak
+*.tmp
+*~
+*.swp
+*.swo
 
 # Docker Data
 mysql_data/

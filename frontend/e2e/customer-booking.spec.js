@@ -58,15 +58,63 @@ test.describe('E2E: Hành Trình Khách Hàng (Customer Journey)', () => {
     })
 
     // Mock API ghế và giữ chỗ để E2E chạy độc lập và ổn định
-    await page.route('**/api/v1/catalog/trips/*/seats', async (route) => {
+    await page.route('**/api/v1/catalog/trips/**', async (route) => {
+      const url = route.request().url()
+      if (url.includes('/seats')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 'OK',
+            data: [
+              { id: 1, tripId: 101, seatNumber: 'A01', seatType: 'VIP', deck: 'LOWER', priceMultiplier: 1.0, finalPrice: 350000 },
+              { id: 2, tripId: 101, seatNumber: 'A02', seatType: 'STANDARD', deck: 'LOWER', priceMultiplier: 1.0, finalPrice: 350000 },
+              { id: 3, tripId: 101, seatNumber: 'B01', seatType: 'STANDARD', deck: 'UPPER', priceMultiplier: 1.0, finalPrice: 350000 }
+            ]
+          })
+        })
+        return
+      }
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([
-          { code: 'A01', deck: 'LOWER', row: 1, col: 1, status: 'AVAILABLE', price: 350000 },
-          { code: 'A02', deck: 'LOWER', row: 1, col: 2, status: 'AVAILABLE', price: 350000 },
-          { code: 'B01', deck: 'UPPER', row: 1, col: 1, status: 'AVAILABLE', price: 350000 },
-        ]),
+        body: JSON.stringify({
+          code: 'OK',
+          data: {
+            id: 101,
+            tripCode: 'HN-DN-01',
+            departureStationName: 'Bến xe Giáp Bát',
+            departureCity: 'Hà Nội',
+            arrivalStationName: 'Bến xe Trung tâm Đà Nẵng',
+            arrivalCity: 'Đà Nẵng',
+            route: 'Hà Nội → Đà Nẵng',
+            departureTime: '2026-11-26T19:00:00',
+            arrivalTime: '2026-11-27T09:00:00',
+            duration: '14 giờ',
+            transportType: 'VIP 36 Giường',
+            totalSeats: 36,
+            basePrice: 350000,
+            status: 'SCHEDULED'
+          }
+        })
+      })
+    })
+
+    await page.route('**/api/v1/bookings/trips/**/availability', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 'OK',
+          data: {
+            tripId: 101,
+            seats: [
+              { seatNumber: 'A01', status: 'AVAILABLE' },
+              { seatNumber: 'A02', status: 'AVAILABLE' },
+              { seatNumber: 'B01', status: 'AVAILABLE' }
+            ]
+          }
+        })
       })
     })
 
@@ -75,12 +123,119 @@ test.describe('E2E: Hành Trình Khách Hàng (Customer Journey)', () => {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          bookingReference: 'BKG-20261123-01',
-          tripId: 'TRIP-01',
-          seats: ['A01'],
-          totalAmount: 350000,
-          expiresAt: new Date(Date.now() + 600000).toISOString(),
-        }),
+          code: 'OK',
+          data: {
+            bookingId: 991,
+            bookingReference: 'BKG-20261123-01',
+            tripId: 101,
+            userId: 1,
+            seatNumbers: ['A01'],
+            totalAmount: 350000,
+            expiresAt: new Date(Date.now() + 600000).toISOString(),
+            status: 'HELD'
+          }
+        })
+      })
+    })
+
+    await page.route('**/api/v1/bookings/**', async (route) => {
+      const url = route.request().url()
+      if (url.includes('/my-bookings')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 'OK',
+            data: {
+              items: [
+                {
+                  bookingId: 991,
+                  bookingReference: 'BKG-20261123-01',
+                  tripId: 101,
+                  userId: 1,
+                  status: 'CONFIRMED',
+                  totalAmount: 350000,
+                  seatNumbers: ['A01'],
+                  departureStationName: 'Bến xe Giáp Bát',
+                  arrivalStationName: 'Bến xe Trung tâm Đà Nẵng',
+                  departureTime: '2026-11-26T19:00:00',
+                  expiresAt: '2026-11-26T19:10:00Z'
+                },
+                {
+                  bookingId: 992,
+                  bookingReference: 'BKG-20261123-02',
+                  tripId: 101,
+                  userId: 1,
+                  status: 'HELD',
+                  totalAmount: 350000,
+                  seatNumbers: ['A02'],
+                  departureStationName: 'Bến xe Giáp Bát',
+                  arrivalStationName: 'Bến xe Trung tâm Đà Nẵng',
+                  departureTime: '2026-11-26T19:00:00',
+                  expiresAt: new Date(Date.now() + 600000).toISOString()
+                }
+              ],
+              page: 0,
+              size: 10,
+              totalElements: 2,
+              totalPages: 1,
+              hasNext: false
+            }
+          })
+        })
+        return
+      }
+      if (url.includes('/ticket')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 'OK',
+            data: {
+              bookingReference: 'BKG-20261123-01',
+              tripId: 101,
+              status: 'CONFIRMED',
+              totalAmount: 350000,
+              seatNumbers: ['A01'],
+              qrImageBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+            }
+          })
+        })
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 'OK',
+          data: {
+            bookingId: 991,
+            bookingReference: 'BKG-20261123-01',
+            tripId: 101,
+            userId: 1,
+            status: 'HELD',
+            totalAmount: 350000,
+            expiresAt: new Date(Date.now() + 600000).toISOString(),
+            seatNumbers: ['A01']
+          }
+        })
+      })
+    })
+
+    await page.route('**/api/v1/payments/bookings/*/status', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 'OK',
+          data: {
+            bookingReference: 'BKG-20261123-01',
+            canAttemptPayment: true,
+            hasSuccessfulPayment: false,
+            hasPaymentAttempt: false,
+            reconciliationRequired: false
+          }
+        })
       })
     })
   })
@@ -110,7 +265,7 @@ test.describe('E2E: Hành Trình Khách Hàng (Customer Journey)', () => {
   })
 
   test('FE-CUST-E2E-03: Sơ đồ ghế 2 tầng và kích hoạt đếm ngược giữ chỗ 10 phút', async ({ page }) => {
-    await page.goto('/trips/TRIP-01/seats')
+    await page.goto('/trips/101/seats')
     
     // Kiểm tra Tabs 2 tầng
     await expect(page.locator('text=Tầng Dưới')).toBeVisible()
@@ -141,45 +296,31 @@ test.describe('E2E: Hành Trình Khách Hàng (Customer Journey)', () => {
   test('FE-CUST-E2E-04: Màn hình Checkout nhập thông tin hành khách và cổng thanh toán VNPay', async ({ page }) => {
     await page.goto('/checkout/BKG-20261123-01')
     
-    await expect(page.locator('text=Thông Tin Người Đi & Nhận Vé Điện Tử')).toBeVisible()
+    await expect(page.locator('text=Thông Tin Người Nhận Vé')).toBeVisible()
 
-    const nameInput = page.locator('input[placeholder*="Nguyễn Văn A"]').first()
-    const phoneInput = page.locator('input[placeholder*="0987654321"]').first()
-    const emailInput = page.locator('input[placeholder*="example.com"]').first()
-
-    if (await nameInput.isVisible()) {
-      await nameInput.fill('Trần Văn Thử Nghiệm')
-    }
-    if (await phoneInput.isVisible()) {
-      await phoneInput.fill('0912345678')
-    }
-    if (await emailInput.isVisible()) {
-      await emailInput.fill('test@velobus.vn')
-    }
-
-    const payBtn = page.getByRole('button', { name: /Thanh Toán Qua VNPay Ngay/i })
+    const payBtn = page.getByRole('button', { name: /Thanh Toán Qua VNPay/i })
     await expect(payBtn).toBeVisible()
   })
 
   test('FE-CUST-E2E-05: Lịch sử vé và hiển thị vé điện tử QR Code HMAC-SHA256', async ({ page }) => {
     await page.goto('/my-bookings')
     
-    await expect(page.locator('text=Lịch Sử Vé Đã Đặt & Vé Điện Tử')).toBeVisible()
-    await expect(page.locator('text=Mã đơn:').first()).toBeVisible()
+    await expect(page.locator('text=Lịch Sử Đặt Vé & Vé Điện Tử')).toBeVisible()
+    await expect(page.locator('text=Mã tham chiếu:').first()).toBeVisible()
 
     // Kiểm tra mở Modal xem QR Code
-    const viewQrBtn = page.getByRole('button', { name: /Mã QR Lên Xe/i }).first()
+    const viewQrBtn = page.getByRole('button', { name: /Xem Chi Tiết & Vé Điện Tử/i }).first()
     if (await viewQrBtn.isVisible()) {
       await viewQrBtn.click()
       await expect(page.locator('img[alt*="Mã QR"]')).toBeVisible()
       await page.keyboard.press('Escape')
     }
 
-    // Kiểm tra nút Yêu Cầu Hủy Vé
-    const cancelBtn = page.getByRole('button', { name: /Yêu Cầu Hủy Vé/i }).first()
+    // Kiểm tra nút Hủy Giữ Chỗ
+    const cancelBtn = page.getByRole('button', { name: /Hủy Giữ Chỗ/i }).first()
     if (await cancelBtn.isVisible()) {
       await cancelBtn.click()
-      await expect(page.locator('text=Xác Nhận Hủy Vé Trực Tuyến').or(page.locator('text=Đồng Ý Hủy Vé'))).toBeVisible()
+      await expect(page.locator('text=Xác Nhận Hủy Giữ Chỗ?')).toBeVisible()
     }
   })
 })

@@ -98,6 +98,7 @@ services:
       - MYSQL_DATABASE=${MYSQL_DATABASE:-ticket_booking_db}
       - MYSQL_USER=${MYSQL_USER:-ticket_user}
       - MYSQL_PASSWORD=${MYSQL_PASSWORD:?MYSQL_PASSWORD must be provided}
+      - MYSQL_SSL_MODE=${MYSQL_SSL_MODE:-PREFERRED}
       - REDIS_HOST=ticket-redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD must be provided}

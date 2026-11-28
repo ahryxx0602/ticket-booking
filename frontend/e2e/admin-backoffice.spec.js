@@ -326,6 +326,39 @@ test.describe('E2E: Phân Hệ Ban Quản Trị (Admin Backoffice)', () => {
       })
     })
 
+    await page.route('**/api/v1/admin/partners/operators*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: [
+            {
+              id: 1,
+              brandName: 'Hoàng Long Limousine',
+              businessName: 'Công ty TNHH Vận Tải Hoàng Long',
+              taxCode: '0101234567',
+              customCommissionRate: 12.5,
+              status: 'APPROVED',
+              vehiclesCount: 15,
+              driversCount: 22
+            }
+          ]
+        })
+      })
+    })
+
+    await page.route('**/api/v1/admin/settings/commission/global', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: { commissionRate: 10.0 }
+        })
+      })
+    })
+
     await loginAsRole(page, 'ROLE_ADMIN', 'admin')
   })
   test('FE-ADM-E2E-01: Dashboard quản trị hiển thị KPI toàn sàn và cảnh báo đối soát VNPay', async ({ page }) => {
@@ -354,18 +387,18 @@ test.describe('E2E: Phân Hệ Ban Quản Trị (Admin Backoffice)', () => {
     await expect(configBtn).toBeVisible()
     await configBtn.click()
 
-    // Modal cấu hình hoa hồng mở ra (dùng h3 để tránh strict mode violation)
-    await expect(page.locator('h3:has-text("Cấu Hình Hoa Hồng 2 Cấp")')).toBeVisible()
+    // Modal cấu hình hoa hồng mở ra
+    await expect(page.locator('text=Cấu Hình Hoa Hồng —')).toBeVisible()
 
-    // Thử nhập tỷ lệ > 50%
+    // Thử nhập tỷ lệ > 100%
     const rateInput = page.locator('[data-testid="input-custom-commission"]')
     if (await rateInput.isVisible()) {
-      await rateInput.fill('75')
+      await rateInput.fill('125')
       const saveBtn = page.locator('[data-testid="btn-save-commission"]')
       await saveBtn.click()
       
-      // Chốt chặn hiển thị lỗi validate biên 0% - 50%
-      await expect(page.locator('text=phải nằm trong khoảng từ 0% đến 50%')).toBeVisible()
+      // Chốt chặn hiển thị lỗi validate biên 0.0% - 100.0%
+      await expect(page.locator('text=phải nằm trong khoảng từ 0.0% đến 100.0%')).toBeVisible()
     }
   })
 

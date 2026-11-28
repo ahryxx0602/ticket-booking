@@ -319,12 +319,21 @@ function openConfirmDialog(item, action) {
 function closeConfirmDialog() {
   if (confirmDialog.value.isSubmitting) return
   confirmDialog.value.isOpen = false
-  confirmDialog.value.item = null
-  confirmDialog.value.error = ''
+  setTimeout(() => {
+    if (!confirmDialog.value.isOpen && !confirmDialog.value.isSubmitting) {
+      confirmDialog.value.item = null
+      confirmDialog.value.error = ''
+    }
+  }, 300)
 }
 
-async function executeWithdrawalMutation() {
-  const { item, action, adminNote } = confirmDialog.value
+async function executeWithdrawalMutation(e) {
+  if (e && typeof e.preventDefault === 'function') {
+    e.preventDefault()
+  }
+  const item = confirmDialog.value.item
+  const action = confirmDialog.value.action
+  const adminNote = confirmDialog.value.adminNote
   if (!item) return
 
   if (item.status !== 'PENDING') {
@@ -803,7 +812,7 @@ onMounted(() => {
             Hủy Bỏ
           </AlertDialogCancel>
           <AlertDialogAction
-            @click="executeWithdrawalMutation"
+            @click.prevent="executeWithdrawalMutation"
             :disabled="confirmDialog.isSubmitting"
             data-testid="btn-confirm-withdrawal-action"
             :class="[
