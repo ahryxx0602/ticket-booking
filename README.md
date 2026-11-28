@@ -12,7 +12,7 @@
 [![MySQL](https://img.shields.io/badge/MySQL-8.4%20LTS-4479A1?style=for-the-badge&logo=mysql&logoColor=white)](https://www.mysql.com/)
 [![Redis](https://img.shields.io/badge/Redis-7.2-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io/)
 [![CI Pipeline](https://img.shields.io/badge/CI%2FCD-GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/Tests-420%2B%20Passed-success?style=for-the-badge&logo=junit5&logoColor=white)]()
+[![Tests](https://img.shields.io/badge/Tests-426%2B%20Passed-success?style=for-the-badge&logo=junit5&logoColor=white)]()
 
 An enterprise-grade, high-concurrency multi-tenant ticket booking and fleet mobility marketplace built with **Hexagonal / Clean Architecture**, **Domain-Driven Design (DDD)**, and **Modern Modular Monolith** patterns. 
 
@@ -24,7 +24,7 @@ Inspired by real-world mobility leaders such as **Vexere** and **Shopee**, the p
 
 For granular technical specifications, please consult the sub-system documentation:
 - ⚙️ **[Backend Core Documentation](backend/README.md) ([Tiếng Việt](backend/README.vi.md)):** Domain-Driven Design, 8 Bounded Contexts, 33 Maven Modules, Redisson Locks, Virtual Threads, and FSM.
-- 🖥️ **[Frontend Interface Documentation](frontend/README.md) ([Tiếng Việt](frontend/README.vi.md)):** Vue 3, PrimeVue 4, Tailwind CSS, Kinetic Executive Design System, 3 Portals, and Playwright E2E suites.
+- 🖥️ **[Frontend Interface Documentation](frontend/README.md) ([Tiếng Việt](frontend/README.vi.md)):** Vue 3, Reka UI, Shadcn Vue, Tailwind CSS, Claude+ Warm Minimalist Enterprise Mobility Design System, 3 Portals, and Playwright E2E suites.
 
 ---
 
@@ -42,7 +42,7 @@ velobus-ticketing-platform/
 │   ├── context-partner/                   # Bus Operators, Fleet & Driver Roster, Escrow
 │   └── ticket-start/                      # Application Bootstrap & Monolith Assembly
 │
-├── frontend/                              # Vue 3 + PrimeVue 4 + Tailwind CSS Interface
+├── frontend/                              # Vue 3 + Reka UI + Shadcn Vue + Tailwind CSS
 │   ├── src/app/                           # Layouts (Customer, Operator, Admin, Auth) & Router
 │   ├── src/modules/auth/                  # Authentication & Profile Management
 │   ├── src/modules/catalog-booking/       # Search, 2-Deck SeatMap, Checkout, E-Tickets
@@ -100,14 +100,14 @@ VeloBus features the **Claude+ Warm Minimalist Enterprise Mobility** design syst
 
 ---
 
-## 🧪 Comprehensive Automated Testing (420+ Tests)
+## 🧪 Comprehensive Automated Testing (426+ Tests)
 
-The repository enforces end-to-end quality with over **420 automated passing tests**:
+The repository enforces end-to-end quality with over **426 automated passing tests**:
 
 ```
-TOTAL TESTS: 421 PASSED (100% GREEN)
+TOTAL TESTS: 426 PASSED (100% GREEN)
 ├── Backend (Java 21 / JUnit 5 / Testcontainers): 243 Passed
-├── Frontend Unit (Vitest / Happy-DOM):             178 Passed (18 test suites)
+├── Frontend Unit (Vitest / Happy-DOM):             183 Passed (18 test suites)
 └── Design System Linter (Stateless Node.js):        0 Violations across 18 migrated views
 ```
 
@@ -224,7 +224,7 @@ make smoke-test
 RELEASE CANDIDATE — LOCAL VERIFICATION COMPLETE, EXTERNAL INTEGRATION VALIDATION PENDING
 ```
 
-- **Local Verification Status:** **100% COMPLETE & PASSING**. All 33 Maven reactor modules compile and pass automated unit/integration tests (`mvn test`). Frontend passes 18/18 Vitest suites (178 unit tests), Vue TypeScript checking (`vue-tsc --noEmit`), production bundling (`vite build`), and Design System AST linting (0 violations across all 18 views).
+- **Local Verification Status:** **100% COMPLETE & PASSING**. All 33 Maven reactor modules compile and pass automated unit/integration tests (`mvn test`). Frontend passes 18/18 Vitest suites (183 unit tests), Vue TypeScript checking (`vue-tsc --noEmit`), production bundling (`vite build`), and Design System AST linting (0 violations across all 18 views).
 - **Backend Capability Closure:** Approved `GET /api/v1/partners/trips` endpoint implemented with tenant scoping (`userId` $\to$ `operatorId`), status/vehicle filtering, and standard pagination (`ApiResponse<PageResponse<PartnerTripResponse>>`).
 - **Data Integrity & Financial Governance:** Elimination of all mock production fixtures, synthetic `Date.now()` entity IDs, and persistent bank profile assumptions. Dual-layer Unknown Outcome Guard protects against interrupted mutations with read-only server verification.
 - **External Integration Pending:** Validation against live third-party VNPay production webhook callback clearance (VNPay IPN URL binding requires public HTTPS domain / reverse proxy webhook tunnel in production staging).

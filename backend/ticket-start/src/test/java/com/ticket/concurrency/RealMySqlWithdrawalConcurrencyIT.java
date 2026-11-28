@@ -355,4 +355,43 @@ class RealMySqlWithdrawalConcurrencyIT {
             assertThat(finalWallet.getLockedBalance()).isIn(BigDecimal.valueOf(19000000), BigDecimal.valueOf(18000000));
         }
     }
+
+    @Test
+    @DisplayName("FQA-01.5: Transaction rollback on failure ensures zero partial mutations in wallet, withdrawal, or ledger")
+    void testTransactionRollbackOnFailure() {
+        BigDecimal wdrAmount = BigDecimal.valueOf(4000000);
+        Long wdrId = createPendingWithdrawal(wdrAmount);
+
+        OperatorWalletJpaEntity initialWallet = walletRepository.findById(testWalletId).orElseThrow();
+        BigDecimal initialLocked = initialWallet.getLockedBalance();
+        BigDecimal initialAvailable = initialWallet.getAvailableBalance();
+
+        long initialTxCount = transactionRepository.findAll().stream()
+                .filter(t -> t.getOperatorId().equals(testOperatorId))
+                .count();
+
+        // Attempt an atomic operation that encounters an unhandled runtime failure after partial steps
+        try {
+            transactionTemplate.execute(status -> {
+                adminService.approveWithdrawal(wdrId, 999L, "Rollback Test Approval");
+                // Deliberately trigger failure before commit
+                throw new IllegalStateException("Simulated transient infrastructure crash before transaction commit");
+            });
+        } catch (IllegalStateException expected) {
+            assertThat(expected.getMessage()).contains("Simulated transient infrastructure crash");
+        }
+
+        // Verify that MySQL rolled back all changes cleanly
+        WithdrawalRequestJpaEntity rolledBackWdr = withdrawalRepository.findById(wdrId).orElseThrow();
+        assertThat(rolledBackWdr.getStatus()).isEqualTo(WithdrawalStatus.PENDING);
+
+        OperatorWalletJpaEntity rolledBackWallet = walletRepository.findById(testWalletId).orElseThrow();
+        assertThat(rolledBackWallet.getLockedBalance()).isEqualByComparingTo(initialLocked);
+        assertThat(rolledBackWallet.getAvailableBalance()).isEqualByComparingTo(initialAvailable);
+
+        long finalTxCount = transactionRepository.findAll().stream()
+                .filter(t -> t.getOperatorId().equals(testOperatorId))
+                .count();
+        assertThat(finalTxCount).isEqualTo(initialTxCount);
+    }
 }

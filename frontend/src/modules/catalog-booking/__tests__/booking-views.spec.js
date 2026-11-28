@@ -100,6 +100,8 @@ vi.mock('@/modules/catalog-booking/api', () => ({
     getPaymentStatus: vi.fn().mockResolvedValue({
       data: {
         data: {
+          bookingReference: 'BKG-CHECKOUT-123',
+          canAttemptPayment: true,
           hasPaymentAttempt: true,
           paymentReference: 'PAY-12345',
           paymentStatus: 'COMPLETED',
@@ -245,6 +247,57 @@ describe('Customer Booking Flow Tests', () => {
       expect(wrapper.text()).toContain('BKG-CHECKOUT-123')
       expect(wrapper.text()).toContain('01A')
       expect(wrapper.text()).toContain('VNPAY')
+    })
+
+    it('rejects payment eligibility when paymentStatus has mismatched or missing bookingReference', async () => {
+      const { catalogBookingApi } = await import('@/modules/catalog-booking/api')
+      catalogBookingApi.getPaymentStatus.mockResolvedValueOnce({
+        data: {
+          data: {
+            bookingReference: 'BKG-MISMATCH-999',
+            canAttemptPayment: true
+          }
+        }
+      })
+
+      const wrapper = mount(CheckoutView, {
+        global: {
+          stubs: {
+            'router-link': true,
+            'StatusBadge': true,
+            'Button': true
+          }
+        }
+      })
+      await flushPromises()
+
+      expect(wrapper.vm.canAttemptPayment).toBe(false)
+      expect(wrapper.vm.paymentStatusError).toContain('không hợp lệ')
+    })
+
+    it('rejects payment eligibility when canAttemptPayment is false', async () => {
+      const { catalogBookingApi } = await import('@/modules/catalog-booking/api')
+      catalogBookingApi.getPaymentStatus.mockResolvedValueOnce({
+        data: {
+          data: {
+            bookingReference: 'BKG-CHECKOUT-123',
+            canAttemptPayment: false
+          }
+        }
+      })
+
+      const wrapper = mount(CheckoutView, {
+        global: {
+          stubs: {
+            'router-link': true,
+            'StatusBadge': true,
+            'Button': true
+          }
+        }
+      })
+      await flushPromises()
+
+      expect(wrapper.vm.canAttemptPayment).toBe(false)
     })
   })
 

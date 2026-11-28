@@ -140,16 +140,23 @@ function loadPersistedUnknownOutcomes() {
 function persistUnknownOutcome(context) {
   const adminId = currentAdminId.value
   if (adminId && context && context.withdrawalId != null) {
+    const numAmount = Number(context.amount)
+    const validAmount = Number.isFinite(numAmount) && numAmount >= 0 ? numAmount : null
     const safeContext = {
       withdrawalId: context.withdrawalId,
       action: context.action === 'APPROVE' ? 'APPROVE' : 'REJECT',
-      amount: Number(context.amount) || 0,
+      amount: validAmount,
       timestamp: typeof context.timestamp === 'number' ? context.timestamp : Date.now()
     }
     const key = getStorageKey(adminId, safeContext.withdrawalId)
     try {
-      localStorage.setItem(key, JSON.stringify(safeContext))
-    } catch (_) {}
+      if (typeof window !== 'undefined' && window.localStorage && typeof window.localStorage.setItem === 'function') {
+        window.localStorage.setItem(key, JSON.stringify(safeContext))
+      }
+    } catch (err) {
+      console.warn('[AdminWithdrawals] Failed to persist unknown outcome to localStorage:', err)
+      toast.warning('Bộ nhớ lưu trữ trình duyệt bị giới hạn; khóa an toàn chỉ duy trì trong phiên làm việc hiện tại.')
+    }
     const updated = new Map(unresolvedOperations.value)
     updated.set(String(safeContext.withdrawalId), safeContext)
     unresolvedOperations.value = updated
@@ -161,7 +168,9 @@ function clearPersistedUnknownOutcome(withdrawalId) {
   if (adminId && withdrawalId != null) {
     const key = getStorageKey(adminId, withdrawalId)
     try {
-      localStorage.removeItem(key)
+      if (typeof window !== 'undefined' && window.localStorage && typeof window.localStorage.removeItem === 'function') {
+        window.localStorage.removeItem(key)
+      }
     } catch (_) {}
     const updated = new Map(unresolvedOperations.value)
     updated.delete(String(withdrawalId))
@@ -218,11 +227,13 @@ async function fetchWithdrawals() {
 }
 
 function normalizeWithdrawalItem(item) {
+  const parsedAmount = Number(item.amount)
+  const safeAmount = Number.isFinite(parsedAmount) && parsedAmount >= 0 ? parsedAmount : null
   return {
     ...item,
     id: item.id,
     operatorId: item.operatorId,
-    amount: Number(item.amount) || 0,
+    amount: safeAmount,
     bankName: item.bankName,
     accountNumber: item.accountNumber,
     accountHolderName: item.accountHolderName,
@@ -316,6 +327,16 @@ async function executeWithdrawalMutation() {
   const { item, action, adminNote } = confirmDialog.value
   if (!item) return
 
+  if (item.status !== 'PENDING') {
+    confirmDialog.value.error = 'Lệnh rút tiền không còn ở trạng thái PENDING hợp lệ.'
+    return
+  }
+
+  if (unresolvedOperations.value.has(String(item.id))) {
+    confirmDialog.value.error = 'Lệnh này đang bị khóa an toàn do kết quả xử lý trước đó chưa xác định.'
+    return
+  }
+
   if (!currentAdminId.value) {
     confirmDialog.value.error = 'Không thể xác thực danh tính quản trị viên.'
     return
@@ -374,6 +395,12 @@ async function executeWithdrawalMutation() {
     }
     if (resData.amount == null || resData.operatorId == null) {
       throw new Error('Dữ liệu phản hồi thiếu thông tin bắt buộc (amount hoặc operatorId)')
+    }
+    if (item.operatorId != null && resData.operatorId != null && String(resData.operatorId) !== String(item.operatorId)) {
+      throw new Error(`Mã nhà xe đối tác trong phản hồi không khớp (#${resData.operatorId} !== #${item.operatorId})`)
+    }
+    if (Number(resData.amount) !== Number(item.amount)) {
+      throw new Error(`Số tiền giải ngân trong phản hồi không khớp (#${resData.amount} !== #${item.amount})`)
     }
 
     // Definitive server success -> clear persistent recovery guard

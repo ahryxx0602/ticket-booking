@@ -115,7 +115,7 @@ const paymentStatusError = ref('')
 const canAttemptPayment = computed(() => {
   if (paymentStatusLoading.value || paymentStatusError.value) return false
   if (!paymentStatusInfo.value) return false
-  if (paymentStatusInfo.value.bookingReference && paymentStatusInfo.value.bookingReference !== bookingReference.value) return false
+  if (!paymentStatusInfo.value.bookingReference || paymentStatusInfo.value.bookingReference !== bookingReference.value) return false
   return paymentStatusInfo.value.canAttemptPayment === true
 })
 
@@ -168,10 +168,11 @@ async function pollAuthoritativeConfirmation(attempt = 1) {
     if (currentGen !== pollGeneration.value) return
 
     const payData = resPayment.data?.data || resPayment.data
-    if (payData) {
-      // Validate payment status response bookingReference
-      if (payData.bookingReference && payData.bookingReference !== bookingReference.value) {
-        console.warn(`[Checkout] Payment status bookingReference mismatch: expected ${bookingReference.value}, got ${payData.bookingReference}`)
+    if (payData && typeof payData === 'object') {
+      // Validate payment status response bookingReference strictly
+      if (!payData.bookingReference || payData.bookingReference !== bookingReference.value) {
+        console.warn(`[Checkout] Payment status bookingReference mismatch: expected ${bookingReference.value}, got ${payData?.bookingReference}`)
+        paymentStatusError.value = 'Mã tham chiếu thanh toán không khớp với đơn đặt chỗ hiện tại'
         return
       }
 
@@ -454,7 +455,7 @@ onMounted(async () => {
     try {
       const resPayment = await catalogBookingApi.getPaymentStatus(bookingReference.value)
       const payData = resPayment.data?.data || resPayment.data
-      if (payData && (!payData.bookingReference || payData.bookingReference === bookingReference.value)) {
+      if (payData && typeof payData === 'object' && payData.bookingReference === bookingReference.value) {
         paymentStatusInfo.value = payData
         if (payData.reconciliationRequired) {
           isReconciliationRequired.value = true
@@ -470,7 +471,7 @@ onMounted(async () => {
           })
         }
       } else {
-        paymentStatusError.value = 'Dữ liệu phản hồi trạng thái thanh toán từ máy chủ không hợp lệ.'
+        paymentStatusError.value = 'Dữ liệu phản hồi trạng thái thanh toán từ máy chủ không hợp lệ (mã tham chiếu không khớp hoặc bị thiếu).'
       }
     } catch (err) {
       console.warn('[Checkout] Failed to inspect initial payment status:', err)

@@ -47,6 +47,8 @@ const totalPages = ref(1)
 const totalElements = ref(0)
 const filterStatus = ref('')
 const filterVehicleId = ref('')
+const tripQueryGeneration = ref(0)
+const VALID_TRIP_STATUSES = new Set(['SCHEDULED', 'DEPARTED', 'CANCELLED'])
 
 const isCreatingTrip = ref(false)
 const isScheduleModalOpen = ref(false)
@@ -133,34 +135,53 @@ async function fetchMetadata() {
 }
 
 async function fetchTrips(page = currentPage.value) {
+  if (filterStatus.value && !VALID_TRIP_STATUSES.has(filterStatus.value)) {
+    tripsError.value = `Trạng thái lọc "${filterStatus.value}" không được hỗ trợ bởi máy chủ (chỉ hỗ trợ SCHEDULED, DEPARTED, CANCELLED)`
+    toast.error(tripsError.value)
+    return
+  }
+
+  const currentGen = ++tripQueryGeneration.value
   isLoadingTrips.value = true
   tripsError.value = ''
   try {
     const params = {
-      page,
+      page: Number.isInteger(page) && page >= 0 ? page : 0,
       size: pageSize.value
     }
     if (filterStatus.value) params.status = filterStatus.value
     if (filterVehicleId.value) params.vehicleId = Number(filterVehicleId.value)
 
     const res = await partnerApi.getMyTrips(params)
-    const pageData = res?.data?.data || res?.data
+    if (currentGen !== tripQueryGeneration.value) return
+
+    const pageData = res?.data?.data !== undefined ? res.data.data : res?.data
     if (pageData && Array.isArray(pageData.items)) {
-      sessionTrips.value = pageData.items
-      totalPages.value = pageData.totalPages || 1
-      totalElements.value = pageData.totalElements || pageData.items.length
-      currentPage.value = pageData.page || 0
+      const validItems = pageData.items.filter(item => item && item.id != null)
+      sessionTrips.value = validItems
+      const parsedTotalPages = Number(pageData.totalPages)
+      totalPages.value = Number.isInteger(parsedTotalPages) && parsedTotalPages >= 0 ? parsedTotalPages : 1
+      const parsedTotalElements = Number(pageData.totalElements)
+      totalElements.value = Number.isInteger(parsedTotalElements) && parsedTotalElements >= 0 ? parsedTotalElements : validItems.length
+      const parsedPage = Number(pageData.page)
+      currentPage.value = Number.isInteger(parsedPage) && parsedPage >= 0 ? parsedPage : page
     } else if (Array.isArray(pageData)) {
-      sessionTrips.value = pageData
+      const validItems = pageData.filter(item => item && item.id != null)
+      sessionTrips.value = validItems
       totalPages.value = 1
-      totalElements.value = pageData.length
+      totalElements.value = validItems.length
       currentPage.value = 0
+    } else {
+      throw new Error('Dữ liệu danh sách chuyến xe phản hồi từ máy chủ không hợp lệ')
     }
   } catch (err) {
+    if (currentGen !== tripQueryGeneration.value) return
     tripsError.value = err?.response?.data?.message || err?.message || 'Không thể tải danh sách chuyến xe từ máy chủ'
     toast.error(tripsError.value)
   } finally {
-    isLoadingTrips.value = false
+    if (currentGen === tripQueryGeneration.value) {
+      isLoadingTrips.value = false
+    }
   }
 }
 
@@ -183,6 +204,7 @@ function openScheduleModal() {
 }
 
 async function handleScheduleTrip() {
+  if (isCreatingTrip.value) return
   tripFormError.value = ''
 
   if (turnaroundBufferViolation.value) {
@@ -243,29 +265,33 @@ async function handleScheduleTrip() {
   isCreatingTrip.value = true
   try {
     const res = await partnerApi.createPartnerTrip(payload)
-    const createdData = res?.data?.data || res?.data || {}
+    const createdData = res?.data?.data !== undefined ? res.data.data : res?.data
 
     if (!createdData || createdData.id == null) {
       throw new Error('Máy chủ phản hồi tạo chuyến không hợp lệ (thiếu mã định danh chuyến xe)')
     }
 
-    sessionTrips.value.unshift({
+    const authoritativeTrip = {
       id: createdData.id,
-      tripCode: payload.tripCode,
-      vehicleId: payload.vehicleId,
-      departureStationId: payload.departureStationId,
-      arrivalStationId: payload.arrivalStationId,
-      departureTime: payload.departureTime,
-      arrivalTime: payload.arrivalTime,
-      basePrice: payload.basePrice,
-      status: 'SCHEDULED'
-    })
+      tripCode: createdData.tripCode || payload.tripCode,
+      vehicleId: createdData.vehicleId != null ? createdData.vehicleId : payload.vehicleId,
+      departureStationId: createdData.departureStationId != null ? createdData.departureStationId : payload.departureStationId,
+      arrivalStationId: createdData.arrivalStationId != null ? createdData.arrivalStationId : payload.arrivalStationId,
+      departureTime: createdData.departureTime || payload.departureTime,
+      arrivalTime: createdData.arrivalTime || payload.arrivalTime,
+      basePrice: createdData.basePrice != null ? createdData.basePrice : payload.basePrice,
+      status: createdData.status || 'SCHEDULED'
+    }
 
-    toast.success(`Tạo lịch chuyến xe ${payload.tripCode} thành công`)
+    sessionTrips.value.unshift(authoritativeTrip)
+
+    toast.success(`Tạo lịch chuyến xe ${authoritativeTrip.tripCode} thành công`)
     isScheduleModalOpen.value = false
     try {
       await fetchTrips(0)
-    } catch (_) {}
+    } catch (refreshErr) {
+      toast.warning('Tạo chuyến xe thành công nhưng không thể tự động đồng bộ lại danh sách: ' + (refreshErr?.message || 'Lỗi mạng'))
+    }
   } catch (err) {
     tripFormError.value = err?.response?.data?.message || err?.message || 'Lỗi khi lập lịch chuyến xe'
     toast.error(tripFormError.value)
@@ -296,10 +322,8 @@ function formatTripStatus(status) {
   switch (status) {
     case 'SCHEDULED':
       return { text: 'Đã Lên Lịch', class: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' }
-    case 'RUNNING':
-      return { text: 'Đang Chạy', class: 'bg-blue-500/10 text-blue-600 border-blue-500/20' }
-    case 'COMPLETED':
-      return { text: 'Hoàn Thành', class: 'bg-muted text-muted-foreground border-border' }
+    case 'DEPARTED':
+      return { text: 'Đã Xuất Bến', class: 'bg-blue-500/10 text-blue-600 border-blue-500/20' }
     case 'CANCELLED':
       return { text: 'Đã Hủy', class: 'bg-destructive/10 text-destructive border-destructive/20' }
     default:
@@ -395,19 +419,19 @@ onMounted(async () => {
           size="sm"
           variant="ghost"
           class="h-8 text-xs font-medium"
-          :class="filterStatus === 'RUNNING' ? 'bg-primary/10 text-primary font-bold' : ''"
-          @click="filterStatus = 'RUNNING'; fetchTrips(0)"
+          :class="filterStatus === 'DEPARTED' ? 'bg-primary/10 text-primary font-bold' : ''"
+          @click="filterStatus = 'DEPARTED'; fetchTrips(0)"
         >
-          Đang chạy
+          Đã xuất bến
         </Button>
         <Button
           size="sm"
           variant="ghost"
           class="h-8 text-xs font-medium"
-          :class="filterStatus === 'COMPLETED' ? 'bg-primary/10 text-primary font-bold' : ''"
-          @click="filterStatus = 'COMPLETED'; fetchTrips(0)"
+          :class="filterStatus === 'CANCELLED' ? 'bg-primary/10 text-primary font-bold' : ''"
+          @click="filterStatus = 'CANCELLED'; fetchTrips(0)"
         >
-          Hoàn thành
+          Đã hủy
         </Button>
       </div>
 

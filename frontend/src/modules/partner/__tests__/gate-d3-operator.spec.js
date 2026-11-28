@@ -274,6 +274,54 @@ describe('Gate D3 Operator Operations Unit Tests', () => {
       expect(wrapper.vm.sessionTrips.length).toBe(1)
       expect(wrapper.vm.sessionTrips[0].tripCode).toBe('SG-DL-02')
     })
+
+    it('rejects unsupported trip status filter with clear error message', async () => {
+      vi.spyOn(partnerApi, 'getVehicles').mockResolvedValue({ data: { code: 'OK', data: mockVehicles } })
+      vi.spyOn(catalogBookingApi, 'getStations').mockResolvedValue({ data: { code: 'OK', data: mockStations } })
+      const getMyTripsSpy = vi.spyOn(partnerApi, 'getMyTrips')
+
+      const wrapper = mount(OperatorTripsView, { global: { stubs: commonStubs } })
+      await flushPromises()
+
+      wrapper.vm.filterStatus = 'RUNNING' // No longer supported in backend TripStatus
+      await wrapper.vm.fetchTrips(0)
+
+      expect(wrapper.vm.tripsError).toContain('không được hỗ trợ')
+      // Did NOT dispatch API request with invalid filter
+      expect(getMyTripsSpy).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'RUNNING' }))
+    })
+
+    it('strictly parses and validates pagination metadata and filters valid trips', async () => {
+      vi.spyOn(partnerApi, 'getVehicles').mockResolvedValue({ data: { code: 'OK', data: mockVehicles } })
+      vi.spyOn(catalogBookingApi, 'getStations').mockResolvedValue({ data: { code: 'OK', data: mockStations } })
+      vi.spyOn(partnerApi, 'getMyTrips').mockResolvedValue({
+        data: {
+          code: 'OK',
+          data: {
+            items: [
+              { id: 991, tripCode: 'TRIP-VALID', departureStationId: 1, arrivalStationId: 2 },
+              null, // null item
+              { id: null } // invalid ID
+            ],
+            totalPages: 5,
+            totalElements: 12,
+            page: 2
+          }
+        }
+      })
+
+      const wrapper = mount(OperatorTripsView, { global: { stubs: commonStubs } })
+      await flushPromises()
+
+      await wrapper.vm.fetchTrips(2)
+
+      // Only valid item retained
+      expect(wrapper.vm.sessionTrips.length).toBe(1)
+      expect(wrapper.vm.sessionTrips[0].tripCode).toBe('TRIP-VALID')
+      expect(wrapper.vm.totalPages).toBe(5)
+      expect(wrapper.vm.totalElements).toBe(12)
+      expect(wrapper.vm.currentPage).toBe(2)
+    })
   })
 
   // -------------------------------------------------------------------------
@@ -354,6 +402,30 @@ describe('Gate D3 Operator Operations Unit Tests', () => {
       const retryBtn = wrapper.find('[data-testid="btn-retry"]')
       expect(retryBtn.exists()).toBe(true)
       expect(retryBtn.text()).toContain('Thử lại')
+    })
+
+    it('blocks profile save when logo is actively uploading or save is already in progress', async () => {
+      vi.spyOn(partnerApi, 'getProfile').mockResolvedValue({ data: { code: 'OK', data: mockProfile } })
+      const updateSpy = vi.spyOn(partnerApi, 'updateProfile')
+
+      const wrapper = mount(OperatorProfileView, { global: { stubs: commonStubs } })
+      await flushPromises()
+
+      // When logo is uploading
+      wrapper.vm.isUploadingLogo = true
+      wrapper.vm.form.brandName = 'New Brand'
+      wrapper.vm.form.contactPhone = '0988776655'
+      wrapper.vm.form.contactEmail = 'contact@futa.vn'
+
+      await wrapper.vm.handleSaveProfile()
+      expect(updateSpy).not.toHaveBeenCalled()
+      expect(wrapper.vm.formError).toContain('Tệp logo đang được tải lên')
+
+      // When isSaving is already true
+      wrapper.vm.isUploadingLogo = false
+      wrapper.vm.isSaving = true
+      await wrapper.vm.handleSaveProfile()
+      expect(updateSpy).not.toHaveBeenCalled()
     })
   })
 })

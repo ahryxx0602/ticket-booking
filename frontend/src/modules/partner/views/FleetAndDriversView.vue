@@ -65,8 +65,11 @@ async function fetchVehicles() {
   vehiclesError.value = ''
   try {
     const res = await partnerApi.getVehicles()
-    const data = res?.data?.data || res?.data || []
-    vehicles.value = Array.isArray(data) ? data : []
+    const data = res?.data?.data !== undefined ? res.data.data : res?.data
+    if (!Array.isArray(data)) {
+      throw new Error('Dữ liệu danh sách phương tiện từ máy chủ không hợp lệ (không phải danh sách)')
+    }
+    vehicles.value = data.filter(v => v && v.id != null)
   } catch (err) {
     vehiclesError.value = err?.response?.data?.message || err?.message || 'Không thể tải danh sách phương tiện'
     toast.error('Lỗi khi tải danh sách phương tiện: ' + vehiclesError.value)
@@ -114,6 +117,10 @@ function openAddVehicleModal() {
 }
 
 function openEditVehicleModal(vehicle) {
+  if (!vehicle || vehicle.id == null) {
+    toast.error('Thông tin phương tiện không hợp lệ.')
+    return
+  }
   resetVehicleForm()
   isEditingVehicle.value = true
   editingVehicleId.value = vehicle.id
@@ -121,10 +128,10 @@ function openEditVehicleModal(vehicle) {
     plateNumber: vehicle.plateNumber || '',
     modelName: vehicle.modelName || '',
     vehicleType: vehicle.vehicleType || 'SLEEPER',
-    totalSeats: Number(vehicle.totalSeats) || 36,
-    seatRows: Number(vehicle.seatRows) || 9,
-    seatsPerRow: Number(vehicle.seatsPerRow) || 4,
-    vipRows: Number(vehicle.vipRows) || 0
+    totalSeats: Number(vehicle.totalSeats) > 0 ? Number(vehicle.totalSeats) : 0,
+    seatRows: Number(vehicle.seatRows) > 0 ? Number(vehicle.seatRows) : 0,
+    seatsPerRow: Number(vehicle.seatsPerRow) > 0 ? Number(vehicle.seatsPerRow) : 0,
+    vipRows: Number(vehicle.vipRows) >= 0 ? Number(vehicle.vipRows) : 0
   }
   isVehicleModalOpen.value = true
 }
@@ -243,8 +250,11 @@ async function fetchDrivers() {
   driversError.value = ''
   try {
     const res = await partnerApi.getDrivers()
-    const data = res?.data?.data || res?.data || []
-    drivers.value = Array.isArray(data) ? data : []
+    const data = res?.data?.data !== undefined ? res.data.data : res?.data
+    if (!Array.isArray(data)) {
+      throw new Error('Dữ liệu danh sách tài xế từ máy chủ không hợp lệ (không phải danh sách)')
+    }
+    drivers.value = data.filter(d => d && d.id != null)
   } catch (err) {
     driversError.value = err?.response?.data?.message || err?.message || 'Không thể tải danh sách tài xế'
     toast.error('Lỗi khi tải danh sách tài xế: ' + driversError.value)

@@ -28,6 +28,7 @@ import FirebaseUploader from '@/shared/components/FirebaseUploader.vue'
 // State
 const isLoading = ref(false)
 const isSaving = ref(false)
+const isUploadingLogo = ref(false)
 const loadError = ref('')
 const formError = ref('')
 
@@ -69,7 +70,14 @@ async function fetchProfile() {
 }
 
 async function handleSaveProfile() {
+  if (isSaving.value) return
   formError.value = ''
+
+  if (isUploadingLogo.value) {
+    formError.value = 'Tệp logo đang được tải lên máy chủ. Vui lòng đợi trong giây lát trước khi lưu.'
+    toast.warning(formError.value)
+    return
+  }
 
   const brand = form.value.brandName?.trim()
   if (!brand) {
@@ -102,7 +110,10 @@ async function handleSaveProfile() {
   isSaving.value = true
   try {
     const res = await partnerApi.updateProfile(payload)
-    const updated = res?.data?.data || res?.data || payload
+    const updated = res?.data?.data !== undefined ? res.data.data : res?.data
+    if (!updated || typeof updated !== 'object') {
+      throw new Error('Máy chủ phản hồi cập nhật hồ sơ không hợp lệ')
+    }
     
     // Update local profile state
     if (profile.value) {
@@ -237,6 +248,8 @@ onMounted(() => {
                   v-model="form.logoUrl"
                   folder="operator-logos"
                   label="Tải lên Logo Mới (PNG/JPG)"
+                  @upload-start="isUploadingLogo = true"
+                  @upload-end="isUploadingLogo = false"
                 />
               </div>
             </div>
