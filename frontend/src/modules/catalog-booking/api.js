@@ -19,8 +19,15 @@ export const catalogBookingApi = {
   },
 
   // Customer Bookings
-  holdSeats(payload) {
-    return httpClient.post('/bookings/hold', payload)
+  getSeatAvailability(tripId) {
+    return httpClient.get(`/bookings/trips/${tripId}/availability`)
+  },
+  holdSeats(payload, idempotencyKey) {
+    const config = {}
+    if (idempotencyKey) {
+      config.headers = { 'Idempotency-Key': String(idempotencyKey).trim() }
+    }
+    return httpClient.post('/bookings/hold', payload, config)
   },
   cancelBooking(bookingReference) {
     return httpClient.post(`/bookings/${bookingReference}/cancel`)
@@ -31,9 +38,15 @@ export const catalogBookingApi = {
   getBookingDetail(bookingReference) {
     return httpClient.get(`/bookings/${bookingReference}`)
   },
+  getElectronicTicket(bookingReference) {
+    return httpClient.get(`/bookings/${bookingReference}/ticket`)
+  },
 
   // Payment
   createVnPayCheckout(payload) {
     return httpClient.post('/payments/checkout', payload)
+  },
+  getPaymentStatus(bookingReference) {
+    return httpClient.get(`/payments/bookings/${bookingReference}/status`)
   },
 }

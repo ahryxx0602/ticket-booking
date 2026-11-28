@@ -1,12 +1,12 @@
-import axios from 'axios'
+import axios, { type AxiosRequestConfig, type InternalAxiosRequestConfig } from 'axios'
 
-let activePreviewRoleCode = null
+let activePreviewRoleCode: string | null = null
 
-export function setHttpClientPreviewRole(roleCode) {
+export function setHttpClientPreviewRole(roleCode: string | null): void {
   activePreviewRoleCode = roleCode || null
 }
 
-function safeGetStorage(key) {
+function safeGetStorage(key: string): string | null {
   try {
     if (typeof localStorage !== 'undefined' && typeof localStorage.getItem === 'function') {
       return localStorage.getItem(key)
@@ -15,7 +15,7 @@ function safeGetStorage(key) {
   return null
 }
 
-function safeRemoveStorage(key) {
+function safeRemoveStorage(key: string): void {
   try {
     if (typeof localStorage !== 'undefined' && typeof localStorage.removeItem === 'function') {
       localStorage.removeItem(key)
@@ -26,7 +26,7 @@ function safeRemoveStorage(key) {
 /**
  * FE-SEC-004: Kiểm tra hạn sử dụng JWT ngay tại client trước khi đính kèm vào request
  */
-export function isJwtTokenExpired(token) {
+export function isJwtTokenExpired(token: string | null | undefined): boolean {
   if (!token || typeof token !== 'string') return true
   try {
     const parts = token.split('.')
@@ -56,7 +56,7 @@ const httpClient = axios.create({
 
 let isDispatchingUnauthorized = false
 
-function dispatchUnauthorizedOnce() {
+function dispatchUnauthorizedOnce(): void {
   activePreviewRoleCode = null
   safeRemoveStorage('velobus_access_token')
   safeRemoveStorage('velobus_user')
@@ -70,7 +70,7 @@ function dispatchUnauthorizedOnce() {
   }
 }
 
-httpClient.interceptors.request.use((config) => {
+httpClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   // FE-SEC-005 & FE-STATE-002: Chốt chặn Readonly dựa trên in-memory activePreviewRoleCode (Memory-Only Preview)
   const previewRoleCode = activePreviewRoleCode
   const method = (config.method || 'get').toUpperCase()
@@ -78,7 +78,7 @@ httpClient.interceptors.request.use((config) => {
   if (previewRoleCode && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && /\/admin(\/|$)/.test(url)) {
     return Promise.reject({
       code: 'PREVIEW_MODE_READONLY',
-      message: `Đang ở chế độ Xem thử giao diện (${previewRoleCode}). Vui lòng tắt chế độ Xem thử trước khi thực hiện thao tác thay đổi dữ liệu.`
+      message: `Đang ở chế độ Xem thử giao diện (${previewRoleCode}). Vui lòng tắt chế độ Xem thử trước khi thực hiện thao tác thay đổi dữ liệu.`,
     })
   }
 
@@ -89,7 +89,7 @@ httpClient.interceptors.request.use((config) => {
       dispatchUnauthorizedOnce()
       return Promise.reject({
         code: 'TOKEN_EXPIRED',
-        message: 'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại'
+        message: 'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại',
       })
     }
     config.headers.Authorization = `Bearer ${token}`

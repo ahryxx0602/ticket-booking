@@ -220,7 +220,21 @@ public class PartnerController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(response));
     }
 
-    // --- 6. Trip Scheduling ---
+    // --- 6. Trip Scheduling & Listing (FQA-06) ---
+    @GetMapping("/trips")
+    @PreAuthorize("hasRole('OPERATOR')")
+    public ResponseEntity<ApiResponse<com.ticket.shared.dto.PageResponse<PartnerTripResponse>>> getMyTrips(
+            Principal principal,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Long vehicleId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size
+    ) {
+        Long userId = getUserId(principal);
+        com.ticket.shared.dto.PageResponse<PartnerTripResponse> response = queryService.getMyTrips(userId, status, vehicleId, page, size);
+        return ResponseEntity.ok(ApiResponse.ok(response));
+    }
+
     @PostMapping("/trips")
     @PreAuthorize("hasRole('OPERATOR')")
     public ResponseEntity<ApiResponse<PartnerTripResponse>> createTrip(

@@ -4,6 +4,59 @@ import { loginAsRole } from './helpers/auth'
 test.describe('E2E: Hành Trình Khách Hàng (Customer Journey)', () => {
   test.beforeEach(async ({ page }) => {
     await loginAsRole(page, 'ROLE_CUSTOMER', 'customer1')
+
+    await page.route('**/api/v1/public/settings', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: { brandName: 'VeloBus' } })
+      })
+    })
+
+    await page.route('**/api/v1/catalog/stations', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: [
+            { id: 1, code: 'HN', city: 'Hà Nội', name: 'Bến xe Giáp Bát' },
+            { id: 2, code: 'DN', city: 'Đà Nẵng', name: 'Bến xe Trung tâm Đà Nẵng' }
+          ]
+        })
+      })
+    })
+
+    await page.route('**/api/v1/catalog/trips*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: [
+            {
+              id: 101,
+              tripCode: 'HN-DN-01',
+              departureStationCode: 'HN',
+              departureStationName: 'Bến xe Giáp Bát',
+              departureCity: 'Hà Nội',
+              arrivalStationCode: 'DN',
+              arrivalStationName: 'Bến xe Trung tâm Đà Nẵng',
+              arrivalCity: 'Đà Nẵng',
+              route: 'Hà Nội → Đà Nẵng',
+              departureTime: '2026-11-26T19:00:00',
+              arrivalTime: '2026-11-27T09:00:00',
+              duration: '14 giờ',
+              transportType: 'VIP 36 Giường',
+              totalSeats: 36,
+              basePrice: 350000,
+              status: 'SCHEDULED'
+            }
+          ]
+        })
+      })
+    })
+
     // Mock API ghế và giữ chỗ để E2E chạy độc lập và ổn định
     await page.route('**/api/v1/catalog/trips/*/seats', async (route) => {
       await route.fulfill({

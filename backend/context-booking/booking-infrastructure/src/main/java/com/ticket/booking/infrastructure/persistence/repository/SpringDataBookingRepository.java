@@ -29,6 +29,9 @@ public interface SpringDataBookingRepository extends JpaRepository<BookingJpaEnt
     @Query("SELECT DISTINCT b FROM BookingJpaEntity b LEFT JOIN FETCH b.items WHERE b.bookingReference = :bookingReference")
     Optional<BookingJpaEntity> findByBookingReferenceWithItems(@Param("bookingReference") String bookingReference);
 
+    @Query("SELECT DISTINCT b FROM BookingJpaEntity b LEFT JOIN FETCH b.items WHERE b.userId = :userId AND b.clientRequestId = :clientRequestId")
+    Optional<BookingJpaEntity> findByUserIdAndClientRequestIdWithItems(@Param("userId") Long userId, @Param("clientRequestId") String clientRequestId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT b FROM BookingJpaEntity b LEFT JOIN FETCH b.items WHERE b.bookingReference = :bookingReference")
     Optional<BookingJpaEntity> findByBookingReferenceForUpdate(@Param("bookingReference") String bookingReference);
@@ -44,9 +47,32 @@ public interface SpringDataBookingRepository extends JpaRepository<BookingJpaEnt
             """, nativeQuery = true)
     Set<String> findActiveBookedSeatNumbers(@Param("tripId") Long tripId, @Param("now") LocalDateTime now);
 
+    @Query(value = """
+            SELECT DISTINCT i.seat_number
+            FROM booking_items i
+            INNER JOIN bookings b ON b.id = i.booking_id
+            WHERE b.trip_id = :tripId
+              AND b.status = 'CONFIRMED'
+            """, nativeQuery = true)
+    Set<String> findConfirmedSeatNumbers(@Param("tripId") Long tripId);
+
+    @Query(value = """
+            SELECT DISTINCT i.seat_number
+            FROM booking_items i
+            INNER JOIN bookings b ON b.id = i.booking_id
+            WHERE b.trip_id = :tripId
+              AND b.status = 'HELD'
+              AND b.expires_at > :now
+            """, nativeQuery = true)
+    Set<String> findActiveHeldSeatNumbers(@Param("tripId") Long tripId, @Param("now") LocalDateTime now);
+
     @Query(value = "SELECT b.id FROM BookingJpaEntity b WHERE b.userId = :userId ORDER BY b.createdAt DESC, b.id DESC",
            countQuery = "SELECT COUNT(b.id) FROM BookingJpaEntity b WHERE b.userId = :userId")
     Page<Long> findIdsByUserId(@Param("userId") Long userId, Pageable pageable);
+
+    @Query(value = "SELECT b.id FROM BookingJpaEntity b WHERE b.userId = :userId AND b.status = :status ORDER BY b.createdAt DESC, b.id DESC",
+           countQuery = "SELECT COUNT(b.id) FROM BookingJpaEntity b WHERE b.userId = :userId AND b.status = :status")
+    Page<Long> findIdsByUserIdAndStatus(@Param("userId") Long userId, @Param("status") BookingStatus status, Pageable pageable);
 
     @Query(value = """
             SELECT b.id FROM BookingJpaEntity b

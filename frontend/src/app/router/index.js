@@ -28,7 +28,7 @@ const routes = [
         meta: { requiresAuth: false },
       },
       {
-        path: 'checkout/:bookingId',
+        path: 'checkout/:bookingId?',
         name: 'customer-checkout',
         component: () => import('@/modules/catalog-booking/views/CheckoutView.vue'),
         meta: { requiresAuth: true, roles: ['ROLE_CUSTOMER'] },
@@ -167,6 +167,12 @@ const routes = [
     path: '/403',
     name: 'forbidden',
     component: () => import('@/shared/views/ForbiddenView.vue'),
+    meta: { requiresAuth: false },
+  },
+  {
+    path: '/showcase',
+    name: 'showcase-hub',
+    component: () => import('@/showcase/ShowcaseHub.vue'),
     meta: { requiresAuth: false },
   },
   {

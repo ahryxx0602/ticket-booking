@@ -47,6 +47,14 @@ public class BookingRepositoryImpl implements BookingRepository {
     }
 
     @Override
+    public Optional<Booking> findByUserIdAndClientRequestId(Long userId, String clientRequestId) {
+        if (userId == null || clientRequestId == null || clientRequestId.isBlank()) {
+            return Optional.empty();
+        }
+        return springDataBookingRepository.findByUserIdAndClientRequestIdWithItems(userId, clientRequestId).map(this::toDomain);
+    }
+
+    @Override
     public Optional<Booking> findByReferenceForUpdate(String bookingReference) {
         return springDataBookingRepository.findByBookingReferenceForUpdate(bookingReference).map(this::toDomain);
     }
@@ -57,8 +65,24 @@ public class BookingRepositoryImpl implements BookingRepository {
     }
 
     @Override
+    public Set<String> findConfirmedSeatNumbers(Long tripId) {
+        return springDataBookingRepository.findConfirmedSeatNumbers(tripId);
+    }
+
+    @Override
+    public Set<String> findActiveHeldSeatNumbers(Long tripId, LocalDateTime now) {
+        return springDataBookingRepository.findActiveHeldSeatNumbers(tripId, now);
+    }
+
+    @Override
     public PageResponse<Booking> findByUserId(Long userId, int page, int size) {
         Page<Long> idPage = springDataBookingRepository.findIdsByUserId(userId, PageRequest.of(page, size));
+        return toPageResponse(idPage);
+    }
+
+    @Override
+    public PageResponse<Booking> findByUserIdAndStatus(Long userId, BookingStatus status, int page, int size) {
+        Page<Long> idPage = springDataBookingRepository.findIdsByUserIdAndStatus(userId, status, PageRequest.of(page, size));
         return toPageResponse(idPage);
     }
 
@@ -96,6 +120,9 @@ public class BookingRepositoryImpl implements BookingRepository {
             entity.setStatus(booking.getStatus());
             entity.setTotalAmount(booking.getTotalAmount());
             entity.setExpiresAt(booking.getExpiresAt());
+            if (booking.getClientRequestId() != null) {
+                entity.setClientRequestId(booking.getClientRequestId());
+            }
         } else {
             entity = toNewEntity(booking);
         }
@@ -137,6 +164,7 @@ public class BookingRepositoryImpl implements BookingRepository {
                 .totalAmount(entity.getTotalAmount())
                 .expiresAt(entity.getExpiresAt())
                 .version(entity.getVersion())
+                .clientRequestId(entity.getClientRequestId())
                 .items(entity.getItems().stream().map(i -> BookingItem.builder()
                         .id(i.getId())
                         .seatId(i.getSeatId())
@@ -160,6 +188,7 @@ public class BookingRepositoryImpl implements BookingRepository {
         entity.setTotalAmount(booking.getTotalAmount());
         entity.setExpiresAt(booking.getExpiresAt());
         entity.setVersion(booking.getVersion() != null ? booking.getVersion() : 0L);
+        entity.setClientRequestId(booking.getClientRequestId());
 
         if (booking.getItems() != null) {
             entity.setItems(booking.getItems().stream().map(i -> {

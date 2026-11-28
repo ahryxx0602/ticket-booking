@@ -23,6 +23,7 @@ public class BookingResponse {
     private BigDecimal totalAmount;
     private LocalDateTime expiresAt;
     private LocalDateTime createdAt;
+    private String clientRequestId;
     private List<String> seatNumbers;
     private List<BookingItemDto> items;
 }

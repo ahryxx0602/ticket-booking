@@ -24,6 +24,7 @@ final class BookingMapper {
                 .totalAmount(booking.getTotalAmount())
                 .expiresAt(booking.getExpiresAt())
                 .createdAt(booking.getCreatedAt())
+                .clientRequestId(booking.getClientRequestId())
                 .seatNumbers(items.stream().map(BookingItem::getSeatNumber).toList())
                 .items(items.stream().map(i -> BookingItemDto.builder()
                         .seatId(i.getSeatId())

@@ -15,6 +15,10 @@ public class HoldSeatCommand {
     // Optional: server resolves userId from JWT Principal; if provided, checked against JWT to prevent IDOR
     private Long userId;
 
+    // Optional: client-provided request idempotency key (header Idempotency-Key or body property)
+    @Size(max = 64, message = "Client request ID must not exceed 64 characters")
+    private String clientRequestId;
+
     @NotNull(message = "Trip ID is required")
     private Long tripId;
 

@@ -32,6 +32,33 @@ public class PartnerQueryServiceImpl implements PartnerQueryService {
     private final WithdrawalRequestRepository withdrawalRepository;
     private final BannerRepository bannerRepository;
     private final SystemSettingRepository systemSettingRepository;
+    private final PartnerCatalogPort partnerCatalogPort;
+
+    @Override
+    public com.ticket.shared.dto.PageResponse<PartnerTripResponse> getMyTrips(Long userId, String status, Long vehicleId, int page, int size) {
+        BusOperator operator = getOperatorByUserId(userId);
+        if (partnerCatalogPort == null) {
+            return com.ticket.shared.dto.PageResponse.of(Collections.emptyList(), page, size, 0);
+        }
+        com.ticket.shared.dto.PageResponse<PartnerTripDto> rawPage = partnerCatalogPort.findOperatorTrips(
+                operator.getId(), status, vehicleId, page, size
+        );
+        List<PartnerTripResponse> items = rawPage.getItems().stream()
+                .map(dto -> PartnerTripResponse.builder()
+                        .id(dto.getId())
+                        .tripCode(dto.getTripCode())
+                        .operatorId(dto.getOperatorId())
+                        .vehicleId(dto.getVehicleId())
+                        .departureStationId(dto.getDepartureStationId())
+                        .arrivalStationId(dto.getArrivalStationId())
+                        .departureTime(dto.getDepartureTime())
+                        .arrivalTime(dto.getArrivalTime())
+                        .basePrice(dto.getBasePrice())
+                        .status(dto.getStatus())
+                        .build())
+                .collect(Collectors.toList());
+        return com.ticket.shared.dto.PageResponse.of(items, rawPage.getPage(), rawPage.getSize(), rawPage.getTotalElements());
+    }
 
     @Override
     public OperatorResponse getMyOperatorProfile(Long userId) {

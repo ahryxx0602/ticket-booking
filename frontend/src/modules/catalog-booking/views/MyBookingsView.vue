@@ -1,351 +1,560 @@
 <script setup>
-import { ref, computed } from 'vue'
-import QRCode from 'qrcode'
+import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { toast } from 'vue-sonner'
+import { catalogBookingApi } from '../api'
+import { useBookingOperationGuard } from '../composables/useBookingOperationGuard'
 import StatusBadge from '@/shared/components/StatusBadge.vue'
 import EmptyState from '@/shared/components/EmptyState.vue'
-import AppButton from '@/shared/components/AppButton.vue'
+import { Button } from '@/components/ui/button'
+import {
+  Ticket,
+  Clock,
+  Calendar,
+  AlertCircle,
+  Loader2,
+  RefreshCw,
+  CreditCard,
+  XCircle,
+  QrCode,
+  ChevronLeft,
+  ChevronRight,
+  ShieldCheck,
+  Bus
+} from 'lucide-vue-next'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@/components/ui/alert-dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog'
 
-// Status filter tabs
+const router = useRouter()
+const operationGuard = useBookingOperationGuard()
+
+// State
+const bookings = ref([])
+const isLoading = ref(true)
+const loadError = ref('')
 const currentTab = ref('ALL')
 
-// Mock bookings list (corresponds to API-BKG-03)
-const bookings = ref([
-  {
-    id: 'BKG-20261123-9988',
-    tripId: 'TRIP-01',
-    route: 'Hà Nội (Giáp Bát) → Đà Nẵng (Trung Tâm)',
-    departureTime: '19:00 - 23/11/2026',
-    operator: 'Hoàng Long Limousine',
-    plate: '29B-888.99',
-    seats: ['A05', 'A06'],
-    totalPrice: 700000,
-    status: 'CONFIRMED',
-    passenger: {
-      name: 'Phan Văn Thành',
-      phone: '0912345678',
-      email: 'thanh.pv@gmail.com'
-    },
-    // Payload with HMAC-SHA256 signature for ticket inspection
-    qrPayload: 'VELOBUS|BKG-20261123-9988|TRIP-01|A05,A06|HMAC:a8f9c2d1e4b78345'
-  },
-  {
-    id: 'BKG-20261120-1122',
-    tripId: 'TRIP-02',
-    route: 'Sài Gòn (Miền Đông) → Đà Lạt (Liên Tỉnh)',
-    departureTime: '23:00 - 20/11/2026',
-    operator: 'Phương Trang Velo',
-    plate: '51B-999.22',
-    seats: ['B02'],
-    totalPrice: 380000,
-    status: 'COMPLETED',
-    passenger: {
-      name: 'Phan Văn Thành',
-      phone: '0912345678',
-      email: 'thanh.pv@gmail.com'
-    },
-    qrPayload: 'VELOBUS|BKG-20261120-1122|TRIP-02|B02|HMAC:f10928a38c8234be'
-  },
-  {
-    id: 'BKG-20261115-4455',
-    tripId: 'TRIP-03',
-    route: 'Hà Nội (Giáp Bát) → Hải Phòng (Cầu Rào)',
-    departureTime: '08:30 - 15/11/2026',
-    operator: 'Hải Âu Express',
-    plate: '15B-123.45',
-    seats: ['A01'],
-    totalPrice: 180000,
-    status: 'CANCELLED',
-    passenger: {
-      name: 'Phan Văn Thành',
-      phone: '0912345678',
-      email: 'thanh.pv@gmail.com'
-    },
-    qrPayload: 'VELOBUS|BKG-20261115-4455|TRIP-03|A01|HMAC:cancelled'
-  }
-])
+const tabs = [
+  { key: 'ALL', label: 'Tất cả' },
+  { key: 'HELD', label: 'Đang giữ chỗ' },
+  { key: 'CONFIRMED', label: 'Đã xác nhận' },
+  { key: 'CANCELLED', label: 'Đã hủy' },
+  { key: 'EXPIRED', label: 'Hết hạn' }
+]
 
+// Pagination state from PageResponse
+const currentPage = ref(0) // 0-indexed per PageResponse
+const pageSize = ref(10)
+const totalPages = ref(1)
+const totalElements = ref(0)
+const hasNext = ref(false)
+const hasPrevious = ref(false)
+
+// Cancel Modal State
+const bookingToCancel = ref(null)
+const isCancelling = ref(false)
+
+// Ticket Detail Modal State
+const selectedBookingForDetail = ref(null)
+const showDetailModal = ref(false)
+const ticketLoading = ref(false)
+const ticketError = ref('')
+const ticketData = ref(null)
+
+// Out-of-order request sequence guards
+let fetchSequence = 0
+let ticketSequence = 0
+
+// Client-side fallback filter if backend returned un-filtered items
 const filteredBookings = computed(() => {
   if (currentTab.value === 'ALL') return bookings.value
   return bookings.value.filter(b => b.status === currentTab.value)
 })
 
-// QR Code Modal State
-const selectedBookingForQr = ref(null)
-const qrDataUrl = ref('')
-const isGeneratingQr = ref(false)
+async function fetchMyBookings(page = 0, status = currentTab.value === 'ALL' ? undefined : currentTab.value) {
+  const currentSeq = ++fetchSequence
+  isLoading.value = true
+  loadError.value = ''
 
-async function openQrModal(booking) {
-  selectedBookingForQr.value = booking
-  isGeneratingQr.value = true
   try {
-    qrDataUrl.value = await QRCode.toDataURL(booking.qrPayload, {
-      width: 240,
-      margin: 2,
-      color: {
-        dark: '#142B4A', // Brand Navy
-        light: '#FFFFFF'
-      }
+    const res = await catalogBookingApi.getMyBookings({
+      page,
+      size: pageSize.value,
+      status: status || undefined
     })
+
+    if (currentSeq !== fetchSequence) return
+
+    const pageData = res.data?.data || res.data
+
+    if (!pageData || typeof pageData !== 'object') {
+      throw new Error('Dữ liệu danh sách đơn đặt vé không hợp lệ.')
+    }
+
+    if (Array.isArray(pageData.items)) {
+      bookings.value = pageData.items
+      currentPage.value = Number(pageData.page ?? 0)
+      pageSize.value = Number(pageData.size ?? 10)
+      totalPages.value = Number(pageData.totalPages ?? 1)
+      totalElements.value = Number(pageData.totalElements ?? pageData.items.length)
+      hasNext.value = Boolean(pageData.hasNext)
+      hasPrevious.value = Boolean(pageData.hasPrevious)
+    } else if (Array.isArray(pageData)) {
+      bookings.value = pageData
+      currentPage.value = 0
+      totalPages.value = 1
+      totalElements.value = pageData.length
+      hasNext.value = false
+      hasPrevious.value = false
+    } else {
+      throw new Error('Cấu trúc dữ liệu đơn đặt vé từ máy chủ không đúng định dạng (thiếu items).')
+    }
   } catch (err) {
-    console.error('Lỗi sinh mã QR vé xe:', err)
+    if (currentSeq !== fetchSequence) return
+    console.error('[MyBookings] Failed to fetch bookings:', err)
+    loadError.value = err.response?.data?.message || err.message || 'Không thể tải danh sách đơn vé từ máy chủ.'
   } finally {
-    isGeneratingQr.value = false
+    if (currentSeq === fetchSequence) {
+      isLoading.value = false
+    }
   }
 }
 
-function closeQrModal() {
-  selectedBookingForQr.value = null
-  qrDataUrl.value = ''
+function selectTab(tabKey) {
+  currentTab.value = tabKey
+  currentPage.value = 0
+  fetchMyBookings(0, tabKey === 'ALL' ? undefined : tabKey)
 }
 
-// Cancel Booking Confirmation Modal State
-const selectedBookingForCancel = ref(null)
-const isCancelling = ref(false)
-
-function openCancelModal(booking) {
-  selectedBookingForCancel.value = booking
+function handlePageChange(newPage) {
+  if (newPage < 0 || newPage >= totalPages.value || newPage === currentPage.value) return
+  fetchMyBookings(newPage, currentTab.value === 'ALL' ? undefined : currentTab.value)
 }
 
-function closeCancelModal() {
-  selectedBookingForCancel.value = null
+// Cancel Booking Flow
+function openCancelDialog(booking) {
+  bookingToCancel.value = booking
 }
 
-function confirmCancelBooking() {
-  if (!selectedBookingForCancel.value) return
+async function confirmCancelBooking() {
+  if (!bookingToCancel.value) return
+  const refCode = bookingToCancel.value.bookingReference
   isCancelling.value = true
+  operationGuard.setCancelPending(refCode)
 
-  // Simulate API-BKG-02 cancel call
-  setTimeout(() => {
-    selectedBookingForCancel.value.status = 'CANCELLED'
+  try {
+    await catalogBookingApi.cancelBooking(refCode)
+    operationGuard.clearCancelPending(refCode)
+    operationGuard.clearUnresolvedCancel(refCode)
+    toast.success(`Đã hủy thành công đơn giữ chỗ #${refCode}.`)
+    bookingToCancel.value = null
+    // Refresh page
+    await fetchMyBookings(currentPage.value, currentTab.value === 'ALL' ? undefined : currentTab.value)
+  } catch (err) {
+    console.error('[MyBookings] Cancel failed:', err)
+    operationGuard.clearCancelPending(refCode)
+    const status = err.response?.status
+    // D0-PRE-03: Distinguish definitive business rejection (4xx) from ambiguous outcome (5xx or network disconnect)
+    if (status && status >= 400 && status < 500) {
+      operationGuard.clearUnresolvedCancel(refCode)
+    } else {
+      operationGuard.setUnresolvedCancel(refCode, err)
+    }
+    const msg = err.response?.data?.message || err.message || 'Không thể hủy đơn đặt chỗ trên máy chủ.'
+    toast.error(msg)
+  } finally {
     isCancelling.value = false
-    closeCancelModal()
-  }, 800)
+  }
 }
+
+// Ticket Detail / E-Ticket Modal
+async function openTicketDetail(booking) {
+  const currentTicketSeq = ++ticketSequence
+  selectedBookingForDetail.value = booking
+  showDetailModal.value = true
+  ticketLoading.value = true
+  ticketError.value = ''
+  ticketData.value = null
+
+  try {
+    const res = await catalogBookingApi.getElectronicTicket(booking.bookingReference)
+    if (currentTicketSeq !== ticketSequence) return
+    const data = res.data?.data || res.data
+    // D0-PRE-03: Verify returned bookingReference against requested booking and validate canonical fields
+    if (!data || typeof data !== 'object') {
+      throw new Error('Dữ liệu vé điện tử từ máy chủ không hợp lệ.')
+    }
+    if (data.bookingReference !== booking.bookingReference) {
+      throw new Error(`Mã vé không khớp: yêu cầu ${booking.bookingReference} nhưng máy chủ trả về ${data.bookingReference}`)
+    }
+    if (!data.qrImageBase64 || !data.tripId || !data.seatNumbers || !data.status) {
+      throw new Error('Dữ liệu vé điện tử từ máy chủ không đầy đủ thông tin chuẩn hóa.')
+    }
+    ticketData.value = data
+  } catch (err) {
+    if (currentTicketSeq !== ticketSequence) return
+    console.error('[MyBookings] Failed to load electronic ticket:', err)
+    ticketError.value = err.response?.data?.message || err.message || 'Không thể lấy thông tin vé điện tử từ máy chủ.'
+  } finally {
+    if (currentTicketSeq === ticketSequence) {
+      ticketLoading.value = false
+    }
+  }
+}
+
+function formatDate(dateInput) {
+  if (!dateInput) return '—'
+  try {
+    const d = new Date(dateInput)
+    if (isNaN(d.getTime())) return String(dateInput)
+    return new Intl.DateTimeFormat('vi-VN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(d)
+  } catch {
+    return String(dateInput)
+  }
+}
+
+onMounted(() => {
+  fetchMyBookings(0)
+})
 </script>
 
 <template>
   <div class="max-w-5xl mx-auto px-4 py-8 space-y-6">
     <!-- Header -->
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border-default pb-4">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
       <div>
-        <h1 class="text-2xl font-bold text-text-primary">Lịch Sử Vé Đã Đặt & Vé Điện Tử</h1>
-        <p class="text-xs text-text-muted mt-1">
-          Tra cứu thông tin vé, xuất mã QR HMAC-SHA256 lên xe hoặc yêu cầu hoàn/hủy vé trực tuyến.
+        <h1 class="text-xl font-bold text-foreground">Lịch Sử Đặt Vé & Vé Điện Tử</h1>
+        <p class="text-xs text-muted-foreground mt-1">
+          Theo dõi trạng thái các đơn giữ chỗ, hoàn tất thanh toán VNPay và quản lý vé chuyến xe của bạn.
         </p>
       </div>
 
-      <router-link
-        to="/"
-        class="self-start sm:self-auto px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg text-xs shadow-sm transition-all"
-      >
-        + Đặt Thêm Vé Mới
+      <router-link to="/search">
+        <Button size="sm" class="gap-1.5 font-semibold">
+          <Bus class="w-4 h-4" />
+          <span>+ Đặt Vé Mới</span>
+        </Button>
       </router-link>
     </div>
 
     <!-- Status Tabs -->
-    <div class="flex gap-2 border-b border-border-default pb-2 overflow-x-auto text-xs font-semibold">
+    <div class="flex gap-2 border-b border-border pb-2 overflow-x-auto text-xs font-semibold">
       <button
+        v-for="tab in tabs"
+        :key="tab.key"
         type="button"
-        @click="currentTab = 'ALL'"
-        class="px-3.5 py-2 rounded-lg transition-all"
-        :class="currentTab === 'ALL' ? 'bg-primary-600 text-white' : 'text-text-secondary hover:bg-slate-100'"
+        @click="selectTab(tab.key)"
+        class="px-3.5 py-1.5 rounded-lg transition-colors"
+        :class="currentTab === tab.key ? 'bg-primary text-primary-foreground shadow-xs' : 'text-muted-foreground hover:bg-muted'"
       >
-        Tất cả ({{ bookings.length }})
-      </button>
-
-      <button
-        type="button"
-        @click="currentTab = 'CONFIRMED'"
-        class="px-3.5 py-2 rounded-lg transition-all"
-        :class="currentTab === 'CONFIRMED' ? 'bg-primary-600 text-white' : 'text-text-secondary hover:bg-slate-100'"
-      >
-        Đã xác nhận ({{ bookings.filter(b => b.status === 'CONFIRMED').length }})
-      </button>
-
-      <button
-        type="button"
-        @click="currentTab = 'COMPLETED'"
-        class="px-3.5 py-2 rounded-lg transition-all"
-        :class="currentTab === 'COMPLETED' ? 'bg-primary-600 text-white' : 'text-text-secondary hover:bg-slate-100'"
-      >
-        Đã hoàn thành
-      </button>
-
-      <button
-        type="button"
-        @click="currentTab = 'CANCELLED'"
-        class="px-3.5 py-2 rounded-lg transition-all"
-        :class="currentTab === 'CANCELLED' ? 'bg-primary-600 text-white' : 'text-text-secondary hover:bg-slate-100'"
-      >
-        Đã hủy
+        {{ tab.label }}
       </button>
     </div>
 
-    <!-- Bookings List -->
-    <div v-if="filteredBookings.length > 0" class="space-y-4">
-      <div
-        v-for="booking in filteredBookings"
-        :key="booking.id"
-        class="bg-surface rounded-xl border border-border-default p-5 shadow-card space-y-4 hover:border-slate-300 transition-all"
-      >
-        <!-- Top Bar: Booking ID & Status -->
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-border-default/80">
-          <div class="flex items-center gap-3">
-            <span class="text-xs font-bold text-text-primary tracking-wide">
-              Mã đơn: <span class="text-primary-600 tabular-nums">{{ booking.id }}</span>
-            </span>
-            <span class="text-xs text-text-muted">• {{ booking.operator }}</span>
-          </div>
+    <!-- Loading Skeleton -->
+    <div v-if="isLoading" class="p-12 text-center bg-card rounded-xl border border-border space-y-3">
+      <Loader2 class="w-8 h-8 animate-spin mx-auto text-primary" />
+      <p class="text-xs text-muted-foreground">Đang tải lịch sử đơn đặt chỗ từ máy chủ...</p>
+    </div>
 
-          <StatusBadge :status="booking.status" />
+    <!-- Error State -->
+    <div
+      v-else-if="loadError"
+      class="bg-destructive/10 border border-destructive/20 rounded-xl p-6 text-center space-y-3"
+    >
+      <AlertCircle class="w-8 h-8 text-destructive mx-auto" />
+      <h3 class="text-sm font-bold text-destructive">Không Thể Tải Danh Sách Đơn Vé</h3>
+      <p class="text-xs text-muted-foreground max-w-md mx-auto">{{ loadError }}</p>
+      <Button size="sm" variant="outline" class="gap-1.5" @click="fetchMyBookings(currentPage)">
+        <RefreshCw class="w-3.5 h-3.5" />
+        <span>Thử Lại</span>
+      </Button>
+    </div>
+
+    <!-- Empty State -->
+    <div v-else-if="filteredBookings.length === 0" class="py-12 bg-card rounded-xl border border-border">
+      <EmptyState
+        title="Chưa có đơn đặt vé nào"
+        description="Bạn chưa có giao dịch đặt chỗ nào trong danh mục này. Hãy bắt đầu chọn chuyến và đặt vé ngay!"
+        action-label="Tìm Chuyến Xe"
+        @action="router.push('/search')"
+      />
+    </div>
+
+    <!-- Bookings List -->
+    <div v-else class="space-y-4">
+      <div
+        v-for="item in filteredBookings"
+        :key="item.bookingReference"
+        class="bg-card rounded-xl border border-border p-5 shadow-xs space-y-4 hover:border-border/80 transition-all"
+      >
+        <!-- Unresolved cancel warning if any -->
+        <div
+          v-if="operationGuard.isCancelUnresolved(item.bookingReference)"
+          class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-xs text-amber-700 dark:text-amber-300 space-y-1"
+        >
+          <div class="flex items-center gap-1.5 font-semibold">
+            <AlertCircle class="w-4 h-4 shrink-0" />
+            <span>Yêu cầu hủy đơn chưa hoàn tất</span>
+          </div>
+          <p class="text-muted-foreground text-[11px]">
+            {{ operationGuard.getCancelError(item.bookingReference) || 'Đã có lỗi xảy ra trong quá trình hủy đơn. Vui lòng thử lại.' }}
+          </p>
         </div>
 
-        <!-- Middle Bar: Trip Details & Passenger -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-          <div class="space-y-1 md:col-span-2">
-            <span class="text-text-muted text-[11px] block">Hành trình chuyến xe:</span>
-            <p class="text-sm font-bold text-text-primary">{{ booking.route }}</p>
-            <p class="text-text-secondary flex items-center gap-2">
-              <span>🕒 Khởi hành: <strong>{{ booking.departureTime }}</strong></span>
-              <span>•</span>
-              <span>Biển số: <strong>{{ booking.plate }}</strong></span>
-            </p>
+        <!-- Top Bar: Reference & Status -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-border">
+          <div class="flex items-center gap-3">
+            <span class="text-xs font-bold text-foreground">
+              Mã tham chiếu:
+              <strong class="font-mono text-primary">{{ item.bookingReference }}</strong>
+            </span>
+            <span class="text-xs text-muted-foreground">• Chuyến xe #{{ item.tripId }}</span>
           </div>
 
-          <div class="space-y-1 bg-slate-50/70 p-3 rounded-lg border border-border-default/60">
+          <StatusBadge :status="item.status" />
+        </div>
+
+        <!-- Middle Bar: Details -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+          <div class="space-y-1.5 md:col-span-2">
+            <div class="flex items-center gap-2 text-foreground font-semibold">
+              <Bus class="w-4 h-4 text-primary" />
+              <span>Chuyến xe định danh hệ thống: #{{ item.tripId }}</span>
+            </div>
+            <div class="flex items-center gap-4 text-muted-foreground text-[11px]">
+              <span class="flex items-center gap-1">
+                <Calendar class="w-3.5 h-3.5" />
+                <span>Tạo lúc: {{ formatDate(item.createdAt) }}</span>
+              </span>
+              <span v-if="item.status === 'HELD' && item.expiresAt" class="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-medium">
+                <Clock class="w-3.5 h-3.5" />
+                <span>Hết hạn giữ chỗ: {{ formatDate(item.expiresAt) }}</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="bg-muted/40 p-3 rounded-lg border border-border space-y-1">
             <div class="flex justify-between">
-              <span class="text-text-muted">Ghế đã đặt:</span>
-              <span class="font-bold text-primary-600 tabular-nums">{{ booking.seats.join(', ') }}</span>
+              <span class="text-muted-foreground">Vị trí ghế:</span>
+              <span class="font-mono font-bold text-primary">{{ (item.seatNumbers || []).join(', ') }}</span>
             </div>
             <div class="flex justify-between">
-              <span class="text-text-muted">Tổng tiền:</span>
-              <span class="font-bold text-text-primary tabular-nums">{{ booking.totalPrice.toLocaleString('vi-VN') }} đ</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-text-muted">Hành khách:</span>
-              <span class="font-medium text-text-primary">{{ booking.passenger.name }}</span>
+              <span class="text-muted-foreground">Tổng tiền:</span>
+              <span class="font-mono font-bold text-foreground tabular-nums">
+                {{ Number(item.totalAmount).toLocaleString('vi-VN') }} đ
+              </span>
             </div>
           </div>
         </div>
 
         <!-- Bottom Action Bar -->
-        <div class="pt-3 border-t border-border-default/80 flex items-center justify-end gap-3">
-          <button
-            v-if="booking.status === 'CONFIRMED'"
-            type="button"
-            @click="openCancelModal(booking)"
-            class="px-3.5 py-1.5 text-xs text-rose-600 hover:bg-rose-50 font-medium rounded-lg transition-all"
-          >
-            Yêu Cầu Hủy Vé
-          </button>
+        <div class="pt-3 border-t border-border flex items-center justify-end gap-2.5">
+          <!-- HELD Actions -->
+          <template v-if="item.status === 'HELD'">
+            <Button
+              variant="destructive"
+              size="sm"
+              class="gap-1.5"
+              :disabled="operationGuard.isCancelPending(item.bookingReference)"
+              @click="openCancelDialog(item)"
+            >
+              <Loader2 v-if="operationGuard.isCancelPending(item.bookingReference)" class="w-3.5 h-3.5 animate-spin" />
+              <XCircle v-else class="w-3.5 h-3.5" />
+              <span>Hủy Giữ Chỗ</span>
+            </Button>
 
-          <button
-            type="button"
-            @click="openQrModal(booking)"
-            class="px-4 py-2 bg-brand-navy hover:bg-slate-800 text-white font-semibold rounded-lg text-xs shadow-sm flex items-center gap-1.5 transition-all"
+            <router-link :to="`/checkout/${item.bookingReference}`">
+              <Button size="sm" class="gap-1.5">
+                <CreditCard class="w-3.5 h-3.5" />
+                <span>Tiếp Tục Thanh Toán</span>
+              </Button>
+            </router-link>
+          </template>
+
+          <!-- CONFIRMED Actions -->
+          <template v-else-if="item.status === 'CONFIRMED'">
+            <Button size="sm" variant="outline" class="gap-1.5" @click="openTicketDetail(item)">
+              <QrCode class="w-3.5 h-3.5" />
+              <span>Xem Chi Tiết & Vé Điện Tử</span>
+            </Button>
+          </template>
+
+          <!-- CANCELLED / EXPIRED Actions -->
+          <template v-else>
+            <router-link :to="`/trips/${item.tripId}/seats`">
+              <Button variant="outline" size="sm" class="gap-1.5">
+                <RefreshCw class="w-3.5 h-3.5" />
+                <span>Đặt Lại Chuyến Này</span>
+              </Button>
+            </router-link>
+          </template>
+        </div>
+      </div>
+
+      <!-- Pagination Footer -->
+      <div
+        v-if="totalPages > 1"
+        class="flex items-center justify-between pt-4 border-t border-border text-xs text-muted-foreground"
+      >
+        <div>
+          Trang <strong>{{ currentPage + 1 }}</strong> / <strong>{{ totalPages }}</strong> (Tổng {{ totalElements }} đơn vé)
+        </div>
+
+        <div class="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            class="gap-1.5"
+            :disabled="!hasPrevious"
+            @click="handlePageChange(currentPage - 1)"
           >
-            <span>📱</span>
-            <span>Mã QR Lên Xe</span>
-          </button>
+            <ChevronLeft class="w-4 h-4" />
+            <span>Trước</span>
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            class="gap-1.5"
+            :disabled="!hasNext"
+            @click="handlePageChange(currentPage + 1)"
+          >
+            <span>Sau</span>
+            <ChevronRight class="w-4 h-4" />
+          </Button>
         </div>
       </div>
     </div>
 
-    <!-- Empty State -->
-    <div v-else class="bg-surface rounded-xl border border-border-default p-12 text-center shadow-card">
-      <EmptyState
-        title="Không tìm thấy đơn vé nào"
-        description="Bạn chưa có đơn vé nào ở trạng thái này. Hãy tìm kiếm chuyến xe để đặt vé ngay hôm nay!"
-        icon="🎫"
-      />
-    </div>
+    <!-- Cancel Confirmation AlertDialog -->
+    <AlertDialog :open="!!bookingToCancel" @update:open="val => { if (!val) bookingToCancel = null }">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Xác Nhận Hủy Giữ Chỗ?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Bạn có chắc chắn muốn hủy phiên giữ chỗ cho đơn vé
+            <strong class="font-mono text-foreground">#{{ bookingToCancel?.bookingReference }}</strong>?
+            Ghế <strong class="text-primary font-mono">{{ (bookingToCancel?.seatNumbers || []).join(', ') }}</strong>
+            sẽ được gửi yêu cầu lên hệ thống để xử lý giải phóng ghế.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel :disabled="isCancelling">Bỏ Qua</AlertDialogCancel>
+          <AlertDialogAction
+            class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            :disabled="isCancelling"
+            @click="confirmCancelBooking"
+          >
+            <Loader2 v-if="isCancelling" class="w-4 h-4 animate-spin mr-1" />
+            <span>Xác Nhận Hủy</span>
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
 
-    <!-- QR Code Modal Dialog -->
-    <div
-      v-if="selectedBookingForQr"
-      class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
-    >
-      <div class="bg-surface rounded-2xl max-w-sm w-full p-6 shadow-dialog border border-border-default text-center space-y-4">
-        <div class="flex items-center justify-between pb-2 border-b border-border-default">
-          <h3 class="text-sm font-bold text-text-primary">Vé Xe Khách Điện Tử VeloBus</h3>
-          <button @click="closeQrModal" class="text-slate-400 hover:text-slate-600 text-lg">✕</button>
+    <!-- Ticket Detail Modal -->
+    <Dialog :open="showDetailModal" @update:open="val => showDetailModal = val">
+      <DialogContent class="max-w-md">
+        <DialogHeader>
+          <DialogTitle class="flex items-center gap-2">
+            <Ticket class="w-5 h-5 text-primary" />
+            <span>Thông Tin Vé Điện Tử VeloBus</span>
+          </DialogTitle>
+          <DialogDescription>
+            Vé điện tử xác thực với mã QR có chữ ký số bảo mật.
+          </DialogDescription>
+        </DialogHeader>
+
+        <!-- Loading -->
+        <div v-if="ticketLoading" class="py-8 text-center space-y-3">
+          <Loader2 class="w-8 h-8 animate-spin mx-auto text-primary" />
+          <p class="text-xs text-muted-foreground">Đang xác thực và tải vé điện tử từ máy chủ...</p>
         </div>
 
-        <div class="p-3 bg-slate-50 rounded-xl border border-border-default flex justify-center">
-          <img
-            v-if="qrDataUrl"
-            :src="qrDataUrl"
-            alt="Mã QR vé xe điện tử"
-            class="w-56 h-56 rounded-lg shadow-xs"
-          />
-          <div v-else class="w-56 h-56 flex items-center justify-center text-xs text-text-muted">
-            Đang sinh mã QR bảo mật...
+        <!-- Error -->
+        <div v-else-if="ticketError" class="py-4 space-y-3">
+          <div class="bg-destructive/10 border border-destructive/20 rounded-lg p-4 space-y-2 text-xs">
+            <div class="flex items-center gap-2 font-semibold text-destructive">
+              <AlertCircle class="w-4 h-4 shrink-0" />
+              <span>Không Thể Cấp Vé Điện Tử</span>
+            </div>
+            <p class="text-muted-foreground">{{ ticketError }}</p>
           </div>
         </div>
 
-        <div class="space-y-1 text-xs">
-          <p class="font-bold text-text-primary">{{ selectedBookingForQr.route }}</p>
-          <p class="text-text-secondary">
-            Mã đơn: <strong class="text-primary-600">{{ selectedBookingForQr.id }}</strong> • Ghế: <strong class="text-emerald-600">{{ selectedBookingForQr.seats.join(', ') }}</strong>
-          </p>
-          <p class="text-[11px] text-text-muted italic pt-1">
-            🔒 Xác thực bằng chữ ký số HMAC-SHA256 • Trình mã QR cho phụ xe khi lên xe
-          </p>
+        <!-- Ticket Content -->
+        <div v-else-if="ticketData" class="space-y-4 text-xs py-2">
+          <!-- QR Code Block -->
+          <div class="bg-white dark:bg-card p-4 rounded-xl border border-border shadow-xs flex flex-col items-center justify-center space-y-2">
+            <img
+              v-if="ticketData.qrImageBase64"
+              :src="'data:image/png;base64,' + ticketData.qrImageBase64"
+              alt="Mã QR Vé Điện Tử"
+              class="w-48 h-48 rounded-lg border border-border/50 p-2 bg-white"
+            />
+            <div class="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold text-xs">
+              <ShieldCheck class="w-4 h-4" />
+              <span>Vé Điện Tử Hợp Lệ & Có Chữ Ký Số</span>
+            </div>
+            <p class="text-[11px] text-muted-foreground text-center px-2">
+              Mã QR đã được ký số bảo mật điện tử. Xuất trình khi lên xe.
+            </p>
+          </div>
+
+          <!-- Booking Metadata -->
+          <div class="bg-muted/50 p-4 rounded-lg border border-border space-y-2">
+            <div class="flex justify-between">
+              <span class="text-muted-foreground">Mã tham chiếu:</span>
+              <strong class="font-mono text-foreground">{{ ticketData.bookingReference }}</strong>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-muted-foreground">Chuyến xe:</span>
+              <strong class="text-foreground">#{{ ticketData.tripId }}</strong>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-muted-foreground">Vị trí ghế:</span>
+              <strong class="font-mono text-primary">{{ (ticketData.seatNumbers || []).join(', ') }}</strong>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-muted-foreground">Tổng thanh toán:</span>
+              <strong class="font-mono text-foreground">{{ Number(ticketData.totalAmount).toLocaleString('vi-VN') }} đ</strong>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-muted-foreground">Trạng thái:</span>
+              <StatusBadge :status="ticketData.status" />
+            </div>
+          </div>
         </div>
 
-        <button
-          type="button"
-          @click="closeQrModal"
-          class="w-full h-10 bg-brand-navy hover:bg-slate-800 text-white font-semibold rounded-lg text-xs transition-all"
-        >
-          Đóng Cửa Sổ
-        </button>
-      </div>
-    </div>
-
-    <!-- Cancel Booking Confirm Dialog -->
-    <div
-      v-if="selectedBookingForCancel"
-      class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
-    >
-      <div class="bg-surface rounded-xl max-w-md w-full p-6 shadow-dialog border border-border-default space-y-4">
-        <h3 class="text-base font-bold text-text-primary flex items-center gap-2 text-rose-600">
-          <span>⚠️</span>
-          <span>Xác Nhận Hủy Đơn Vé {{ selectedBookingForCancel.id }}</span>
-        </h3>
-
-        <div class="text-xs text-text-secondary space-y-2 bg-slate-50 p-3.5 rounded-lg border border-border-default">
-          <p class="font-semibold text-text-primary">Chính sách hoàn tiền hủy vé sàn VeloBus:</p>
-          <ul class="list-disc list-inside space-y-1 text-slate-600">
-            <li>Hủy trước 24 giờ khởi hành: Hoàn lại <strong>100%</strong> giá vé.</li>
-            <li>Hủy từ 12 - 24 giờ trước khởi hành: Hoàn lại <strong>80%</strong> giá vé.</li>
-            <li>Hủy dưới 12 giờ: Không được hỗ trợ hoàn tiền.</li>
-          </ul>
-        </div>
-
-        <p class="text-xs text-slate-500">
-          Số tiền hoàn lại sẽ được chuyển về tài khoản thanh toán ban đầu trong vòng 3 - 5 ngày làm việc.
-        </p>
-
-        <div class="flex justify-end gap-3 pt-2">
-          <button
-            type="button"
-            @click="closeCancelModal"
-            class="px-4 py-2 border border-border-strong hover:bg-slate-50 text-text-secondary text-xs font-semibold rounded-lg transition-all"
-          >
-            Giữ Lại Vé
-          </button>
-
-          <AppButton
-            variant="danger"
-            class="px-4 py-2 text-xs font-bold"
-            :loading="isCancelling"
-            @click="confirmCancelBooking"
-          >
-            Đồng Ý Hủy Vé
-          </AppButton>
-        </div>
-      </div>
-    </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" @click="showDetailModal = false">
+            Đóng
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

@@ -12,6 +12,38 @@ vi.mock('qrcode', () => ({
   }
 }))
 
+// REV-04: Helper to seed test notifications into an empty store
+// (Production store initializes empty; tests seed their own fixtures)
+function seedTestNotifications(store) {
+  store.addNotification({
+    id: 'NOTI-03',
+    title: 'Cảnh Báo Đối Soát',
+    message: 'Phát hiện sai lệch số dư.',
+    type: 'RECONCILIATION_ALERT',
+    icon: '⚠️',
+    read: true,
+    createdAt: 'Hôm qua'
+  })
+  store.addNotification({
+    id: 'NOTI-02',
+    title: 'Quyết Toán Ví Ký Quỹ Escrow',
+    message: 'Chuyến xe TRIP-99 đã hoàn tất.',
+    type: 'ESCROW_SETTLED',
+    icon: '💰',
+    read: false,
+    createdAt: '1 giờ trước'
+  })
+  store.addNotification({
+    id: 'NOTI-01',
+    title: 'Xác Nhận Đặt Vé Thành Công',
+    message: 'Đơn vé BKG-20261123-9988 tuyến Hà Nội → Đà Nẵng đã thanh toán thành công qua VNPay.',
+    type: 'BOOKING_CONFIRMED',
+    icon: '🎫',
+    read: false,
+    createdAt: '10 phút trước'
+  })
+}
+
 describe('Phase FE-04: Real-Time Notifications & Telegram Bot Integration', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -20,6 +52,7 @@ describe('Phase FE-04: Real-Time Notifications & Telegram Bot Integration', () =
   describe('useNotificationStore', () => {
     it('calculates unreadCount accurately and marks notifications as read', () => {
       const store = useNotificationStore()
+      seedTestNotifications(store)
 
       expect(store.unreadCount).toBe(2) // NOTI-01 & NOTI-02 are unread
 
@@ -32,6 +65,7 @@ describe('Phase FE-04: Real-Time Notifications & Telegram Bot Integration', () =
 
     it('adds new notification and links telegram account successfully', () => {
       const store = useNotificationStore()
+      seedTestNotifications(store)
 
       store.addNotification({
         title: 'Thanh Toán Thành Công',
@@ -51,6 +85,10 @@ describe('Phase FE-04: Real-Time Notifications & Telegram Bot Integration', () =
 
   describe('NotificationCenter.vue Component', () => {
     it('renders unread badge and toggles dropdown panel on click', async () => {
+      // Seed store before mounting so component sees 2 unread
+      const store = useNotificationStore()
+      seedTestNotifications(store)
+
       const wrapper = mount(NotificationCenter, {
         global: {
           stubs: {

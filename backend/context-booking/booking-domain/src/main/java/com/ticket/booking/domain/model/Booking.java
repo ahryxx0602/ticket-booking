@@ -28,6 +28,7 @@ public class Booking extends BaseEntity {
     private BigDecimal totalAmount;
     private LocalDateTime expiresAt;
     private Long version;
+    private String clientRequestId;
     private List<BookingItem> items;
 
     public void transitionTo(BookingStatus newStatus) {

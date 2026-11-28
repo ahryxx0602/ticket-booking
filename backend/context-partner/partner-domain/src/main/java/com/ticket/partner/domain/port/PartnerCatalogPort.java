@@ -14,4 +14,5 @@ public interface PartnerCatalogPort {
     boolean markTripSettledIfUnsettled(Long tripId);
     BigDecimal getTotalTicketSalesByTripId(Long tripId);
     Long createPartnerTrip(Long operatorId, Long vehicleId, String tripCode, Long departureStationId, Long arrivalStationId, LocalDateTime departureTime, LocalDateTime arrivalTime, BigDecimal basePrice, int totalSeats);
+    com.ticket.shared.dto.PageResponse<PartnerTripDto> findOperatorTrips(Long operatorId, String status, Long vehicleId, int page, int size);
 }

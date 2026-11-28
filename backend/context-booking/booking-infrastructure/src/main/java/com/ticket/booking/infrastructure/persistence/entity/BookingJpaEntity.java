@@ -15,6 +15,8 @@ import java.util.List;
         @Index(name = "idx_booking_status_exp", columnList = "status, expires_at"),
         @Index(name = "idx_booking_ref", columnList = "booking_reference"),
         @Index(name = "idx_booking_user", columnList = "user_id")
+}, uniqueConstraints = {
+        @UniqueConstraint(name = "uk_booking_user_client_request", columnNames = {"user_id", "client_request_id"})
 })
 @Getter
 @Setter
@@ -28,6 +30,9 @@ public class BookingJpaEntity {
 
     @Column(name = "user_id", nullable = false)
     private Long userId;
+
+    @Column(name = "client_request_id", length = 64)
+    private String clientRequestId;
 
     @Column(length = 20)
     private String phone;

@@ -42,6 +42,7 @@ class BookingControllerTest {
     @Mock private CancelBookingUseCase cancelBookingUseCase;
     @Mock private GetMyBookingsUseCase getMyBookingsUseCase;
     @Mock private GetBookingDetailUseCase getBookingDetailUseCase;
+    @Mock private com.ticket.booking.application.usecase.GetSeatAvailabilityUseCase getSeatAvailabilityUseCase;
 
     @InjectMocks
     private BookingController bookingController;
@@ -50,7 +51,18 @@ class BookingControllerTest {
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(bookingController).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(bookingController)
+                .setControllerAdvice(new TestExceptionHandler())
+                .build();
+    }
+
+    @org.springframework.web.bind.annotation.ControllerAdvice
+    static class TestExceptionHandler {
+        @org.springframework.web.bind.annotation.ExceptionHandler(com.ticket.shared.exception.BusinessException.class)
+        public org.springframework.http.ResponseEntity<com.ticket.shared.dto.ApiResponse<Void>> handleBusiness(com.ticket.shared.exception.BusinessException ex) {
+            return org.springframework.http.ResponseEntity.status(org.springframework.http.HttpStatus.BAD_REQUEST)
+                    .body(com.ticket.shared.dto.ApiResponse.error(ex.getCode(), ex.getMessage()));
+        }
     }
 
     @Test
@@ -94,6 +106,53 @@ class BookingControllerTest {
     }
 
     @Test
+    void holdSeats_withValidIdempotencyKey_shouldPassKeyToCommand() throws Exception {
+        HoldSeatCommand command = new HoldSeatCommand();
+        command.setTripId(1L);
+        command.setSeatNumbers(List.of("01A", "01B"));
+
+        BookingResponse response = BookingResponse.builder()
+                .bookingId(10L)
+                .bookingReference("REF-10")
+                .clientRequestId("req-uuid-12345")
+                .tripId(1L)
+                .status(BookingStatus.HELD)
+                .totalAmount(BigDecimal.valueOf(2500000))
+                .seatNumbers(List.of("01A", "01B"))
+                .build();
+
+        when(holdSeatUseCase.execute(any(HoldSeatCommand.class), eq("customer1"))).thenAnswer(inv -> {
+            HoldSeatCommand cmd = inv.getArgument(0);
+            org.junit.jupiter.api.Assertions.assertEquals("req-uuid-12345", cmd.getClientRequestId());
+            return response;
+        });
+
+        mockMvc.perform(post("/api/v1/bookings/hold")
+                        .header("Idempotency-Key", "req-uuid-12345")
+                        .principal(customerPrincipal)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(command)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.clientRequestId").value("req-uuid-12345"));
+    }
+
+    @Test
+    void holdSeats_withInvalidIdempotencyKey_shouldThrowBadRequest() throws Exception {
+        HoldSeatCommand command = new HoldSeatCommand();
+        command.setTripId(1L);
+        command.setSeatNumbers(List.of("01A", "01B"));
+
+        // Key with spaces and illegal characters
+        mockMvc.perform(post("/api/v1/bookings/hold")
+                        .header("Idempotency-Key", "invalid key with spaces & symbols!")
+                        .principal(customerPrincipal)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(command)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void cancelBooking_shouldInvokeUseCaseWithAuthenticatedUsername() throws Exception {
         mockMvc.perform(post("/api/v1/bookings/REF-10/cancel")
                         .principal(customerPrincipal))
@@ -105,7 +164,7 @@ class BookingControllerTest {
 
     @Test
     void getMyBookings_shouldReturnPagedBookings() throws Exception {
-        when(getMyBookingsUseCase.execute("customer1", 0, 10))
+        when(getMyBookingsUseCase.execute("customer1", 0, 10, null))
                 .thenReturn(PageResponse.<BookingResponse>builder().items(List.of()).page(0).size(10).build());
 
         mockMvc.perform(get("/api/v1/bookings/my-bookings")
@@ -145,5 +204,29 @@ class BookingControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(command)))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void getSeatAvailability_shouldReturnAvailabilityResponse() throws Exception {
+        com.ticket.booking.application.dto.SeatAvailabilityResponse response = com.ticket.booking.application.dto.SeatAvailabilityResponse.builder()
+                .tripId(101L)
+                .serverTime(java.time.OffsetDateTime.now())
+                .seats(List.of(
+                        new com.ticket.booking.application.dto.SeatAvailabilityItemResponse("A01", "AVAILABLE"),
+                        new com.ticket.booking.application.dto.SeatAvailabilityItemResponse("A02", "HELD"),
+                        new com.ticket.booking.application.dto.SeatAvailabilityItemResponse("A03", "SOLD")
+                ))
+                .build();
+
+        when(getSeatAvailabilityUseCase.execute(101L)).thenReturn(response);
+
+        mockMvc.perform(get("/api/v1/bookings/trips/101/availability"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.tripId").value(101))
+                .andExpect(jsonPath("$.data.seats[0].seatNumber").value("A01"))
+                .andExpect(jsonPath("$.data.seats[0].status").value("AVAILABLE"))
+                .andExpect(jsonPath("$.data.seats[1].status").value("HELD"))
+                .andExpect(jsonPath("$.data.seats[2].status").value("SOLD"));
     }
 }

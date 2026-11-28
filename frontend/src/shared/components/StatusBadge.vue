@@ -1,10 +1,10 @@
 <template>
   <span
-    class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border"
+    class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap"
     :class="badgeStyle"
   >
-    <span class="w-1.5 h-1.5 rounded-full" :class="dotStyle"></span>
-    {{ label || status }}
+    <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="dotStyle"></span>
+    <span>{{ label || status }}</span>
   </span>
 </template>
 

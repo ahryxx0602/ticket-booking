@@ -14,4 +14,5 @@ public class VnPayProperties {
     private String hashSecret = "sandbox_vnpay_hash_secret_placeholder";
     private String payUrl = "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html";
     private String returnUrl = "http://localhost:8080/api/v1/payments/vnpay-return";
+    private String frontendReturnUrl = "http://localhost:5173/checkout";
 }

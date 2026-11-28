@@ -5,4 +5,5 @@ import com.ticket.shared.dto.PageResponse;
 
 public interface GetMyBookingsUseCase {
     PageResponse<BookingResponse> execute(String authenticatedUsername, int page, int size);
+    PageResponse<BookingResponse> execute(String authenticatedUsername, int page, int size, String status);
 }

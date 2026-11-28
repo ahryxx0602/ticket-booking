@@ -1,10 +1,48 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/modules/auth/store'
 import { useLayoutWidth } from '@/shared/composables/useLayoutWidth'
 import LayoutWidthSwitcher from '@/shared/components/LayoutWidthSwitcher.vue'
 import NotificationCenter from '@/shared/components/NotificationCenter.vue'
+import ThemeCustomizer from '@/shared/components/ThemeCustomizer.vue'
+import { Button } from '@/components/ui/button'
+import {
+  Sheet,
+  SheetTrigger,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetClose
+} from '@/components/ui/sheet'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator
+} from '@/components/ui/dropdown-menu'
+import {
+  LayoutDashboard,
+  Bus,
+  Calendar,
+  Image as ImageIcon,
+  Users,
+  Settings,
+  CreditCard,
+  Building2,
+  Receipt,
+  LogOut,
+  Menu,
+  ChevronLeft,
+  ChevronRight,
+  Shield,
+  ArrowLeft,
+  User,
+  Zap,
+  X,
+  Paintbrush
+} from 'lucide-vue-next'
 
 const props = defineProps({
   portalType: {
@@ -19,8 +57,13 @@ const router = useRouter()
 const auth = useAuthStore()
 const { containerClass } = useLayoutWidth()
 
-// Collapsible sidebar state
-const isCollapsed = ref(false)
+// Collapsible sidebar state (Desktop: 256px expanded / 64px collapsed)
+// Responsive default: <1280px defaults to collapsed (64px); >=1280px defaults to expanded (256px)
+const isCollapsed = ref(typeof window !== 'undefined' ? window.innerWidth < 1280 : false)
+// Mobile off-canvas sheet state
+const isMobileOpen = ref(false)
+// Theme Customizer modal/drawer state
+const isThemeCustomizerOpen = ref(false)
 
 const isAdmin = computed(() => props.portalType === 'admin')
 
@@ -35,99 +78,157 @@ const roleBadge = computed(() => {
     return {
       label: isCustom ? `${code} • ${auth.roleName}` : 'ROLE_ADMIN • Super Admin',
       class: isCustom
-        ? 'bg-amber-50 text-amber-800 border-amber-300'
-        : 'bg-purple-50 text-purple-700 border-purple-200'
+        ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30'
+        : 'bg-primary/10 text-primary border-primary/20'
     }
   }
-  return { label: 'ROLE_OPERATOR', class: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
+  return { label: 'ROLE_OPERATOR', class: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30' }
 })
 
-const operatorMenuItems = [
+// Navigation Groups (Operator Portal)
+const operatorNavGroups = [
   {
-    label: 'Tổng quan & Ví Ký Quỹ',
-    to: '/operator',
-    exact: true,
-    icon: 'M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z'
+    title: 'Vận hành & Ký quỹ',
+    items: [
+      {
+        label: 'Tổng quan & Ví Ký Quỹ',
+        to: '/operator',
+        exact: true,
+        icon: CreditCard
+      },
+      {
+        label: 'Đội xe & Tài xế',
+        to: '/operator/fleet',
+        exact: false,
+        icon: Bus
+      },
+      {
+        label: 'Lập lịch Chuyến xe',
+        to: '/operator/trips',
+        exact: false,
+        icon: Calendar
+      }
+    ]
   },
   {
-    label: 'Đội xe & Tài xế',
-    to: '/operator/fleet',
-    exact: false,
-    icon: 'M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0'
-  },
-  {
-    label: 'Lập lịch Chuyến xe',
-    to: '/operator/trips',
-    exact: false,
-    icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z'
-  },
-  {
-    label: 'Banner & Thương hiệu',
-    to: '/operator/banners',
-    exact: false,
-    icon: 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z'
+    title: 'Thương hiệu',
+    items: [
+      {
+        label: 'Banner & Thương hiệu',
+        to: '/operator/banners',
+        exact: false,
+        icon: ImageIcon
+      }
+    ]
   }
 ]
 
-const adminMenuItems = [
+// Navigation Groups (Admin Platform Governance)
+const adminNavGroups = [
   {
-    label: 'Tổng quan & Đối soát',
-    to: '/admin',
-    exact: true,
-    permissions: ['PAYMENT_REPORT_VIEW', 'PAYMENT_LIST_VIEW'],
-    icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z'
+    title: 'Giám sát & Tài chính',
+    items: [
+      {
+        label: 'Tổng quan & Đối soát',
+        to: '/admin',
+        exact: true,
+        permissions: ['PAYMENT_REPORT_VIEW', 'PAYMENT_LIST_VIEW'],
+        icon: LayoutDashboard
+      },
+      {
+        label: 'Duyệt Rút tiền Escrow',
+        to: '/admin/withdrawals',
+        exact: false,
+        permissions: ['WITHDRAWAL_VIEW'],
+        icon: Receipt
+      }
+    ]
   },
   {
-    label: 'Duyệt Nhà xe & Hoa hồng',
-    to: '/admin/operators',
-    exact: false,
-    permissions: ['OPERATOR_VIEW'],
-    icon: 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4'
-  },
-  {
-    label: 'Duyệt Rút tiền Escrow',
-    to: '/admin/withdrawals',
-    exact: false,
-    permissions: ['WITHDRAWAL_VIEW'],
-    icon: 'M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z'
-  },
-  {
-    label: 'Kiểm duyệt Banner',
-    to: '/admin/banners',
-    exact: false,
-    permissions: ['BANNER_VIEW'],
-    icon: 'M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z'
-  },
-  {
-    label: 'User, Role & Hoàn vé Admin',
-    to: '/admin/users-bookings',
-    exact: false,
-    permissions: ['USER_VIEW', 'ROLE_MANAGE_CRUD', 'BOOKING_VIEW'],
-    icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z'
-  },
-  {
-    label: 'Bến xe, Chuyến & Cấu hình',
-    to: '/admin/settings',
-    exact: false,
-    permissions: ['STATION_VIEW', 'TRIP_MANAGE_CRUD', 'SYSTEM_SETTINGS_MANAGE'],
-    icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z'
+    title: 'Đối tác & Hệ thống',
+    items: [
+      {
+        label: 'Duyệt Nhà xe & Hoa hồng',
+        to: '/admin/operators',
+        exact: false,
+        permissions: ['OPERATOR_VIEW'],
+        icon: Building2
+      },
+      {
+        label: 'Kiểm duyệt Banner',
+        to: '/admin/banners',
+        exact: false,
+        permissions: ['BANNER_VIEW'],
+        icon: ImageIcon
+      },
+      {
+        label: 'User, Role & Hoàn vé Admin',
+        to: '/admin/users-bookings',
+        exact: false,
+        permissions: ['USER_VIEW', 'ROLE_MANAGE_CRUD', 'BOOKING_VIEW'],
+        icon: Users
+      },
+      {
+        label: 'Bến xe, Chuyến & Cấu hình',
+        to: '/admin/settings',
+        exact: false,
+        permissions: ['STATION_VIEW', 'TRIP_MANAGE_CRUD', 'SYSTEM_SETTINGS_MANAGE'],
+        icon: Settings
+      }
+    ]
   }
 ]
 
-const menuItems = computed(() => {
-  if (!isAdmin.value) return operatorMenuItems
+const navGroups = computed(() => {
+  if (!isAdmin.value) return operatorNavGroups
   // FE-SEC-001: Fail-Closed sidebar menu when unauthenticated
   if (!auth.isAuthenticated) return []
-  return adminMenuItems.filter(item => auth.hasAnyPermission(item.permissions))
+  return adminNavGroups
+    .map(group => ({
+      title: group.title,
+      items: group.items.filter(item => auth.hasAnyPermission(item.permissions))
+    }))
+    .filter(group => group.items.length > 0)
 })
+
+const menuItems = computed(() => {
+  return navGroups.value.flatMap(group => group.items)
+})
+
+const currentRouteTitle = computed(() => {
+  const all = menuItems.value
+  const match = all.find(item => item.exact ? route.path === item.to : route.path.startsWith(item.to))
+  return match?.label || 'Bảng điều khiển'
+})
+
+// B2-REV-01: Responsive sidebar default collapse handler
+function handleResize() {
+  if (typeof window !== 'undefined') {
+    if (window.innerWidth >= 1024 && window.innerWidth < 1280) {
+      isCollapsed.value = true
+    } else if (window.innerWidth >= 1280) {
+      isCollapsed.value = false
+    }
+  }
+}
 
 // FE-SEC-002: Tự động đồng bộ lại role & permissions từ GET /api/v1/auth/me khi khởi tạo/reload trang quản trị
 onMounted(async () => {
+  handleResize()
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', handleResize)
+  }
   if (isAdmin.value && auth.isAuthenticated) {
     const updated = await auth.refreshProfile()
     if (updated && !auth.isAdmin) {
       router.replace(auth.getHomeRoute())
     }
+  }
+})
+
+onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('resize', handleResize)
   }
 })
 
@@ -143,91 +244,107 @@ function handleLogout() {
 </script>
 
 <template>
-  <div class="min-h-screen flex bg-canvas text-text-primary">
-    <!-- Sidebar (Single Source of Truth: 256px desktop, Brand Navy #142B4A background) -->
+  <div class="min-h-screen flex bg-background text-foreground transition-colors duration-200">
+    <!-- Desktop Sidebar (256px expanded / 64px collapsed, Claude+ Warm Minimalist Enterprise) -->
+    <!-- B2-REV-01: Hidden on <1024px (mobile & tablet 768px use Sheet drawer); visible on lg+ (>=1024px) -->
     <aside
       :class="[
-        'bg-brand-navy text-white flex flex-col transition-all duration-200 z-40 flex-shrink-0',
-        isCollapsed ? 'w-[76px]' : 'w-64',
-        'hidden md:flex'
+        'bg-card border-r border-border flex flex-col transition-all duration-300 z-40 flex-shrink-0 select-none',
+        isCollapsed ? 'w-16' : 'w-64',
+        'hidden lg:flex'
       ]"
     >
-      <!-- Top Brand Logo -->
-      <div class="h-[72px] px-5 flex items-center justify-between border-b border-slate-700/60 flex-shrink-0">
-        <router-link to="/" class="flex items-center gap-2.5 overflow-hidden font-bold">
-          <div class="w-8 h-8 rounded-lg bg-primary-600 flex items-center justify-center font-black text-white text-sm flex-shrink-0 shadow-sm">
+      <!-- Top Brand Logo — always visible in both expanded/collapsed states -->
+      <div
+        :class="[
+          'h-16 flex items-center border-b border-border flex-shrink-0',
+          isCollapsed ? 'justify-center px-0' : 'px-4 justify-between'
+        ]"
+      >
+        <!-- Logo mark: always visible, centered when collapsed -->
+        <router-link
+          to="/"
+          :class="[
+            'flex items-center gap-3 font-bold overflow-hidden min-w-0',
+            isCollapsed ? 'justify-center' : ''
+          ]"
+          :title="isCollapsed ? 'VeloBus' : undefined"
+        >
+          <div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center font-black text-primary-foreground text-sm flex-shrink-0 shadow-xs">
             VB
           </div>
-          <div v-show="!isCollapsed" class="whitespace-nowrap transition-opacity">
-            <span class="text-base text-white font-bold">VeloBus</span>
-            <span class="block text-[10px] text-blue-200 font-normal uppercase tracking-wider">{{ portalTitle }}</span>
+          <div v-show="!isCollapsed" class="whitespace-nowrap transition-opacity min-w-0">
+            <span class="text-sm font-bold tracking-tight text-foreground">VeloBus</span>
+            <span class="block text-[10px] text-muted-foreground uppercase tracking-wider font-medium">{{ portalTitle }}</span>
           </div>
         </router-link>
 
+        <!-- Collapse trigger — only visible when expanded; in header area when collapsed -->
         <button
+          v-show="!isCollapsed"
           type="button"
           @click="isCollapsed = !isCollapsed"
-          class="text-slate-400 hover:text-white p-1 rounded transition-colors"
-          :title="isCollapsed ? 'Mở rộng menu' : 'Thu gọn menu'"
+          class="text-muted-foreground hover:text-foreground p-1.5 rounded-md hover:bg-muted/60 transition-colors flex-shrink-0"
+          title="Thu gọn menu (64px)"
+          aria-label="Thu gọn menu"
         >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="isCollapsed ? 'M13 5l7 7-7 7M5 5l7 7-7 7' : 'M11 19l-7-7 7-7m8 14l-7-7 7-7'"/>
-          </svg>
+          <ChevronLeft class="w-4 h-4" />
         </button>
       </div>
 
-      <!-- Navigation Menu Items -->
-      <nav class="p-3 space-y-1.5 flex-1 overflow-y-auto">
-        <div v-show="!isCollapsed" class="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 flex items-center justify-between">
-          <span>Chức năng nghiệp vụ</span>
-          <span v-if="isAdmin" class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-blue-300 font-bold">
-            {{ menuItems.length }}/6
-          </span>
-        </div>
+      <!-- Navigation Menu Groups -->
+      <nav class="p-3 space-y-4 flex-1 overflow-y-auto">
+        <div v-for="group in navGroups" :key="group.title" class="space-y-1.5">
+          <div
+            v-show="!isCollapsed"
+            class="px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80 flex items-center justify-between"
+          >
+            <span>{{ group.title }}</span>
+          </div>
 
-        <router-link
-          v-for="item in menuItems"
-          :key="item.to"
-          :to="item.to"
-          :class="[
-            'flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all group',
-            route.path === item.to || (!item.exact && route.path.startsWith(item.to) && item.to !== '/operator' && item.to !== '/admin')
-              ? 'bg-primary-600 text-white shadow-sm'
-              : 'text-slate-300 hover:bg-brand-navy-hover hover:text-white'
-          ]"
-          :title="isCollapsed ? item.label : ''"
-        >
-          <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" :d="item.icon"/>
-          </svg>
-          <span v-show="!isCollapsed" class="whitespace-nowrap">{{ item.label }}</span>
-        </router-link>
+          <router-link
+            v-for="item in group.items"
+            :key="item.to"
+            :to="item.to"
+            :class="[
+              'flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium transition-all group',
+              route.path === item.to || (!item.exact && route.path.startsWith(item.to) && item.to !== '/operator' && item.to !== '/admin')
+                ? 'sidebar-nav-active shadow-xs font-semibold'
+                : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+            ]"
+            :title="isCollapsed ? item.label : ''"
+          >
+            <component :is="item.icon" class="w-[18px] h-[18px] flex-shrink-0" />
+            <span v-show="!isCollapsed" class="whitespace-nowrap">{{ item.label }}</span>
+          </router-link>
+        </div>
       </nav>
 
       <!-- Bottom User & Exit Panel -->
-      <div class="p-3 border-t border-slate-700/60 space-y-2 flex-shrink-0">
+      <div class="p-3 border-t border-border space-y-1 flex-shrink-0">
         <router-link
           to="/"
-          class="flex items-center gap-2 px-3 py-2 text-xs text-slate-400 hover:text-white transition-colors rounded-lg hover:bg-brand-navy-hover"
+          class="flex items-center gap-2.5 px-3 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors rounded-lg hover:bg-muted/60"
         >
-          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
-          </svg>
+          <ArrowLeft class="w-4 h-4 flex-shrink-0" />
           <span v-show="!isCollapsed" class="whitespace-nowrap">Trang chủ đặt vé</span>
         </router-link>
       </div>
     </aside>
 
-    <!-- Right Side: Header (72px) & Main Content -->
+    <!-- Right Side: Header (64px) & Main Content -->
     <div class="flex-1 flex flex-col min-w-0">
       <!-- Role Preview Active Banner (PA-05) -->
       <div
         v-if="isAdmin && auth.previewRole"
         data-testid="role-preview-banner"
-        class="bg-amber-500 text-slate-950 px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs font-bold shadow-sm z-40"
+        class="bg-amber-500/15 border-b border-amber-500/30 text-amber-900 dark:text-amber-200 px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs font-semibold shadow-xs z-40"
       >
         <div class="flex items-center gap-2">
-          <span class="px-2 py-0.5 rounded bg-slate-950 text-amber-300 text-[11px] uppercase tracking-wider">⚡ Chế Độ Xem Thử Role</span>
+          <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-800 dark:text-amber-300 text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+            <Zap class="w-3.5 h-3.5" />
+            Chế Độ Xem Thử Role
+          </span>
           <span>
             Giao diện & Sidebar đang giới hạn theo Role:
             <strong class="underline">{{ auth.previewRole.name }} ({{ auth.previewRole.code }})</strong>
@@ -238,59 +355,173 @@ function handleLogout() {
           type="button"
           data-testid="exit-role-preview-btn"
           @click="handleExitPreview"
-          class="px-3 py-1 rounded-md bg-slate-950 text-white hover:bg-slate-800 text-xs font-bold transition-colors"
+          class="px-3 py-1 rounded-md bg-foreground text-background hover:bg-foreground/90 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
         >
-          ✕ Thoát Xem Thử (Về Super Admin)
+          <X class="w-3.5 h-3.5" />
+          <span>Thoát Xem Thử (Về Super Admin)</span>
         </button>
       </div>
 
-      <!-- Fixed Header (72px height, Surface White #FFFFFF, Border #E2E8F0) -->
-      <header class="h-[72px] bg-surface border-b border-border-default px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 shadow-card flex-shrink-0">
-        <!-- Left: Workspace breadcrumb & status -->
-        <div class="flex items-center gap-2 sm:gap-3">
-          <div class="flex items-center gap-2">
-            <h2 class="text-xs sm:text-sm font-bold text-text-primary tracking-tight">{{ portalTitle }}</h2>
-            <span class="text-[10px] sm:text-[11px] px-2.5 py-0.5 rounded-full font-semibold border" :class="roleBadge.class">
-              {{ roleBadge.label }}
-            </span>
-          </div>
+      <!-- Fixed Header (64px height, Claude+ Sticky Navigation with Backdrop Blur) -->
+      <header class="h-16 bg-background/95 backdrop-blur-md border-b border-border px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 shadow-xs flex-shrink-0">
+        <!-- Left: Sidebar Expand trigger (desktop collapsed) + Mobile Menu + Breadcrumbs -->
+        <div class="flex items-center gap-2 sm:gap-3 min-w-0">
+          <!-- Desktop: expand sidebar trigger (only shown when collapsed on lg+) -->
+          <button
+            v-if="isCollapsed"
+            type="button"
+            @click="isCollapsed = false"
+            class="hidden lg:flex text-muted-foreground hover:text-foreground p-1.5 rounded-md hover:bg-muted/60 transition-colors h-9 w-9 items-center justify-center flex-shrink-0"
+            title="Mở rộng menu (256px)"
+            aria-label="Mở rộng menu"
+          >
+            <ChevronRight class="w-4 h-4" />
+          </button>
+
+          <!-- Mobile/Tablet Drawer Trigger (< lg) -->
+          <Sheet v-model:open="isMobileOpen">
+            <SheetTrigger as-child>
+              <Button variant="ghost" size="sm" class="lg:hidden p-1.5 h-9 w-9 flex-shrink-0">
+                <Menu class="h-5 w-5" />
+                <span class="sr-only">Mở menu điều hướng</span>
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" class="w-72 p-0 flex flex-col bg-card">
+              <SheetHeader class="h-16 px-5 border-b border-border flex flex-row items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                  <div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center font-black text-primary-foreground text-sm">
+                    VB
+                  </div>
+                  <div>
+                    <SheetTitle class="text-sm font-bold text-foreground">VeloBus</SheetTitle>
+                    <p class="text-[10px] text-muted-foreground uppercase">{{ portalTitle }}</p>
+                  </div>
+                </div>
+              </SheetHeader>
+              <nav class="p-4 space-y-4 flex-1 overflow-y-auto">
+                <div v-for="group in navGroups" :key="group.title" class="space-y-1.5">
+                  <p class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 px-2">
+                    {{ group.title }}
+                  </p>
+                  <router-link
+                    v-for="item in group.items"
+                    :key="item.to"
+                    :to="item.to"
+                    @click="isMobileOpen = false"
+                    :class="[
+                      'flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium transition-colors',
+                      route.path === item.to || (!item.exact && route.path.startsWith(item.to) && item.to !== '/operator' && item.to !== '/admin')
+                        ? 'sidebar-nav-active font-semibold'
+                        : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+                    ]"
+                  >
+                    <component :is="item.icon" class="w-[18px] h-[18px] flex-shrink-0" />
+                    <span>{{ item.label }}</span>
+                  </router-link>
+                </div>
+              </nav>
+              <div class="p-4 border-t border-border">
+                <router-link
+                  to="/"
+                  @click="isMobileOpen = false"
+                  class="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground rounded-lg hover:bg-muted/60"
+                >
+                  <ArrowLeft class="w-4 h-4" />
+                  <span>Quay về trang chủ đặt vé</span>
+                </router-link>
+              </div>
+            </SheetContent>
+          </Sheet>
+
+          <!-- Breadcrumb navigation (Desktop) -->
+          <nav class="hidden md:flex items-center gap-1.5 text-xs text-muted-foreground min-w-0">
+            <span class="font-semibold text-foreground truncate max-w-[110px] xl:max-w-[150px]">{{ portalTitle }}</span>
+            <ChevronRight class="w-3.5 h-3.5 text-muted-foreground/50 flex-shrink-0" />
+            <span class="font-medium text-foreground/80 truncate max-w-[120px] xl:max-w-[180px]">{{ currentRouteTitle }}</span>
+          </nav>
+
+          <!-- Portal Badge (Controlled Truncation B2-REV-01) -->
+          <span
+            class="text-[10px] sm:text-[11px] px-2.5 py-0.5 rounded-full font-semibold border truncate max-w-[120px] sm:max-w-[180px] md:max-w-[240px] flex-shrink-0"
+            :class="roleBadge.class"
+            :title="roleBadge.label"
+          >
+            {{ roleBadge.label }}
+          </span>
         </div>
 
         <!-- Right: Actions, Layout Width Switcher & User Profile -->
-        <div class="flex items-center gap-2 sm:gap-4">
-          <!-- Width Layout Mode Switcher (Hẹp / Chuẩn / Rộng) -->
-          <div class="hidden sm:block">
+        <div class="flex items-center gap-1.5 sm:gap-2.5 flex-shrink-0">
+          <!-- Width Layout Mode Switcher (Hẹp / Chuẩn / Rộng) - Hidden on smaller screens to prevent header overflow -->
+          <div class="hidden xl:block">
             <LayoutWidthSwitcher />
           </div>
 
           <!-- Notification Center -->
           <NotificationCenter />
 
-          <!-- User Profile & Logout -->
-          <div class="flex items-center gap-3 pl-2 border-l border-border-default">
-            <div class="text-right hidden sm:block">
-              <p class="text-xs font-bold text-text-primary leading-tight">{{ auth.user?.username || 'VeloBus User' }}</p>
-              <p class="text-[11px] text-text-muted">{{ auth.roleName || auth.user?.email || 'user@velobus.vn' }}</p>
-            </div>
+          <!-- Theme Customizer Trigger Button -->
+          <Button
+            variant="ghost"
+            size="sm"
+            class="h-9 w-9 p-0 text-muted-foreground hover:text-foreground"
+            data-testid="theme-customizer-trigger"
+            @click="isThemeCustomizerOpen = true"
+            title="Tùy biến giao diện (Theme Customizer)"
+          >
+            <Paintbrush class="w-4 h-4" />
+            <span class="sr-only">Tùy biến giao diện</span>
+          </Button>
 
-            <button
-              type="button"
-              @click="handleLogout"
-              class="px-3 py-1.5 text-xs font-semibold rounded-md border border-border-default text-text-secondary hover:bg-canvas hover:text-red-600 transition-colors"
-              title="Đăng xuất"
-            >
-              Thoát
-            </button>
-          </div>
+          <!-- User Profile Dropdown Menu -->
+          <DropdownMenu>
+            <DropdownMenuTrigger as-child>
+              <Button variant="ghost" size="sm" class="flex items-center gap-2 pl-2 pr-2 h-9 border border-border/60">
+                <div class="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
+                  {{ (auth.user?.username || 'U')[0].toUpperCase() }}
+                </div>
+                <span class="text-xs font-semibold text-foreground hidden sm:inline-block max-w-[120px] truncate">
+                  {{ auth.user?.username || 'VeloBus User' }}
+                </span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" class="w-56">
+              <div class="px-3 py-2">
+                <p class="text-xs font-semibold text-foreground">{{ auth.user?.username || 'VeloBus User' }}</p>
+                <p class="text-[11px] text-muted-foreground truncate">{{ auth.roleName || auth.user?.email || 'user@velobus.vn' }}</p>
+              </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem as-child>
+                <router-link :to="isAdmin ? '/profile' : '/operator/profile'" class="flex items-center gap-2 cursor-pointer">
+                  <User class="w-4 h-4" />
+                  <span>{{ isAdmin ? 'Hồ sơ tài khoản' : 'Hồ sơ nhà xe' }}</span>
+                </router-link>
+              </DropdownMenuItem>
+              <DropdownMenuItem as-child>
+                <router-link to="/" class="flex items-center gap-2 cursor-pointer">
+                  <Bus class="w-4 h-4" />
+                  <span>Trang đặt vé khách hàng</span>
+                </router-link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem class="text-destructive focus:bg-destructive/10 cursor-pointer" @click="handleLogout">
+                <LogOut class="w-4 h-4 mr-2" />
+                <span>Đăng xuất</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
 
-      <!-- Main Content Canvas with dynamic width mode -->
-      <main class="flex-1 bg-canvas p-6 overflow-y-auto">
+      <!-- Main Content Canvas with dynamic width mode (Desktop 24px / Mobile 16px padding) -->
+      <main class="flex-1 bg-background p-4 md:p-6 overflow-y-auto">
         <div :class="containerClass">
           <router-view />
         </div>
       </main>
     </div>
+
+    <!-- Runtime Theme Customizer Modal/Drawer -->
+    <ThemeCustomizer v-model="isThemeCustomizerOpen" :show-floating-trigger="false" />
   </div>
 </template>

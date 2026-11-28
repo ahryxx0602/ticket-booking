@@ -7,4 +7,7 @@ public interface SeatLockRepository {
     boolean acquireLocks(Long tripId, List<String> seatNumbers, String ownerToken, Duration ttl);
     void releaseOwnedLocks(Long tripId, List<String> seatNumbers, String ownerToken);
     boolean isSeatLocked(Long tripId, String seatNumber);
+    default java.util.Set<String> findLockedSeats(Long tripId, List<String> seatNumbers) {
+        return java.util.Collections.emptySet();
+    }
 }

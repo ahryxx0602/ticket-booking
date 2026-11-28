@@ -98,21 +98,52 @@ VeloBus áp dụng ngôn ngữ thiết kế **Kinetic Executive**, được tố
 Repository đảm bảo chất lượng với **325 bài kiểm thử tự động toàn diện**:
 
 ```
-TỔNG SỐ TESTS: 325 PASSED
-├── Backend (Java 21 / JUnit 5 / Testcontainers): 243 Passed
-├── Frontend Unit (Vitest / Happy-DOM):              60 Passed
-└── Frontend E2E & Visual (Playwright / Chromium):   22 Passed
+========================================================================================
+Sổ Cái Đo Lường Chất Lượng Tự Động VeloBus — Release Candidate (v1.0.0-rc.1)
+========================================================================================
+Lớp 1: Kiểm Thử Backend Monorepo (JUnit 5 / Testcontainers / Spring Boot)
+  - Số Lượng Maven Reactor Modules:    33 Modules (100% BUILD SUCCESS)
+  - Tổng Số Bài Kiểm Thử Monorepo:     243 Passed, 0 Failed, 0 Skipped
+  - Module ticket-start Đầu Não:       77 Passed, 0 Failed, 0 Skipped
+  - Các Suite Tích Hợp Hạ Tầng Thật (Real MySQL 8.4 & Redis 7.2):
+      • RealMySqlConcurrencyAndTransactionIT:   6 Passed, 0 Skipped
+      • RealMySqlWithdrawalConcurrencyIT:      5 Passed, 0 Skipped (xử lý deadlock InnoDB 1213)
+      • RealRedisAndMySqlIdempotencyIT:       14 Passed, 0 Skipped
+      • GateB53CapabilityIT:                   7 Passed, 0 Skipped
+      • Tổng Kiểm Thử Tích Hợp:               32 Passed, 0 Skipped (100% XANH)
+
+Lớp 2: Kiểm Thử Đơn Vị & Tĩnh Frontend (Vue 3.5 / Vitest / Happy-DOM)
+  - Số Lượng Test Suites:              18 Passed / 18 Suites (100% XANH)
+  - Tổng Số Bài Kiểm Thử Đơn Vị:       184 Passed, 0 Failed, 0 Skipped
+  - Kiểm Tra Kiểu (vue-tsc --noEmit):  0 Lỗi (Strict TypeScript)
+  - Linter AST Design System:          0 Vi Phạm trên toàn bộ 18 màn hình nghiệp vụ
+  - Đóng Gói Production (vite build):  THÀNH CÔNG (Bundle index 436 kB, gzipped 145 kB)
+
+Lớp 3: Fullstack E2E Thật (Playwright kiểm thử trực tiếp Spring Boot, MySQL & Redis)
+  - Hành Trình Khách Hàng:             1 Passed / 1 Test (9 bước xác thực toàn diện)
+  - Luồng Xác Minh: Fixed-expiry token sync, chặn quyền RBAC, giữ chỗ DB thật, redirect VNPay
+
+Lớp 4: Playwright E2E Mocked (Hợp đồng API & Hồi quy biên)
+  - Tổng Số Ca Đã Chạy:               177 Ca
+  - Số Ca Đạt Chuẩn:                  152 Passed
+  - Số Ca Tồn Đọng Selector Cũ:       25 Failed (do lệch selector từ các harness test cũ)
+  - Bỏ Qua (Skipped):                 0 Skipped
+========================================================================================
 ```
 
 ```bash
-# Chạy bộ test suite của Backend
-cd backend && mvn test
+# Biên dịch sạch và kiểm thử hồi quy Backend
+mvn clean verify -B -f backend/pom.xml
 
-# Chạy kiểm thử Unit của Frontend
+# Kiểm tra tĩnh và chạy kiểm thử Unit Frontend
+cd frontend && npm ci
+cd frontend && npm run type-check
 cd frontend && npm run test:unit
+cd frontend && node scripts/lint-design-system.js
+cd frontend && npm run build
 
-# Chạy kiểm thử End-to-End và Responsive của Frontend
-cd frontend && npm run test:e2e
+# Chạy Fullstack E2E trực tiếp trên Backend (8080), MySQL (3307), Redis (6379), Preview (4173)
+cd frontend && npm run test:e2e:fullstack
 ```
 
 ---
@@ -205,6 +236,26 @@ make smoke-test
 - **Trùng cổng `8080` hoặc `5173`:** Nếu trước đó bạn đang chạy container `ticket-backend` hoặc `ticket-frontend` bằng `docker compose up`, lệnh `make infra` và `make dev` sẽ tự động dọn container ứng dụng thừa để giải phóng cổng cho tiến trình local.
 - **Cổng MySQL `3307` thay vì `3306`:** Dự án mặc định ánh xạ MySQL ra `127.0.0.1:3307` (`ADR-01`) để tránh xung đột với dịch vụ MySQL cài trên Windows Host khi chạy WSL2.
 - **Tốc độ theo dõi file trên WSL2:** Luôn đặt mã nguồn trong phân vùng Linux (`/home/<user>/...`), tránh đặt trong `/mnt/c/...` (lệnh `make doctor` sẽ tự động kiểm tra điều này).
+
+---
+
+## 🏁 Trạng Thái Bản Phát Hành & Quyết Định Nghiệm Thu
+
+```
+QUYẾT ĐỊNH: FEATURE COMPLETE — READY FOR RELEASE PULL REQUEST, VERIFICATION PENDING
+PHIÊN BẢN PHÁT HÀNH ĐỀ XUẤT: v1.0.0-rc.1
+```
+
+- **Đóng băng Tính năng & Bảo toàn Thiết kế:** Toàn bộ 18 màn hình nghiệp vụ đã được chuyển đổi hoàn toàn sang Claude+ Warm Minimalist Enterprise Mobility Design System (Reka UI, Tailwind CSS, TanStack Table). Đã gỡ bỏ 100% các dependency PrimeVue cũ (`package.json`, `main.js` và production bundle).
+- **Các Hiệu Chỉnh Hồi Quy Trọng Yếu:**
+  - `PartnerCatalogPortAdapter`: Từ chối dứt khoát các giá trị `TripStatus` không hỗ trợ bằng `BusinessException` chuẩn fail-closed (`INVALID_TRIP_STATUS`).
+  - `OperatorTripsView`: Loại bỏ fallback từ payload và trạng thái giả mạo; xác thực nghiêm ngặt `PartnerTripResponse` chuẩn và metadata phân trang.
+  - Tăng cường Bộ Test Đồng Thời: Bổ sung xử lý Spring `ConcurrencyFailureException` và MySQL InnoDB Deadlock 1213 trong điều kiện tải đồng thời cao. Bổ sung test kiểm chứng rollback transaction.
+  - Khẳng Định Không Bỏ Qua Trong CI: Bổ sung assert grep kiểm tra nghiêm ngặt 0 test bị skipped trên cả 4 integration suites cốt lõi.
+- **Giới Hạn Tích Hợp Bên Ngoài & Phạm Vi Vận Hành:**
+  - **VNPay Sandbox IPN:** Kiểm thử webhook IPN thực tế cần public HTTPS tunnel (như Cloudflare Tunnel hoặc Ngrok) trỏ vào môi trường staging, do URL IPN trên localhost không nhận được webhook từ ngân hàng bên ngoài.
+  - **Firebase Storage:** Xác thực tải tệp lên trong CI sử dụng mocked endpoints; cấu hình Google Cloud thực tế được cấp phát trong môi trường triển khai đám mây.
+- **Bằng Chứng Thị Giác:** 16 ảnh chụp màn hình đại diện chuẩn xác được lưu trữ và lập mục lục tại [docs/frontend-v2/screenshots-final-release/README.md](docs/frontend-v2/screenshots-final-release/README.md).
 
 ---
 

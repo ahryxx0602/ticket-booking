@@ -1,0 +1,178 @@
+{
+  "version": "1.0.0",
+  "designSystem": "Claude+ Warm Minimalist Enterprise Mobility",
+  "documentedExceptions": [
+    {
+      "component": "FirebaseUploader.vue",
+      "reason": "Legacy PrimeVue uploader isolated for storage integration until final QA"
+    },
+    {
+      "component": "IconRegistryDemo.vue",
+      "reason": "Showcase icon catalog demo containing metadata"
+    }
+  ],
+  "views": [
+    {
+      "viewPath": "src/modules/auth/views/LoginView.vue",
+      "route": "/login",
+      "featureModule": "auth",
+      "migrationGate": "Gate B2",
+      "migrationStatus": "MIGRATED",
+      "strictLint": true,
+      "exceptions": []
+    },
+    {
+      "viewPath": "src/modules/admin/views/AdminDashboardView.vue",
+      "route": "/admin",
+      "featureModule": "admin",
+      "migrationGate": "Gate B3",
+      "migrationStatus": "MIGRATED",
+      "strictLint": true,
+      "exceptions": []
+    },
+    {
+      "viewPath": "src/modules/partner/views/OperatorDashboardView.vue",
+      "route": "/operator",
+      "featureModule": "partner",
+      "migrationGate": "Gate B3",
+      "migrationStatus": "MIGRATED",
+      "strictLint": true,
+      "exceptions": ["legacy-formfield"]
+    },
+    {
+      "viewPath": "src/modules/admin/views/AdminUsersBookingsView.vue",
+      "route": "/admin/users-bookings",
+      "featureModule": "admin",
+      "migrationGate": "Gate B4",
+      "migrationStatus": "MIGRATED",
+      "strictLint": true,
+      "exceptions": ["legacy-formfield", "legacy-native-select"]
+    },
+    {
+      "viewPath": "src/modules/catalog-booking/views/HomeView.vue",
+      "route": "/",
+      "featureModule": "catalog-booking",
+      "migrationGate": "Gate B5.1",
+      "migrationStatus": "MIGRATED",
+      "strictLint": true,
+      "exceptions": []
+    },
+    {
+      "viewPath": "src/modules/catalog-booking/views/TripListView.vue",
+      "route": "/search",
+      "featureModule": "catalog-booking",
+      "migrationGate": "Gate B5.1",
+      "migrationStatus": "MIGRATED",
+      "strictLint": true,
+      "exceptions": []
+    },
+    {
+      "viewPath": "src/modules/catalog-booking/views/SeatSelectionView.vue",
+      "route": "/trips/:id/seats",
+      "featureModule": "catalog-booking",
+      "migrationGate": "Gate B5.2",
+      "migrationStatus": "MIGRATED",
+      "strictLint": true,
+      "exceptions": []
+    },
+    {
+      "viewPath": "src/modules/catalog-booking/views/CheckoutView.vue",
+      "route": "/checkout/:bookingId?",
+      "featureModule": "catalog-booking",
+      "migrationGate": "Gate B5.3-E",
+      "migrationStatus": "MIGRATED",
+      "strictLint": true,
+      "exceptions": []
+    },
+    {
+      "viewPath": "src/modules/catalog-booking/views/MyBookingsView.vue",
+      "route": "/my-bookings",
+      "featureModule": "catalog-booking",
+      "migrationGate": "Gate B5.3-E",
+      "migrationStatus": "MIGRATED",
+      "strictLint": true,
+      "exceptions": []
+    },
+    {
+      "viewPath": "src/modules/admin/views/AdminBannersView.vue",
+      "route": "/admin/banners",
+      "featureModule": "admin",
+      "migrationGate": "Gate D1",
+      "migrationStatus": "MIGRATED",
+      "strictLint": true,
+      "exceptions": []
+    },
+    {
+      "viewPath": "src/modules/partner/views/OperatorBannersView.vue",
+      "route": "/operator/banners",
+      "featureModule": "partner",
+      "migrationGate": "Gate D1",
+      "migrationStatus": "MIGRATED",
+      "strictLint": true,
+      "exceptions": []
+    },
+    {
+      "viewPath": "src/modules/auth/views/UserProfileView.vue",
+      "route": "/profile",
+      "featureModule": "auth",
+      "migrationGate": "Gate D1",
+      "migrationStatus": "MIGRATED",
+      "strictLint": true,
+      "exceptions": []
+    },
+    {
+      "viewPath": "src/modules/admin/views/AdminOperatorsView.vue",
+      "route": "/admin/operators",
+      "featureModule": "admin",
+      "migrationGate": "Gate D2",
+      "migrationStatus": "MIGRATED",
+      "strictLint": true,
+      "exceptions": []
+    },
+    {
+      "viewPath": "src/modules/admin/views/AdminSettingsView.vue",
+      "route": "/admin/settings",
+      "featureModule": "admin",
+      "migrationGate": "Gate D2",
+      "migrationStatus": "MIGRATED",
+      "strictLint": true,
+      "exceptions": []
+    },
+    {
+      "viewPath": "src/modules/admin/views/AdminWithdrawalsView.vue",
+      "route": "/admin/withdrawals",
+      "featureModule": "admin",
+      "migrationGate": "Gate D2",
+      "migrationStatus": "MIGRATED",
+      "strictLint": true,
+      "exceptions": []
+    },
+    {
+      "viewPath": "src/modules/partner/views/FleetAndDriversView.vue",
+      "route": "/operator/fleet-drivers",
+      "featureModule": "partner",
+      "migrationGate": "Gate D3",
+      "migrationStatus": "MIGRATED",
+      "strictLint": true,
+      "exceptions": []
+    },
+    {
+      "viewPath": "src/modules/partner/views/OperatorTripsView.vue",
+      "route": "/operator/trips",
+      "featureModule": "partner",
+      "migrationGate": "Gate D3",
+      "migrationStatus": "MIGRATED",
+      "strictLint": true,
+      "exceptions": []
+    },
+    {
+      "viewPath": "src/modules/partner/views/OperatorProfileView.vue",
+      "route": "/operator/profile",
+      "featureModule": "partner",
+      "migrationGate": "Gate D3",
+      "migrationStatus": "MIGRATED",
+      "strictLint": true,
+      "exceptions": []
+    }
+  ]
+}

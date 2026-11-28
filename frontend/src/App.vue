@@ -1,12 +1,15 @@
 <template>
-  <Toast />
-  <router-view />
+  <ConfigProvider :scroll-body="false">
+    <Sonner position="top-right" richColors />
+    <router-view />
+  </ConfigProvider>
 </template>
 
 <script setup>
 import { onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import Toast from 'primevue/toast'
+import { ConfigProvider } from 'reka-ui'
+import { Sonner } from '@/components/ui/sonner'
 import { useAuthStore } from '@/modules/auth/store'
 
 const router = useRouter()

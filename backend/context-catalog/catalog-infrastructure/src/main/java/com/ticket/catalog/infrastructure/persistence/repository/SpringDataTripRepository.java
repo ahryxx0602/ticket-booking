@@ -67,4 +67,22 @@ public interface SpringDataTripRepository extends JpaRepository<TripJpaEntity, L
     @org.springframework.data.jpa.repository.Modifying
     @Query("UPDATE TripJpaEntity t SET t.settlementStatus = 'SETTLED' WHERE t.id = :tripId AND t.settlementStatus = 'UNSETTLED'")
     int markTripSettledIfUnsettled(@Param("tripId") Long tripId);
+
+    @Query(value = "SELECT t FROM TripJpaEntity t " +
+           "JOIN FETCH t.departureStation " +
+           "JOIN FETCH t.arrivalStation " +
+           "WHERE t.operatorId = :operatorId " +
+           "AND (:status IS NULL OR t.status = :status) " +
+           "AND (:vehicleId IS NULL OR t.vehicleId = :vehicleId) " +
+           "ORDER BY t.departureTime DESC",
+           countQuery = "SELECT COUNT(t) FROM TripJpaEntity t " +
+           "WHERE t.operatorId = :operatorId " +
+           "AND (:status IS NULL OR t.status = :status) " +
+           "AND (:vehicleId IS NULL OR t.vehicleId = :vehicleId)")
+    org.springframework.data.domain.Page<TripJpaEntity> findByOperatorIdWithFilters(
+            @Param("operatorId") Long operatorId,
+            @Param("status") com.ticket.catalog.domain.model.TripStatus status,
+            @Param("vehicleId") Long vehicleId,
+            org.springframework.data.domain.Pageable pageable
+    );
 }

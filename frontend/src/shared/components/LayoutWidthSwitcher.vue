@@ -27,7 +27,7 @@ const modes = [
 
 <template>
   <div
-    class="inline-flex items-center rounded-lg border border-border-default bg-canvas p-0.5 text-xs select-none shadow-sm"
+    class="inline-flex items-center rounded-lg border border-border bg-muted/60 p-0.5 text-xs select-none shadow-xs"
     role="group"
     aria-label="Tùy chọn độ rộng bố cục"
   >
@@ -40,8 +40,8 @@ const modes = [
       :class="[
         'px-2.5 py-1 text-[11px] rounded-md transition-all flex items-center gap-1.5',
         mode === item.key
-          ? 'bg-surface text-primary-600 font-bold shadow-sm border border-border-default'
-          : 'text-text-muted hover:text-text-primary hover:bg-surface/50'
+          ? 'bg-card text-foreground font-semibold shadow-xs border border-border'
+          : 'text-muted-foreground hover:text-foreground hover:bg-card/50'
       ]"
       :aria-pressed="mode === item.key"
     >
