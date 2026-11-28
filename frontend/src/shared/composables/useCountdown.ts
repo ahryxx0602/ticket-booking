@@ -1,18 +1,18 @@
 import { ref, computed, onUnmounted, getCurrentInstance } from 'vue'
 
-export function useCountdown(onExpiredCallback) {
-  const remainingSeconds = ref(0)
-  let timerId = null
+export function useCountdown(onExpiredCallback?: (() => void) | null) {
+  const remainingSeconds = ref<number>(0)
+  let timerId: ReturnType<typeof setInterval> | null = null
 
-  const formattedTime = computed(() => {
+  const formattedTime = computed<string>(() => {
     const mins = Math.floor(remainingSeconds.value / 60)
     const secs = remainingSeconds.value % 60
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
   })
 
-  const isRunning = computed(() => remainingSeconds.value > 0)
+  const isRunning = computed<boolean>(() => remainingSeconds.value > 0)
 
-  function start(expiresAtIso) {
+  function start(expiresAtIso: string | number | Date): void {
     stop()
     const targetMs = new Date(expiresAtIso).getTime()
     const update = () => {
@@ -31,7 +31,7 @@ export function useCountdown(onExpiredCallback) {
     }
   }
 
-  function stop() {
+  function stop(): void {
     if (timerId) {
       clearInterval(timerId)
       timerId = null

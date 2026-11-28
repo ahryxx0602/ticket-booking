@@ -3,12 +3,27 @@
  * PRE-03: Shared validator for Hold response, Booking detail, Reload recovery, and Checkout eligibility.
  */
 
+export interface ValidationOptions {
+  expectedTripId?: number | string | null
+  expectedUserId?: number | string | null
+  expectedSeats?: string[] | null
+  expectedClientRequestId?: string | null
+  allowPastExpiry?: boolean
+  allowTerminalReplay?: boolean
+}
+
+export interface ValidationResult {
+  valid: boolean
+  error?: string
+  expiresAtMs?: number
+}
+
 /**
  * Parse ISO date string to millisecond timestamp.
  * Rejects invalid, non-finite or empty timestamps.
  * Does not assume LocalDateTime is UTC; parses in accordance with ISO string specification.
  */
-export function parseIsoDate(dateInput) {
+export function parseIsoDate(dateInput: any): number {
   if (!dateInput) return NaN
   if (dateInput instanceof Date) {
     const t = dateInput.getTime()
@@ -30,29 +45,15 @@ export function parseIsoDate(dateInput) {
  * Normalizes an array of seat numbers for exact set comparison:
  * trims, uppercases, removes duplicates, and sorts alphabetically.
  */
-export function normalizeSeatSet(seatList) {
+export function normalizeSeatSet(seatList: any): string[] {
   if (!Array.isArray(seatList)) return []
   return [...new Set(seatList.map(s => String(s || '').trim().toUpperCase()).filter(Boolean))].sort()
 }
 
 /**
  * Strictly validates a BookingResponse object against expected parameters.
- *
- * Requirements:
- * - bookingReference: non-empty string
- * - status: strictly 'HELD'
- * - tripId: matches expectedTripId (if provided)
- * - userId: matches expectedUserId (if provided)
- * - totalAmount: finite number >= 0 (preserves valid 0)
- * - seatNumbers: non-empty array of strings. If expectedSeats provided, MUST EXACTLY match.
- *   DO NOT fallback missing confirmed seats to requestedSeats!
- * - expiresAt: valid finite timestamp in the future.
- *
- * @param {object} booking The booking object from API
- * @param {object} options { expectedTripId, expectedUserId, expectedSeats, allowPastExpiry }
- * @returns {{ valid: boolean, error?: string, expiresAtMs?: number }}
  */
-export function validateBookingResponse(booking, options = {}) {
+export function validateBookingResponse(booking: any, options: ValidationOptions = {}): ValidationResult {
   const {
     expectedTripId,
     expectedUserId,

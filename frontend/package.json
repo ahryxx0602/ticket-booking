@@ -8,9 +8,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "type-check": "vue-tsc --noEmit",
+    "lint:design-system": "node --experimental-strip-types scripts/lint-design-system.ts || node scripts/lint-design-system.ts",
     "test:unit": "vitest run --no-file-parallelism",
     "test:e2e": "playwright test",
-    "test:e2e:fullstack": "playwright test -c playwright.fullstack.config.js",
+    "test:e2e:fullstack": "playwright test -c playwright.fullstack.config.ts",
     "test:visual": "playwright test --grep @visual"
   },
   "dependencies": {

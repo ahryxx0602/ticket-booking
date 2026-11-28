@@ -2,7 +2,7 @@ import httpClient from '@/shared/api/httpClient'
 
 export const catalogBookingApi = {
   // Public & Catalog
-  getPublicBanners(limit = 10) {
+  getPublicBanners(limit: number = 10) {
     return httpClient.get('/public/banners/active', { params: { limit } })
   },
   getPublicSettings() {
@@ -11,42 +11,42 @@ export const catalogBookingApi = {
   getStations() {
     return httpClient.get('/catalog/stations')
   },
-  searchTrips(params) {
+  searchTrips(params?: Record<string, any>) {
     return httpClient.get('/catalog/trips', { params })
   },
-  getTripSeats(tripId) {
+  getTripSeats(tripId: number | string) {
     return httpClient.get(`/catalog/trips/${tripId}/seats`)
   },
 
   // Customer Bookings
-  getSeatAvailability(tripId) {
+  getSeatAvailability(tripId: number | string) {
     return httpClient.get(`/bookings/trips/${tripId}/availability`)
   },
-  holdSeats(payload, idempotencyKey) {
-    const config = {}
+  holdSeats(payload: Record<string, any>, idempotencyKey?: string | null) {
+    const config: Record<string, any> = {}
     if (idempotencyKey) {
       config.headers = { 'Idempotency-Key': String(idempotencyKey).trim() }
     }
     return httpClient.post('/bookings/hold', payload, config)
   },
-  cancelBooking(bookingReference) {
+  cancelBooking(bookingReference: string) {
     return httpClient.post(`/bookings/${bookingReference}/cancel`)
   },
-  getMyBookings(params) {
+  getMyBookings(params?: Record<string, any>) {
     return httpClient.get('/bookings/my-bookings', { params })
   },
-  getBookingDetail(bookingReference) {
+  getBookingDetail(bookingReference: string) {
     return httpClient.get(`/bookings/${bookingReference}`)
   },
-  getElectronicTicket(bookingReference) {
+  getElectronicTicket(bookingReference: string) {
     return httpClient.get(`/bookings/${bookingReference}/ticket`)
   },
 
   // Payment
-  createVnPayCheckout(payload) {
+  createVnPayCheckout(payload: Record<string, any>) {
     return httpClient.post('/payments/checkout', payload)
   },
-  getPaymentStatus(bookingReference) {
+  getPaymentStatus(bookingReference: string) {
     return httpClient.get(`/payments/bookings/${bookingReference}/status`)
   },
 }

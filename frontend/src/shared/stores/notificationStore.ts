@@ -1,14 +1,20 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
-// REV-04: Mock fixtures are ONLY allowed in DEV, Showcase or automated tests.
-// Production initializes with an empty list. Notifications will be populated
-// from real backend API calls when that feature is available.
-// mark-as-read only updates local state; server persistence is a Gate B3+ concern.
+export interface AppNotification {
+  id: string
+  title: string
+  message: string
+  type: string
+  icon?: string
+  read: boolean
+  createdAt: string
+  [key: string]: any
+}
 
 const IS_DEV_SHOWCASE = import.meta.env.DEV && import.meta.env.VITE_ENABLE_MOCK_NOTIFICATIONS === 'true'
 
-const devMockNotifications = IS_DEV_SHOWCASE
+const devMockNotifications: AppNotification[] = IS_DEV_SHOWCASE
   ? [
       {
         id: 'NOTI-01',
@@ -41,41 +47,41 @@ const devMockNotifications = IS_DEV_SHOWCASE
   : []
 
 export const useNotificationStore = defineStore('notification', () => {
-  // Production: empty list. DEV+MOCK flag: seed with fixtures for showcase/tests only.
-  const notifications = ref([...devMockNotifications])
+  const notifications = ref<AppNotification[]>([...devMockNotifications])
 
-  const isTelegramLinked = ref(false)
-  const telegramUsername = ref('')
+  const isTelegramLinked = ref<boolean>(false)
+  const telegramUsername = ref<string>('')
 
-  const unreadCount = computed(() => {
+  const unreadCount = computed<number>(() => {
     return notifications.value.filter(n => !n.read).length
   })
 
-  function markAsRead(id) {
-    // NOTE: This only updates local state. Server-side persistence is deferred to Gate B3+.
+  function markAsRead(id: string): void {
     const item = notifications.value.find(n => n.id === id)
     if (item) {
       item.read = true
     }
   }
 
-  function markAllAsRead() {
-    // NOTE: Local state only — no server call.
+  function markAllAsRead(): void {
     notifications.value.forEach(n => {
       n.read = true
     })
   }
 
-  function addNotification(noti) {
+  function addNotification(noti: Partial<AppNotification>): void {
     notifications.value.unshift({
       id: `NOTI-${Date.now()}`,
+      title: noti.title || 'Thông báo mới',
+      message: noti.message || '',
+      type: noti.type || 'SYSTEM',
       read: false,
       createdAt: 'Vừa xong',
       ...noti
     })
   }
 
-  function linkTelegram(username) {
+  function linkTelegram(username?: string): void {
     isTelegramLinked.value = true
     telegramUsername.value = username || '@velobus_user'
   }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { scanContent, forbiddenPatterns } from '../lint-design-system.js'
+import { scanContent, forbiddenPatterns } from '../lint-design-system.ts'
 
 describe('Design System Guardrail Linter (REV-08)', () => {
   it('detects forbidden emojis in component code', () => {

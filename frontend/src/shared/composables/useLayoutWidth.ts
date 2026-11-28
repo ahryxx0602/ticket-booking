@@ -2,10 +2,13 @@ import { ref, computed } from 'vue'
 
 const STORAGE_KEY = 'velobus_layout_width_mode'
 
-function getInitialMode() {
+export type LayoutWidthMode = 'narrow' | 'normal' | 'wide'
+
+function getInitialMode(): LayoutWidthMode {
   try {
     if (typeof window !== 'undefined' && window.localStorage && typeof window.localStorage.getItem === 'function') {
-      return window.localStorage.getItem(STORAGE_KEY) || 'normal'
+      const val = window.localStorage.getItem(STORAGE_KEY) as LayoutWidthMode
+      if (val === 'narrow' || val === 'normal' || val === 'wide') return val
     }
   } catch (e) {
     // fallback
@@ -13,10 +16,10 @@ function getInitialMode() {
   return 'normal'
 }
 
-const currentMode = ref(getInitialMode())
+const currentMode = ref<LayoutWidthMode>(getInitialMode())
 
 export function useLayoutWidth() {
-  const containerClass = computed(() => {
+  const containerClass = computed<string>(() => {
     switch (currentMode.value) {
       case 'narrow':
         return 'max-w-5xl mx-auto w-full transition-all duration-200'
@@ -28,7 +31,7 @@ export function useLayoutWidth() {
     }
   })
 
-  function setMode(mode) {
+  function setMode(mode: LayoutWidthMode): void {
     if (['narrow', 'normal', 'wide'].includes(mode)) {
       currentMode.value = mode
       try {

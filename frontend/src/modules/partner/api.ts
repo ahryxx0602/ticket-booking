@@ -2,13 +2,13 @@ import httpClient from '@/shared/api/httpClient'
 
 export const partnerApi = {
   // Operator Profile
-  registerOperator(payload) {
+  registerOperator(payload: Record<string, any>) {
     return httpClient.post('/partners/register', payload)
   },
   getProfile() {
     return httpClient.get('/partners/me')
   },
-  updateProfile(payload) {
+  updateProfile(payload: Record<string, any>) {
     return httpClient.put('/partners/me', payload)
   },
 
@@ -16,16 +16,16 @@ export const partnerApi = {
   getVehicles() {
     return httpClient.get('/partners/vehicles')
   },
-  createVehicle(payload) {
+  createVehicle(payload: Record<string, any>) {
     return httpClient.post('/partners/vehicles', payload)
   },
-  updateVehicle(id, payload) {
+  updateVehicle(id: number | string, payload: Record<string, any>) {
     return httpClient.put(`/partners/vehicles/${id}`, payload)
   },
-  setVehicleMaintenance(id) {
+  setVehicleMaintenance(id: number | string) {
     return httpClient.put(`/partners/vehicles/${id}/maintenance`)
   },
-  activateVehicle(id) {
+  activateVehicle(id: number | string) {
     return httpClient.put(`/partners/vehicles/${id}/activate`)
   },
 
@@ -33,18 +33,18 @@ export const partnerApi = {
   getDrivers() {
     return httpClient.get('/partners/drivers')
   },
-  createDriver(payload) {
+  createDriver(payload: Record<string, any>) {
     return httpClient.post('/partners/drivers', payload)
   },
-  updateDriver(id, payload) {
+  updateDriver(id: number | string, payload: Record<string, any>) {
     return httpClient.put(`/partners/drivers/${id}`, payload)
   },
 
   // Trips
-  getMyTrips(params) {
+  getMyTrips(params?: Record<string, any>) {
     return httpClient.get('/partners/trips', { params })
   },
-  createPartnerTrip(payload) {
+  createPartnerTrip(payload: Record<string, any>) {
     return httpClient.post('/partners/trips', payload)
   },
 
@@ -55,7 +55,7 @@ export const partnerApi = {
   getWalletTransactions() {
     return httpClient.get('/partners/wallet/transactions')
   },
-  requestWithdrawal(payload) {
+  requestWithdrawal(payload: Record<string, any>) {
     return httpClient.post('/partners/wallet/withdraw', payload)
   },
   getWithdrawals() {
@@ -66,7 +66,7 @@ export const partnerApi = {
   getMyBanners() {
     return httpClient.get('/partners/banners')
   },
-  createBanner(payload) {
+  createBanner(payload: Record<string, any>) {
     return httpClient.post('/partners/banners', payload)
   },
 }

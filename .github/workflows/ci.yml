@@ -96,7 +96,7 @@ jobs:
 
       - name: Audit Design System & Migration Consistency
         working-directory: frontend
-        run: node scripts/lint-design-system.js
+        run: node --experimental-strip-types scripts/lint-design-system.ts || node scripts/lint-design-system.ts
 
       - name: Run Vitest Unit & Composable Tests
         working-directory: frontend

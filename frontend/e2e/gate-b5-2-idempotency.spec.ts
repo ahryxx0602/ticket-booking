@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
-import { loginAsRole } from './helpers/auth.js'
+import { loginAsRole } from './helpers/auth'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)

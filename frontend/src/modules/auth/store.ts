@@ -97,7 +97,7 @@ export const ALL_ADMIN_PERMISSION_CODES = ADMIN_PERMISSION_MODULES.flatMap(m => 
 /**
  * Giải mã Base64URL JWT payload an toàn chống lỗi cú pháp và kiểm tra hạn sử dụng
  */
-export function parseJwt(token) {
+export function parseJwt(token: string | null | undefined): Record<string, any> | null {
   if (!token || typeof token !== 'string') return null
   try {
     const parts = token.split('.')
@@ -131,7 +131,7 @@ export function parseJwt(token) {
   }
 }
 
-function safeGetStorage(key) {
+function safeGetStorage(key: string): string | null {
   try {
     if (typeof localStorage !== 'undefined' && typeof localStorage.getItem === 'function') {
       return localStorage.getItem(key)
@@ -140,7 +140,7 @@ function safeGetStorage(key) {
   return null
 }
 
-function safeSetStorage(key, val) {
+function safeSetStorage(key: string, val: string): void {
   try {
     if (typeof localStorage !== 'undefined' && typeof localStorage.setItem === 'function') {
       localStorage.setItem(key, val)
@@ -148,7 +148,7 @@ function safeSetStorage(key, val) {
   } catch (_) {}
 }
 
-function safeRemoveStorage(key) {
+function safeRemoveStorage(key: string): void {
   try {
     if (typeof localStorage !== 'undefined' && typeof localStorage.removeItem === 'function') {
       localStorage.removeItem(key)
@@ -157,65 +157,65 @@ function safeRemoveStorage(key) {
 }
 
 export const useAuthStore = defineStore('auth', () => {
-  const token = ref(safeGetStorage('velobus_access_token') || '')
-  let initialUser = null
+  const token = ref<string>(safeGetStorage('velobus_access_token') || '')
+  let initialUser: any = null
   try {
     initialUser = JSON.parse(safeGetStorage('velobus_user') || 'null')
   } catch (e) {
     initialUser = null
   }
-  const user = ref(initialUser)
+  const user = ref<any>(initialUser)
 
   // State phục vụ chế độ "⚡ Xem thử giao diện với Role này (Preview Role)" của Super Admin (FE-STATE-002: Memory-Only)
-  const previewRole = ref(null)
+  const previewRole = ref<any>(null)
   setHttpClientPreviewRole(null)
   safeRemoveStorage('velobus_preview_role')
 
   // FE-SEC-002, FE-SEC-003 & FE-STATE-001: Quyền thực tế đồng bộ từ GET /api/v1/auth/me kèm Single-Flight & Session Epoch Guard
-  const liveProfile = ref(null)
-  const permissionCatalog = ref(ADMIN_PERMISSION_MODULES)
+  const liveProfile = ref<any>(null)
+  const permissionCatalog = ref<any[]>(ADMIN_PERMISSION_MODULES)
   let sessionEpoch = 0
-  let inflightRefreshPromise = null
+  let inflightRefreshPromise: Promise<any> | null = null
 
   // Single Source of Truth cho JWT payload
   const jwtPayload = computed(() => parseJwt(token.value))
-  const isAuthenticated = computed(() => Boolean(token.value && jwtPayload.value))
+  const isAuthenticated = computed<boolean>(() => Boolean(token.value && jwtPayload.value))
 
   // Trích xuất vai trò ưu tiên từ liveProfile (nếu đã gọi /auth/me) hoặc JWT payload
-  const role = computed(() => {
+  const role = computed<string>(() => {
     if (!isAuthenticated.value) return 'GUEST'
     return liveProfile.value?.role || jwtPayload.value?.role || 'GUEST'
   })
 
-  const customRole = computed(() => {
+  const customRole = computed<string>(() => {
     if (!isAuthenticated.value) return 'GUEST'
     if (previewRole.value?.code) return previewRole.value.code
     return liveProfile.value?.customRole || jwtPayload.value?.customRole || role.value
   })
 
-  const roleName = computed(() => {
+  const roleName = computed<string>(() => {
     if (!isAuthenticated.value) return 'Khách vãng lai'
     if (previewRole.value?.name) return previewRole.value.name
     return liveProfile.value?.roleName || jwtPayload.value?.roleName || customRole.value
   })
 
-  const isAdmin = computed(() => role.value === 'ROLE_ADMIN')
-  const isOperator = computed(() => role.value === 'ROLE_OPERATOR')
-  const isCustomer = computed(() => role.value === 'ROLE_CUSTOMER')
+  const isAdmin = computed<boolean>(() => role.value === 'ROLE_ADMIN')
+  const isOperator = computed<boolean>(() => role.value === 'ROLE_OPERATOR')
+  const isCustomer = computed<boolean>(() => role.value === 'ROLE_CUSTOMER')
 
   /**
    * PC-01: Chỉ coi là Super Admin khi role === 'ROLE_ADMIN', không ở chế độ preview,
    * và (customRole không khai báo hoặc customRole === 'ROLE_ADMIN').
    * Nếu customRole khác 'ROLE_ADMIN' (VD: ROLE_INTERN có permissions = []), tuyệt đối KHÔNG phải Super Admin!
    */
-  const isSuperAdmin = computed(() => {
+  const isSuperAdmin = computed<boolean>(() => {
     if (!isAdmin.value) return false
     if (previewRole.value) return previewRole.value.code === 'ROLE_ADMIN'
     const claimCustomRole = liveProfile.value?.customRole || jwtPayload.value?.customRole
     return !claimCustomRole || claimCustomRole === 'ROLE_ADMIN'
   })
 
-  const permissions = computed(() => {
+  const permissions = computed<string[]>(() => {
     if (!isAdmin.value) return []
     if (isSuperAdmin.value) return ALL_ADMIN_PERMISSION_CODES
     if (previewRole.value) {
@@ -228,19 +228,19 @@ export const useAuthStore = defineStore('auth', () => {
     return Array.isArray(claimPerms) ? claimPerms : []
   })
 
-  function hasPermission(code) {
+  function hasPermission(code?: string | null): boolean {
     if (!isAdmin.value || !code || typeof code !== 'string') return false
     if (isSuperAdmin.value) return true
     return permissions.value.includes(code)
   }
 
-  function hasAnyPermission(codes) {
+  function hasAnyPermission(codes?: string[] | null): boolean {
     if (!isAdmin.value || !codes || !Array.isArray(codes) || codes.length === 0) return false
     if (isSuperAdmin.value) return true
     return codes.some(c => permissions.value.includes(c))
   }
 
-  function startRolePreview(targetRole) {
+  function startRolePreview(targetRole: any): void {
     if (!targetRole) return
     previewRole.value = {
       code: targetRole.code,
@@ -251,7 +251,7 @@ export const useAuthStore = defineStore('auth', () => {
     setHttpClientPreviewRole(targetRole.code)
   }
 
-  function stopRolePreview() {
+  function stopRolePreview(): void {
     previewRole.value = null
     setHttpClientPreviewRole(null)
     safeRemoveStorage('velobus_preview_role')
@@ -264,7 +264,7 @@ export const useAuthStore = defineStore('auth', () => {
    * - Session Epoch Guard: nếu user logout hoặc đổi tài khoản khi request đang bay, phản hồi cũ sẽ bị bỏ qua.
    * - Fixed-Expiry Session: không phát hành hay ghi đè accessToken.
    */
-  async function refreshProfile() {
+  async function refreshProfile(): Promise<any> {
     if (!isAuthenticated.value) return null
     if (inflightRefreshPromise) {
       return inflightRefreshPromise
@@ -302,7 +302,7 @@ export const useAuthStore = defineStore('auth', () => {
   /**
    * FE-SEC-003: Đồng bộ danh mục 7 Modules x 26 Permissions từ Backend API
    */
-  function syncPermissionCatalog(modulesFromApi) {
+  function syncPermissionCatalog(modulesFromApi: any): void {
     if (Array.isArray(modulesFromApi) && modulesFromApi.length > 0) {
       permissionCatalog.value = modulesFromApi
     }
@@ -312,7 +312,7 @@ export const useAuthStore = defineStore('auth', () => {
    * PC-07: Tìm trang /admin/* đầu tiên mà nhân sự hệ thống có quyền xem.
    * Nếu Custom Role không có bất kỳ quyền xem nào -> trả về '/403' để tránh vòng lặp redirect vô tận.
    */
-  function getHomeRoute() {
+  function getHomeRoute(): string {
     if (isAdmin.value) {
       if (isSuperAdmin.value) return '/admin'
       const adminRouteCandidates = [
@@ -330,7 +330,7 @@ export const useAuthStore = defineStore('auth', () => {
     return '/'
   }
 
-  async function login(username, password) {
+  async function login(username: string, password: string): Promise<any> {
     const res = await authApi.login({ username, password })
     if (res?.data?.accessToken) {
       const payload = parseJwt(res.data.accessToken)
@@ -353,10 +353,10 @@ export const useAuthStore = defineStore('auth', () => {
       safeSetStorage('velobus_user', JSON.stringify(user.value))
       return res
     }
-    throw new Error(res?.message || 'Không nhận được mã xác thực hợp lệ')
+    throw new Error(res?.data?.message || (res as any)?.message || 'Không nhận được mã xác thực hợp lệ')
   }
 
-  async function register(payload) {
+  async function register(payload: any): Promise<any> {
     const res = await authApi.register(payload)
     if (res?.data?.accessToken) {
       const jwtData = parseJwt(res.data.accessToken)
@@ -379,10 +379,10 @@ export const useAuthStore = defineStore('auth', () => {
       safeSetStorage('velobus_user', JSON.stringify(user.value))
       return res
     }
-    throw new Error(res?.message || 'Không nhận được mã xác thực hợp lệ')
+    throw new Error(res?.data?.message || (res as any)?.message || 'Không nhận được mã xác thực hợp lệ')
   }
 
-  function logout() {
+  function logout(): void {
     sessionEpoch++
     inflightRefreshPromise = null
     token.value = ''
@@ -403,7 +403,7 @@ export const useAuthStore = defineStore('auth', () => {
     window.addEventListener('velobus:forbidden', () => {
       refreshProfile()
     })
-    window.addEventListener('storage', (event) => {
+    window.addEventListener('storage', (event: StorageEvent) => {
       if (event.key === 'velobus_access_token') {
         if (!event.newValue) {
           logout()

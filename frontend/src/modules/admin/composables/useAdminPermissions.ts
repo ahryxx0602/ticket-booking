@@ -16,25 +16,25 @@ export function useAdminPermissions() {
   const customRole = computed(() => (auth && auth.isAuthenticated ? auth.customRole : 'GUEST'))
   const roleName = computed(() => (auth && auth.isAuthenticated ? auth.roleName : 'Khách vãng lai'))
   const previewRole = computed(() => (auth ? auth.previewRole : null))
-  const permissions = computed(() => (auth && auth.isAuthenticated ? auth.permissions : []))
+  const permissions = computed<string[]>(() => (auth && auth.isAuthenticated ? auth.permissions : []))
 
-  function hasPermission(code) {
+  function hasPermission(code?: string | null): boolean {
     if (!auth || !auth.isAuthenticated || !code) return false
     return auth.hasPermission(code)
   }
 
-  function hasAnyPermission(codes) {
+  function hasAnyPermission(codes?: string[] | null): boolean {
     if (!auth || !auth.isAuthenticated || !Array.isArray(codes) || codes.length === 0) return false
     return auth.hasAnyPermission(codes)
   }
 
-  function startRolePreview(roleObj) {
+  function startRolePreview(roleObj: any): void {
     if (auth && auth.isAuthenticated) {
       auth.startRolePreview(roleObj)
     }
   }
 
-  function stopRolePreview() {
+  function stopRolePreview(): void {
     if (auth) {
       auth.stopRolePreview()
     }

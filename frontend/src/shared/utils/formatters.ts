@@ -1,4 +1,4 @@
-export function formatVnd(amount) {
+export function formatVnd(amount: number | string | null | undefined): string {
   if (amount === null || amount === undefined) return '0 ₫'
   return new Intl.NumberFormat('vi-VN', {
     style: 'currency',
@@ -7,7 +7,7 @@ export function formatVnd(amount) {
   }).format(Number(amount))
 }
 
-export function formatDateTime(isoString) {
+export function formatDateTime(isoString: string | null | undefined): string {
   if (!isoString) return '—'
   const date = new Date(isoString)
   if (Number.isNaN(date.getTime())) return isoString

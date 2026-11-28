@@ -2,7 +2,7 @@ import { chromium } from '@playwright/test'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
-import { makeE2eJwt } from '../e2e/helpers/auth.js'
+import { makeE2eJwt } from '../e2e/helpers/auth'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
