@@ -160,6 +160,12 @@ async function pollAuthoritativeConfirmation(attempt = 1) {
 
     const payData = resPayment.data?.data || resPayment.data
     if (payData) {
+      // Validate payment status response bookingReference
+      if (payData.bookingReference && payData.bookingReference !== bookingReference.value) {
+        console.warn(`[Checkout] Payment status bookingReference mismatch: expected ${bookingReference.value}, got ${payData.bookingReference}`)
+        return
+      }
+
       paymentStatusInfo.value = payData
       if (payData.reconciliationRequired) {
         isReconciliationRequired.value = true
@@ -178,6 +184,11 @@ async function pollAuthoritativeConfirmation(attempt = 1) {
         const refreshBookingRes = await catalogBookingApi.getBookingDetail(bookingReference.value)
         if (currentGen !== pollGeneration.value) return
         const freshBooking = refreshBookingRes.data?.data || refreshBookingRes.data
+
+        if (freshBooking && freshBooking.bookingReference && freshBooking.bookingReference !== bookingReference.value) {
+          console.warn(`[Checkout] Fresh booking bookingReference mismatch: expected ${bookingReference.value}, got ${freshBooking.bookingReference}`)
+          return
+        }
 
         if (freshBooking && freshBooking.status === 'CONFIRMED') {
           booking.value = freshBooking
@@ -204,10 +215,13 @@ async function pollAuthoritativeConfirmation(attempt = 1) {
           paymentGatewayError.value = 'Đơn giữ chỗ đã bị hủy trước khi nhận được phản hồi thanh toán. Khoản tiền sẽ được đối soát hoàn trả.'
           return
         }
-      } else if (payData.paymentStatus === 'FAILED' && !payData.hasPaymentAttempt) {
+      } else if (payData.paymentStatus === 'FAILED' && payData.hasPaymentAttempt && !payData.activePaymentReference) {
         stopPolling()
-        operationGuard.clearUnresolvedPayment(bookingReference.value)
-        paymentGatewayError.value = 'Giao dịch thanh toán đã bị cổng VNPay từ chối hoặc hết hạn.'
+        const currentUnresolved = operationGuard.getUnresolvedPayment(bookingReference.value)
+        if (!currentUnresolved?.paymentReference || currentUnresolved.paymentReference === payData.paymentReference) {
+          operationGuard.clearUnresolvedPayment(bookingReference.value)
+        }
+        paymentGatewayError.value = 'Giao dịch thanh toán đã bị cổng VNPay từ chối hoặc thất bại.'
         toast.error('Thanh toán không thành công')
         return
       }
@@ -358,6 +372,12 @@ async function handleProceedPayment() {
 
   if (booking.value?.status !== 'HELD') {
     toast.error(`Không thể thanh toán đơn vé đang ở trạng thái ${booking.value?.status}.`)
+    return
+  }
+
+  // D0-PRE-02: Check backend authoritative canAttemptPayment flag if provided
+  if (paymentStatusInfo.value && paymentStatusInfo.value.canAttemptPayment === false) {
+    toast.error('Đơn giữ chỗ hiện tại không đủ điều kiện khởi tạo thanh toán theo quy định bảo mật hệ thống.')
     return
   }
 

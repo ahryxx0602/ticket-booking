@@ -248,6 +248,88 @@ describe('Admin Backoffice Views & Platform Governance Tests (Phase FE-03)', () 
       success: true,
       data: { id: 20, code: 'ROLE_CONTENT_MOD', name: 'Kiểm Duyệt Nội Dung & Banner', permissions: ['BANNER_VIEW'] }
     })
+
+    vi.spyOn(adminApi, 'getOperators').mockResolvedValue({
+      success: true,
+      data: [
+        { id: 'OP-01', brandName: 'Hoàng Long Limousine', businessName: 'Hoàng Long Limousine', representative: 'Nguyễn Hoàng Long', phone: '0901234567', email: 'hoanglong@velobus.vn', taxCode: '0109876543', customCommissionRate: 8.5, commissionRate: 8.5, vehicleCount: 18, status: 'ACTIVE' },
+        { id: 'OP-02', brandName: 'Phương Trang Velo', businessName: 'Phương Trang Velo', representative: 'Lê Minh Phương', phone: '0918765432', email: 'phuongtrang@velobus.vn', taxCode: '0301122334', customCommissionRate: null, commissionRate: null, vehicleCount: 32, status: 'ACTIVE' },
+        { id: 'OP-03', brandName: 'Hải Vân Express', businessName: 'Hải Vân Express', representative: 'Trần Hải Vân', phone: '0989112233', email: 'haivan@velobus.vn', taxCode: '0405566778', customCommissionRate: null, commissionRate: null, vehicleCount: 10, status: 'PENDING_APPROVAL' }
+      ]
+    })
+
+    vi.spyOn(adminApi, 'getGlobalCommission').mockResolvedValue({
+      success: true,
+      data: { commissionRate: 10.0 }
+    })
+
+    vi.spyOn(adminApi, 'approveOperator').mockResolvedValue({
+      success: true,
+      data: { id: 'OP-03', status: 'ACTIVE' }
+    })
+
+    vi.spyOn(adminApi, 'updateOperatorCommission').mockResolvedValue({
+      success: true,
+      data: { id: 'OP-01', commissionRate: 7.5 }
+    })
+
+    vi.spyOn(adminApi, 'getWithdrawals').mockResolvedValue({
+      success: true,
+      data: [
+        { id: 'WDR-20261123-01', operatorName: 'Hoàng Long Limousine', amount: 15000000, bankName: 'Vietcombank', accountNumber: '0071001234567', accountHolderName: 'Hoàng Long Ltd', requestedAt: '23/11/2026 10:15', status: 'PENDING' },
+        { id: 'WDR-20261122-09', operatorName: 'Phương Trang Velo', amount: 35000000, bankName: 'Techcombank', accountNumber: '1903456789001', accountHolderName: 'Phương Trang Corp', requestedAt: '22/11/2026 16:40', status: 'APPROVED' }
+      ]
+    })
+
+    vi.spyOn(adminApi, 'approveWithdrawal').mockResolvedValue({
+      success: true,
+      data: { id: 'WDR-20261123-01', status: 'APPROVED' }
+    })
+
+    vi.spyOn(adminApi, 'getStations').mockResolvedValue({
+      success: true,
+      data: [
+        { id: 1, code: 'HN-GP', name: 'Bến xe Giáp Bát', city: 'Hà Nội', status: 'ACTIVE' },
+        { id: 2, code: 'HN-MY', name: 'Bến xe Mỹ Đình', city: 'Hà Nội', status: 'ACTIVE' },
+        { id: 3, code: 'DN-TT', name: 'Bến xe Trung Tâm Đà Nẵng', city: 'Đà Nẵng', status: 'ACTIVE' },
+        { id: 4, code: 'SG-MD', name: 'Bến xe Miền Đông Mới', city: 'TP. Hồ Chí Minh', status: 'ACTIVE' },
+        { id: 5, code: 'DL-LD', name: 'Bến xe Liên Tỉnh Đà Lạt', city: 'Lâm Đồng', status: 'ACTIVE' }
+      ]
+    })
+
+    vi.spyOn(adminApi, 'createStation').mockResolvedValue({
+      success: true,
+      data: { id: 6, code: 'HP-TL', name: 'Bến xe Thượng Lý', city: 'Hải Phòng' }
+    })
+
+    vi.spyOn(adminApi, 'getTrips').mockResolvedValue({
+      success: true,
+      data: [
+        { id: 101, tripCode: 'VB-HN-DN-01', departureCity: 'Hà Nội', arrivalCity: 'Đà Nẵng', departureTime: '2026-12-01T20:00:00', basePrice: 450000, totalSeats: 34, status: 'SCHEDULED' },
+        { id: 102, tripCode: 'VB-SG-DL-02', departureCity: 'TP. Hồ Chí Minh', arrivalCity: 'Đà Lạt', departureTime: '2026-12-02T22:30:00', basePrice: 380000, totalSeats: 24, status: 'SCHEDULED' }
+      ]
+    })
+
+    vi.spyOn(adminApi, 'createTrip').mockResolvedValue({
+      success: true,
+      data: { id: 103, tripCode: 'VB-HP-HN-09', departureCity: 'Hải Phòng', arrivalCity: 'Hà Nội', departureTime: '2026-12-05T21:00:00', basePrice: 400000, totalSeats: 34, status: 'SCHEDULED' }
+    })
+
+    vi.spyOn(adminApi, 'getSystemSettings').mockResolvedValue({
+      success: true,
+      data: {
+        platformName: 'VeloBus - Sàn Vé Xe Khách Cao Cấp',
+        defaultCommissionRate: '10.0',
+        seatHoldTtlMinutes: '10',
+        turnaroundBufferMinutes: '30',
+        escrowSettlementDelayHours: '2'
+      }
+    })
+
+    vi.spyOn(adminApi, 'updateSystemSettings').mockResolvedValue({
+      success: true,
+      data: {}
+    })
   })
 
   describe('FE-SEC-001: useAdminPermissions Fail-Closed Security Invariant', () => {
@@ -488,6 +570,11 @@ describe('Admin Backoffice Views & Platform Governance Tests (Phase FE-03)', () 
 
   describe('AdminBannersView.vue & Dynamic RBAC UI Permission Hiding (Phase 07)', () => {
     it('renders AdminBannersView and creates platform banner when permission granted', async () => {
+      vi.spyOn(adminApi, 'getBanners').mockResolvedValue({ data: [] })
+      vi.spyOn(adminApi, 'createPlatformBanner').mockResolvedValue({
+        data: { id: 99, title: 'Banner Tết 2027', imageUrl: 'https://cdn.velobus.vn/banner.jpg', position: 'HOMEPAGE_HERO', status: 'ACTIVE' }
+      })
+
       const wrapper = mount(AdminBannersView, { global: { plugins: [pinia] } })
       await flushPromises()
       expect(wrapper.text()).toContain('Kiểm Duyệt Banner Quảng Cáo Toàn Sàn')
@@ -495,7 +582,14 @@ describe('Admin Backoffice Views & Platform Governance Tests (Phase FE-03)', () 
 
       await wrapper.find('[data-testid="create-banner-btn"]').trigger('click')
       await wrapper.find('[data-testid="input-banner-title"]').setValue('Banner Tết 2027')
+      await wrapper.find('[data-testid="input-banner-image"]').setValue('https://cdn.velobus.vn/banner.jpg')
+
+      vi.spyOn(adminApi, 'getBanners').mockResolvedValue({
+        data: [{ id: 99, title: 'Banner Tết 2027', imageUrl: 'https://cdn.velobus.vn/banner.jpg', position: 'HOMEPAGE_HERO', status: 'ACTIVE' }]
+      })
+
       await wrapper.find('[data-testid="btn-save-banner"]').trigger('click')
+      await flushPromises()
       expect(wrapper.text()).toContain('Banner Tết 2027')
     })
 

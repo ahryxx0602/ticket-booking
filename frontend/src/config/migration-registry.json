@@ -41,7 +41,7 @@
     },
     {
       "viewPath": "src/modules/admin/views/AdminUsersBookingsView.vue",
-      "route": "/admin/users",
+      "route": "/admin/users-bookings",
       "featureModule": "admin",
       "migrationGate": "Gate B4",
       "migrationStatus": "MIGRATED",
@@ -125,8 +125,8 @@
       "route": "/admin/operators",
       "featureModule": "admin",
       "migrationGate": "Gate D2",
-      "migrationStatus": "UNMIGRATED",
-      "strictLint": false,
+      "migrationStatus": "MIGRATED",
+      "strictLint": true,
       "exceptions": []
     },
     {
@@ -134,8 +134,8 @@
       "route": "/admin/settings",
       "featureModule": "admin",
       "migrationGate": "Gate D2",
-      "migrationStatus": "UNMIGRATED",
-      "strictLint": false,
+      "migrationStatus": "MIGRATED",
+      "strictLint": true,
       "exceptions": []
     },
     {
@@ -143,8 +143,8 @@
       "route": "/admin/withdrawals",
       "featureModule": "admin",
       "migrationGate": "Gate D2",
-      "migrationStatus": "UNMIGRATED",
-      "strictLint": false,
+      "migrationStatus": "MIGRATED",
+      "strictLint": true,
       "exceptions": []
     },
     {

@@ -6,146 +6,176 @@ import { loginAsRole } from './helpers/auth'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-const screenshotDir = path.resolve(__dirname, '../../docs/frontend-v2/screenshots-gate-d1')
+const closureScreenshotDir = path.resolve(__dirname, '../../docs/frontend-v2/screenshots-gate-d1-closure')
 
-if (!fs.existsSync(screenshotDir)) {
-  fs.mkdirSync(screenshotDir, { recursive: true })
+if (!fs.existsSync(closureScreenshotDir)) {
+  fs.mkdirSync(closureScreenshotDir, { recursive: true })
 }
 
-test.describe('Gate D1: Content & Account Management E2E Suite', () => {
+test.describe('Gate D1 Closure: Data Integrity & Error Recovery E2E Suite', () => {
 
-  test('E2E-D1-01: Admin Banners View & Moderation Lifecycle', async ({ page }) => {
+  test('E2E-D1-01: Admin Banners Empty & Error States, Mutation Rejection & Position Enums', async ({ page }) => {
     await loginAsRole(page, 'ROLE_ADMIN', 'admin')
 
-    const mockBanners = [
-      {
-        id: 1,
-        operatorId: 2,
-        operatorName: 'Phương Trang Velo',
-        title: 'Trải nghiệm Limousine VIP 24 Phòng Đôi sang trọng',
-        imageUrl: 'https://images.unsplash.com/photo-1570125909232-eb263c188f7e?w=600&auto=format&fit=crop&q=60',
-        targetUrl: 'https://velobus.vn/trips/TRIP-02/seats',
-        position: 'HOME_CAROUSEL',
-        status: 'PENDING_APPROVAL',
-        priority: 1,
-        createdAt: '2026-11-23T10:00:00Z'
-      },
-      {
-        id: 2,
-        operatorId: 1,
-        operatorName: 'Hoàng Long Limousine',
-        title: 'Khuyến mãi mùa hè: Giảm 15% chặng Hà Nội - Đà Nẵng',
-        imageUrl: 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=600&auto=format&fit=crop&q=60',
-        targetUrl: 'https://velobus.vn/search?from=HN-GP&to=DN-TT',
-        position: 'HOME_CAROUSEL',
-        status: 'ACTIVE',
-        priority: 2,
-        createdAt: '2026-11-20T10:00:00Z'
-      }
-    ]
-
+    // Scenario 1: Empty list renders EmptyState without fallback fixtures
     await page.route('**/api/v1/admin/partners/banners*', async route => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ code: 'OK', data: mockBanners })
+        body: JSON.stringify({ code: 'OK', data: [] })
       })
     })
 
     await page.goto('/admin/banners')
     await page.waitForLoadState('networkidle')
 
-    // Expect header & table
     await expect(page.locator('h1')).toContainText('Kiểm Duyệt Banner Quảng Cáo Toàn Sàn')
-    await expect(page.locator('text=Trải nghiệm Limousine VIP 24 Phòng Đôi')).toBeVisible()
+    await expect(page.locator('text=Không có banner nào')).toBeVisible()
+    await expect(page.locator('text=Phương Trang Velo')).not.toBeVisible()
 
-    // 1. Capture Table Screenshot
     await page.screenshot({
-      path: path.join(screenshotDir, 'd1-admin-banners-table.png'),
+      path: path.join(closureScreenshotDir, 'd1-closure-empty-banners.png'),
       fullPage: true
     })
 
-    // 2. Open Create Banner Modal
+    // Scenario 2: Error state with retry
+    await page.route('**/api/v1/admin/partners/banners*', async route => {
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 'INTERNAL_ERROR', message: 'Lỗi cơ sở dữ liệu kết nối đối tác.' })
+      })
+    })
+
+    await page.locator('button:has-text("Làm mới")').click()
+    await page.waitForLoadState('networkidle')
+
+    await expect(page.locator('text=Lỗi tải dữ liệu banner')).toBeVisible()
+    await expect(page.locator('text=Lỗi cơ sở dữ liệu kết nối đối tác')).toBeVisible()
+
+    await page.screenshot({
+      path: path.join(closureScreenshotDir, 'd1-closure-error-banner-state.png'),
+      fullPage: true
+    })
+
+    // Scenario 3: Backend rejection on create banner retains modal and user inputs
     const createBtn = page.locator('[data-testid="create-banner-btn"]')
     await createBtn.click()
     await expect(page.locator('text=Tạo Banner Truyền Thông Sàn')).toBeVisible()
 
-    await page.locator('[data-testid="input-banner-title"]').fill('Ưu Đãi Đặc Biệt Chào Xuân 2027')
-    await page.screenshot({
-      path: path.join(screenshotDir, 'd1-admin-create-banner-modal.png')
-    })
-    // Close modal
-    await page.keyboard.press('Escape')
+    await page.locator('[data-testid="input-banner-title"]').fill('Chiến Dịch Lỗi Máy Chủ')
+    await page.locator('[data-testid="input-banner-image"]').fill('https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=600')
+    await page.locator('[data-testid="input-banner-target"]').fill('https://velobus.vn/search')
 
-    // 3. Open Reject Reason Dialog
-    const rejectBtn = page.locator('button:has-text("Gỡ")').first()
-    if (await rejectBtn.isVisible()) {
-      await rejectBtn.click()
-      await expect(page.locator('text=Từ Chối & Gỡ Bỏ Banner')).toBeVisible()
-      await page.locator('#reject-reason').fill('Hình ảnh mờ, không đạt tỷ lệ 16:9 tiêu chuẩn sàn')
-      await page.screenshot({
-        path: path.join(screenshotDir, 'd1-admin-reject-dialog.png')
+    await page.route('**/api/v1/admin/partners/banners/platform', async route => {
+      await route.fulfill({
+        status: 400,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 'INVALID_TITLE', message: 'Tiêu đề chiến dịch không được phép trùng lặp trong quý.' })
       })
-      await page.keyboard.press('Escape')
-    }
+    })
+
+    await page.locator('[data-testid="btn-save-banner"]').click()
+    await expect(page.locator('[role="alert"]').locator('text=Tiêu đề chiến dịch không được phép trùng lặp trong quý.')).toBeVisible()
+
+    await page.screenshot({
+      path: path.join(closureScreenshotDir, 'd1-closure-rejected-create-banner.png')
+    })
+    await page.keyboard.press('Escape')
   })
 
-  test('E2E-D1-02: Operator Banners View & Registration Sheet', async ({ page }) => {
-    await loginAsRole(page, 'ROLE_OPERATOR', 'operator1')
+  test('E2E-D1-02: Image Upload Integrity & Preview Verification', async ({ page }) => {
+    await loginAsRole(page, 'ROLE_ADMIN', 'admin')
 
-    const mockOpBanners = [
-      {
-        id: 1,
-        title: 'Khuyến mãi mùa hè: Giảm 15% chặng Hà Nội - Đà Nẵng',
-        imageUrl: 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=600&auto=format&fit=crop&q=60',
-        targetUrl: 'https://velobus.vn/search?from=HN-GP&to=DN-TT',
-        position: 'HOME_CAROUSEL',
-        status: 'ACTIVE',
-        registeredAt: '20/11/2026'
-      },
-      {
-        id: 2,
-        title: 'Trải nghiệm Limousine VIP 24 Phòng Đôi sang trọng',
-        imageUrl: 'https://images.unsplash.com/photo-1570125909232-eb263c188f7e?w=600&auto=format&fit=crop&q=60',
-        targetUrl: 'https://velobus.vn/trips/TRIP-02/seats',
-        position: 'HOME_CAROUSEL',
-        status: 'PENDING_APPROVAL',
-        registeredAt: '23/11/2026'
-      }
-    ]
-
-    await page.route('**/api/v1/partners/banners', async route => {
+    await page.route('**/api/v1/admin/partners/banners*', async route => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ code: 'OK', data: mockOpBanners })
+        body: JSON.stringify({ code: 'OK', data: [] })
       })
     })
 
-    await page.goto('/operator/banners')
+    await page.goto('/admin/banners')
     await page.waitForLoadState('networkidle')
+    await page.locator('[data-testid="create-banner-btn"]').click()
 
-    await expect(page.locator('h1')).toContainText('Banner & Chiến Dịch Quảng Cáo Sàn')
-    await expect(page.locator('text=Trang Chủ (Hero Carousel)').first()).toBeVisible()
-
-    // 4. Capture Operator Banners Table
-    await page.screenshot({
-      path: path.join(screenshotDir, 'd1-operator-banners-table.png'),
-      fullPage: true
+    // Mock upload failure
+    await page.route('**/api/v1/public/upload', async route => {
+      await route.fulfill({
+        status: 400,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 'INVALID_IMAGE_CONTENT', message: 'Tệp tải lên không đúng chữ ký nhị phân hình ảnh hợp lệ.' })
+      })
     })
 
-    // 5. Open Right-Side Sheet (520px)
-    await page.locator('[data-testid="btn-add-banner"]').click()
-    await expect(page.locator('text=Đăng Ký Banner Quảng Cáo Mới')).toBeVisible()
+    // Select synthetic dummy file
+    const fileChooserPromise = page.waitForEvent('filechooser')
+    await page.locator('text=Chọn hoặc kéo thả ảnh').click()
+    const fileChooser = await fileChooserPromise
+    await fileChooser.setFiles({
+      name: 'corrupted.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from('not-a-real-image-payload')
+    })
 
-    await page.locator('[data-testid="input-banner-title"]').fill('Giảm 20% Vé Xe Giường Nằm Nha Trang')
+    await expect(page.locator('[data-testid="uploader-error-msg"]')).toBeVisible()
     await page.screenshot({
-      path: path.join(screenshotDir, 'd1-operator-register-sheet.png')
+      path: path.join(closureScreenshotDir, 'd1-closure-upload-failure.png')
+    })
+
+    // Mock upload success with deterministic synthetic image
+    const validPngBuffer = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      'base64'
+    )
+
+    await page.route('https://storage.googleapis.com/**', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'image/png',
+        body: validPngBuffer
+      })
+    })
+
+    await page.route('**/api/v1/public/upload', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 'OK',
+          data: {
+            url: 'https://storage.googleapis.com/velobus/banners/valid.png',
+            filename: 'valid.png'
+          }
+        })
+      })
+    })
+
+    const fileChooserPromise2 = page.waitForEvent('filechooser')
+    await page.locator('text=Chọn hoặc kéo thả ảnh').click()
+    const fileChooser2 = await fileChooserPromise2
+    await fileChooser2.setFiles({
+      name: 'valid.png',
+      mimeType: 'image/png',
+      buffer: validPngBuffer
+    })
+
+    const previewImg = page.locator('[data-testid="img-uploader-preview"]')
+    await expect(previewImg).toBeVisible()
+
+    // Assert image.complete, naturalWidth > 0 and naturalHeight > 0
+    const isImageValid = await previewImg.evaluate(img => {
+      return img.complete && img.naturalWidth > 0 && img.naturalHeight > 0
+    })
+    expect(isImageValid).toBe(true)
+
+    await page.screenshot({
+      path: path.join(closureScreenshotDir, 'd1-closure-valid-image-preview.png')
     })
   })
 
-  test('E2E-D1-03: User Profile & Security with Read-Only Notice and Telegram Modal', async ({ page }) => {
-    await loginAsRole(page, 'ROLE_CUSTOMER', 'thanhpv')
+  test('E2E-D1-03: User Profile Clean Synthetic Identity without Fabricated Contacts', async ({ page }) => {
+    await loginAsRole(page, 'ROLE_CUSTOMER', 'synthetic_customer_42')
 
     await page.route('**/api/v1/auth/me', async route => {
       await route.fulfill({
@@ -154,10 +184,11 @@ test.describe('Gate D1: Content & Account Management E2E Suite', () => {
         body: JSON.stringify({
           code: 'OK',
           data: {
-            username: 'thanhpv',
-            fullName: 'Phan Văn Thành',
-            email: 'thanh.pv@gmail.com',
-            role: 'ROLE_CUSTOMER'
+            username: 'synthetic_customer_42',
+            role: 'ROLE_CUSTOMER',
+            customRole: null,
+            roleName: null,
+            permissions: ['BOOKING_VIEW', 'TICKET_DOWNLOAD']
           }
         })
       })
@@ -167,23 +198,16 @@ test.describe('Gate D1: Content & Account Management E2E Suite', () => {
     await page.waitForLoadState('networkidle')
 
     await expect(page.locator('h1')).toContainText('Hồ Sơ Cá Nhân & Bảo Mật Tài Khoản')
-    await expect(page.locator('text=Chế độ hiển thị định danh xác thực (Read-only)')).toBeVisible()
-    await expect(page.locator('text=ROLE_CUSTOMER')).toBeVisible()
+    await expect(page.locator('text=@synthetic_customer_42')).toBeVisible()
+    await expect(page.locator('text=ROLE_CUSTOMER').first()).toBeVisible()
+    await expect(page.locator('text=Chưa liên kết trong phiên').first()).toBeVisible()
 
-    // 6. Capture Profile View Screenshot
+    // Assert no password inputs exist
+    expect(await page.locator('input[type="password"]').count()).toBe(0)
+
     await page.screenshot({
-      path: path.join(screenshotDir, 'd1-user-profile-readonly.png'),
+      path: path.join(closureScreenshotDir, 'd1-closure-clean-profile-synthetic.png'),
       fullPage: true
-    })
-
-    // 7. Open Telegram Link Modal
-    const tgBtn = page.locator('button:has-text("Liên Kết Telegram Bot")')
-    await tgBtn.click()
-    await expect(page.locator('text=Liên Kết Bot Telegram VeloBus')).toBeVisible()
-    await expect(page.locator('[data-testid="img-telegram-qr"]')).toBeVisible()
-
-    await page.screenshot({
-      path: path.join(screenshotDir, 'd1-telegram-modal.png')
     })
   })
 })

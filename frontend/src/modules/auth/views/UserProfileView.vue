@@ -2,19 +2,16 @@
 import { ref, computed, onMounted } from 'vue'
 import {
   User as UserIcon,
-  Mail,
   Shield,
-  KeyRound,
   Send,
-  CheckCircle2,
   Info,
-  Lock,
-  BadgeCheck,
-  AlertCircle
+  Loader2,
+  AlertTriangle,
+  RefreshCw,
+  KeyRound
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Separator } from '@/components/ui/separator'
@@ -25,53 +22,68 @@ import { authApi } from '@/modules/auth/api'
 const auth = useAuthStore()
 const showTelegramModal = ref(false)
 
-const user = ref({
+const isLoading = ref(false)
+const loadError = ref('')
+
+const profileData = ref({
   username: '',
-  fullName: '',
-  email: '',
-  role: 'ROLE_CUSTOMER',
-  status: 'ACTIVE'
+  role: '',
+  customRole: null,
+  roleName: '',
+  permissions: []
 })
 
-onMounted(async () => {
-  if (auth.user) {
-    user.value.username = auth.user.username || auth.user.sub || ''
-    user.value.fullName = auth.user.fullName || auth.user.name || auth.user.username || 'Người dùng VeloBus'
-    user.value.email = auth.user.email || 'customer@velobus.vn'
-    user.value.role = auth.role || auth.user.role || 'ROLE_CUSTOMER'
-  } else {
-    // Fallback baseline if store not yet populated
-    user.value = {
-      username: 'thanhpv',
-      fullName: 'Phan Văn Thành',
-      email: 'thanh.pv@gmail.com',
-      role: 'ROLE_CUSTOMER',
-      status: 'ACTIVE'
-    }
-  }
-
-  // Attempt authoritative refresh via authApi.getMe() if available
+// D1-PRE-05: Fetch actual authenticated identity from GET /api/v1/auth/me
+async function fetchUserProfile() {
+  isLoading.value = true
+  loadError.value = ''
   try {
     const res = await authApi.getMe()
-    if (res?.data) {
-      const data = res.data
-      user.value.username = data.username || user.value.username
-      user.value.fullName = data.fullName || data.name || user.value.fullName
-      user.value.email = data.email || user.value.email
-      user.value.role = data.role || user.value.role
+    const data = res?.data?.data !== undefined ? res.data.data : res?.data
+    if (!data || !data.username) {
+      throw new Error('Không nhận được thông tin phiên đăng nhập hợp lệ.')
     }
-  } catch (_) {
-    // Silent fallback to store state
+    profileData.value = {
+      username: data.username,
+      role: data.role || auth.role || 'ROLE_CUSTOMER',
+      customRole: data.customRole || null,
+      roleName: data.roleName || '',
+      permissions: Array.isArray(data.permissions) ? data.permissions : []
+    }
+  } catch (err) {
+    const status = err?.response?.status
+    if (status === 401) {
+      loadError.value = 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'
+    } else {
+      loadError.value = err?.response?.data?.message || err?.message || 'Không thể tải thông tin hồ sơ tài khoản.'
+    }
+    // Fallback to store values if available, without fabricated personal info
+    if (auth.user) {
+      profileData.value = {
+        username: auth.user.username || auth.user.sub || 'authenticated_user',
+        role: auth.role || auth.user.role || 'ROLE_CUSTOMER',
+        customRole: null,
+        roleName: '',
+        permissions: []
+      }
+    }
+  } finally {
+    isLoading.value = false
   }
+}
+
+onMounted(() => {
+  fetchUserProfile()
 })
 
 const userInitials = computed(() => {
-  const name = user.value.fullName || user.value.username || 'U'
+  const name = profileData.value.username || 'U'
   return name.charAt(0).toUpperCase()
 })
 
 const formattedRole = computed(() => {
-  switch (user.value.role) {
+  const role = profileData.value.role
+  switch (role) {
     case 'ROLE_ADMIN':
     case 'ADMIN':
       return 'Quản Trị Viên Sàn (Admin)'
@@ -80,8 +92,9 @@ const formattedRole = computed(() => {
       return 'Đối Tác Nhà Xe (Operator)'
     case 'ROLE_CUSTOMER':
     case 'CUSTOMER':
-    default:
       return 'Khách Hàng (Customer)'
+    default:
+      return profileData.value.roleName || role || 'Người Dùng'
   }
 })
 </script>
@@ -89,60 +102,103 @@ const formattedRole = computed(() => {
 <template>
   <div class="max-w-4xl mx-auto space-y-6">
     <!-- Page Header -->
-    <div class="space-y-1">
-      <h1 class="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-        <UserIcon class="w-6 h-6 text-primary" />
-        <span>Hồ Sơ Cá Nhân & Bảo Mật Tài Khoản</span>
-      </h1>
-      <p class="text-xs text-muted-foreground">
-        Xem thông tin định danh cá nhân đã xác thực, quản lý phân quyền và liên kết Bot Telegram để nhận biến động số dư / vé điện tử tức thì.
-      </p>
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div>
+        <h1 class="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+          <UserIcon class="w-6 h-6 text-primary" />
+          <span>Hồ Sơ Cá Nhân & Bảo Mật Tài Khoản</span>
+        </h1>
+        <p class="text-xs text-muted-foreground mt-1">
+          Xem thông tin định danh tài khoản đăng nhập hiện tại và kết nối thông báo tự động qua Bot Telegram.
+        </p>
+      </div>
+
+      <Button
+        variant="outline"
+        size="sm"
+        class="h-9 gap-1.5 self-start sm:self-auto"
+        :disabled="isLoading"
+        @click="fetchUserProfile"
+      >
+        <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': isLoading }" />
+        <span>Tải lại</span>
+      </Button>
     </div>
 
-    <!-- Capability Gap Honest Notice -->
-    <Alert class="bg-blue-50/70 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900 text-blue-950 dark:text-blue-200 py-3">
-      <Info class="w-4 h-4 text-blue-600 dark:text-blue-400" />
-      <AlertTitle class="text-xs font-semibold">Chế độ hiển thị định danh xác thực (Read-only)</AlertTitle>
-      <AlertDescription class="text-xs leading-relaxed text-blue-800 dark:text-blue-300 mt-1">
-        Thông tin cá nhân và mật khẩu tài khoản được quản lý và bảo mật qua dịch vụ Identity & Access Management. Chức năng tự cập nhật thông tin cá nhân và đổi mật khẩu tự phục vụ của khách hàng đang được chuẩn bị triển khai trong phiên bản tiếp theo.
+    <!-- Error State -->
+    <Alert v-if="loadError" variant="destructive" class="py-3">
+      <AlertTriangle class="w-4 h-4" />
+      <AlertTitle class="text-xs font-semibold">Lỗi xác thực hồ sơ</AlertTitle>
+      <AlertDescription class="text-xs flex items-center justify-between gap-4 mt-1">
+        <span>{{ loadError }}</span>
+        <Button variant="outline" size="sm" class="h-7 text-xs bg-background shrink-0" @click="fetchUserProfile">
+          Thử Lại
+        </Button>
+      </AlertDescription>
+    </Alert>
+
+    <!-- Loading State -->
+    <div v-if="isLoading && !profileData.username" class="h-64 flex flex-col items-center justify-center gap-2">
+      <Loader2 class="w-8 h-8 animate-spin text-primary" />
+      <p class="text-xs text-muted-foreground">Đang xác thực thông tin tài khoản...</p>
+    </div>
+
+    <!-- Honest Read-Only Notice (D1-PRE-05: Concise, no technical jargon) -->
+    <Alert class="border-border bg-muted/30 py-3">
+      <Info class="w-4 h-4 text-primary" />
+      <AlertTitle class="text-xs font-semibold text-foreground">Thông tin tài khoản xác thực (Chế độ chỉ đọc)</AlertTitle>
+      <AlertDescription class="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+        Thông tin định danh và phân quyền được cấp phát trực tiếp theo phiên đăng nhập. Chức năng cập nhật thông tin cá nhân bổ sung đang được hoàn thiện.
       </AlertDescription>
     </Alert>
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-      <!-- Cột Trái: Avatar & Định Danh -->
+      <!-- Cột Trái: Avatar & Định Danh Thực Tế -->
       <Card class="shadow-sm text-center">
         <CardContent class="pt-6 space-y-4">
-          <div class="relative w-24 h-24 mx-auto rounded-full bg-primary/10 border-2 border-primary flex items-center justify-center text-primary text-3xl font-bold shadow-inner">
+          <div class="w-20 h-20 mx-auto rounded-full bg-primary/10 border-2 border-primary flex items-center justify-center text-primary text-2xl font-bold">
             {{ userInitials }}
-            <span class="absolute bottom-0 right-0 p-1 bg-primary rounded-full border-2 border-background">
-              <BadgeCheck class="w-4 h-4 text-primary-foreground" />
-            </span>
           </div>
 
           <div>
-            <h3 class="text-base font-bold text-foreground">
-              {{ user.fullName || 'Khách Hàng VeloBus' }}
+            <h3 class="text-base font-bold text-foreground font-mono">
+              @{{ profileData.username || '...' }}
             </h3>
-            <p class="text-xs text-muted-foreground font-mono mt-0.5">
-              @{{ user.username || 'username' }}
+            <p class="text-xs text-muted-foreground mt-0.5">
+              {{ formattedRole }}
             </p>
           </div>
 
           <Separator />
 
-          <div class="space-y-2 text-left text-xs text-muted-foreground">
+          <div class="space-y-2.5 text-left text-xs">
             <div class="flex items-center justify-between">
-              <span>Vai trò tài khoản:</span>
-              <Badge variant="outline" class="font-semibold text-[11px] text-primary border-primary/30">
-                {{ user.role || 'ROLE_CUSTOMER' }} ({{ formattedRole }})
+              <span class="text-muted-foreground">Mã quyền hạn:</span>
+              <Badge variant="outline" class="font-mono text-[11px] text-primary border-primary/30">
+                {{ profileData.role || 'ROLE_CUSTOMER' }}
               </Badge>
             </div>
-            <div class="flex items-center justify-between">
-              <span>Trạng thái hoạt động:</span>
-              <span class="inline-flex items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400">
-                <CheckCircle2 class="w-3.5 h-3.5" />
-                <span>Hoạt Động (ACTIVE)</span>
-              </span>
+
+            <div v-if="profileData.customRole" class="flex items-center justify-between">
+              <span class="text-muted-foreground">Vai trò tùy biến:</span>
+              <span class="font-semibold text-foreground">{{ profileData.roleName || profileData.customRole }}</span>
+            </div>
+
+            <div v-if="profileData.permissions.length > 0" class="pt-1">
+              <span class="text-muted-foreground block mb-1">Quyền tác vụ ({{ profileData.permissions.length }}):</span>
+              <div class="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
+                <Badge
+                  v-for="p in profileData.permissions.slice(0, 6)"
+                  :key="p"
+                  variant="secondary"
+                  class="text-[10px] font-mono px-1.5 py-0"
+                >
+                  {{ p }}
+                </Badge>
+                <span v-if="profileData.permissions.length > 6" class="text-[10px] text-muted-foreground">
+                  +{{ profileData.permissions.length - 6 }} quyền khác
+                </span>
+              </div>
             </div>
           </div>
 
@@ -163,122 +219,65 @@ const formattedRole = computed(() => {
         </CardContent>
       </Card>
 
-      <!-- Cột Phải: Form Thông Tin & Mật Khẩu (Read-Only Honest Display) -->
+      <!-- Cột Phải: Thông tin định danh chi tiết (Read-only, no misleading forms) -->
       <div class="md:col-span-2 space-y-6">
-        <!-- Thông Tin Chi Tiết -->
         <Card class="shadow-sm">
           <CardHeader class="pb-3 border-b border-border bg-muted/20">
             <CardTitle class="text-sm font-semibold text-foreground flex items-center gap-2">
-              <UserIcon class="w-4 h-4 text-primary" />
-              <span>Thông Tin Cá Nhân Định Danh</span>
+              <Shield class="w-4 h-4 text-primary" />
+              <span>Chi Tiết Tài Khoản Đăng Nhập</span>
             </CardTitle>
             <CardDescription class="text-xs text-muted-foreground">
-              Các thông tin liên hệ được đồng bộ trực tiếp từ tài khoản đăng nhập.
-            </CardDescription>
-          </CardHeader>
-
-          <CardContent class="pt-4 space-y-4">
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div class="space-y-1.5">
-                <label for="profile-name" class="block text-xs font-semibold text-foreground">Họ và Tên</label>
-                <Input
-                  id="profile-name"
-                  :model-value="user.fullName"
-                  readonly
-                  class="h-9 text-xs bg-muted/30 cursor-not-allowed"
-                />
-              </div>
-
-              <div class="space-y-1.5">
-                <label for="profile-email" class="block text-xs font-semibold text-foreground">Địa Chỉ Email</label>
-                <Input
-                  id="profile-email"
-                  :model-value="user.email"
-                  readonly
-                  class="h-9 text-xs bg-muted/30 cursor-not-allowed"
-                />
-              </div>
-            </div>
-
-            <div class="space-y-1.5">
-              <label for="profile-username" class="block text-xs font-semibold text-foreground">Tên Đăng Nhập (Username)</label>
-              <Input
-                id="profile-username"
-                :model-value="user.username"
-                readonly
-                class="h-9 text-xs font-mono bg-muted/30 cursor-not-allowed max-w-sm"
-              />
-            </div>
-          </CardContent>
-
-          <CardFooter class="border-t border-border bg-muted/10 py-3 flex items-center justify-between">
-            <p class="text-[11px] text-muted-foreground italic flex items-center gap-1">
-              <Shield class="w-3.5 h-3.5 text-emerald-600" />
-              <span>Định danh đã xác thực theo phiên bản bảo mật B5.3</span>
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled
-              class="text-xs opacity-60 cursor-not-allowed"
-            >
-              Lưu Thay Đổi (Chưa hỗ trợ)
-            </Button>
-          </CardFooter>
-        </Card>
-
-        <!-- Đổi Mật Khẩu -->
-        <Card class="shadow-sm">
-          <CardHeader class="pb-3 border-b border-border bg-muted/20">
-            <CardTitle class="text-sm font-semibold text-foreground flex items-center gap-2">
-              <Lock class="w-4 h-4 text-primary" />
-              <span>Bảo Mật & Mật Khẩu Đăng Nhập</span>
-            </CardTitle>
-            <CardDescription class="text-xs text-muted-foreground">
-              Mật khẩu được mã hóa chuẩn BCrypt một chiều trong dịch vụ cơ sở dữ liệu.
+              Dữ liệu thuộc tính người dùng được trích xuất từ phiên xác thực hiện thời.
             </CardDescription>
           </CardHeader>
 
           <CardContent class="pt-4 space-y-4">
             <div class="space-y-3">
-              <div class="space-y-1.5">
-                <label class="block text-xs font-semibold text-foreground">Mật khẩu hiện tại</label>
-                <Input
-                  type="password"
-                  value="••••••••••••"
-                  readonly
-                  class="h-9 text-xs bg-muted/30 cursor-not-allowed max-w-md font-mono"
-                />
+              <div class="space-y-1">
+                <span class="text-xs font-semibold text-foreground">Tên đăng nhập (Username)</span>
+                <div class="px-3 py-2 rounded-lg border border-input bg-muted/30 text-xs font-mono text-foreground">
+                  {{ profileData.username || '—' }}
+                </div>
               </div>
 
-              <div class="space-y-1.5">
-                <label class="block text-xs font-semibold text-foreground">Mật khẩu mới</label>
-                <Input
-                  type="password"
-                  value="••••••••••••"
-                  readonly
-                  class="h-9 text-xs bg-muted/30 cursor-not-allowed max-w-md font-mono"
-                />
+              <div class="space-y-1">
+                <span class="text-xs font-semibold text-foreground">Vai trò hệ thống</span>
+                <div class="px-3 py-2 rounded-lg border border-input bg-muted/30 text-xs text-foreground flex items-center justify-between">
+                  <span>{{ formattedRole }}</span>
+                  <span class="text-[11px] font-mono text-muted-foreground">{{ profileData.role }}</span>
+                </div>
+              </div>
+
+              <!-- D1-PRE-05: Honest handling of unavailable contact fields -->
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                <div class="space-y-1">
+                  <span class="text-xs font-semibold text-foreground">Họ và tên</span>
+                  <div class="px-3 py-2 rounded-lg border border-input bg-muted/20 text-xs text-muted-foreground italic">
+                    Chưa liên kết trong phiên
+                  </div>
+                </div>
+
+                <div class="space-y-1">
+                  <span class="text-xs font-semibold text-foreground">Địa chỉ email</span>
+                  <div class="px-3 py-2 rounded-lg border border-input bg-muted/20 text-xs text-muted-foreground italic">
+                    Chưa liên kết trong phiên
+                  </div>
+                </div>
               </div>
             </div>
-          </CardContent>
 
-          <CardFooter class="border-t border-border bg-muted/10 py-3 flex items-center justify-between">
-            <p class="text-[11px] text-muted-foreground italic flex items-center gap-1">
-              <KeyRound class="w-3.5 h-3.5 text-amber-600" />
-              <span>Chính sách đổi mật khẩu quản trị tập trung</span>
-            </p>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              disabled
-              class="text-xs opacity-60 cursor-not-allowed"
-            >
-              Cập Nhật Mật Khẩu (Chưa hỗ trợ)
-            </Button>
-          </CardFooter>
+            <!-- Bảo mật tài khoản thông báo ngắn gọn -->
+            <div class="pt-3 border-t border-border space-y-2">
+              <div class="flex items-center gap-2 text-xs font-semibold text-foreground">
+                <KeyRound class="w-3.5 h-3.5 text-primary" />
+                <span>Bảo Mật Mật Khẩu</span>
+              </div>
+              <p class="text-xs text-muted-foreground leading-relaxed">
+                Mật khẩu đăng nhập được bảo vệ an toàn trên hệ thống máy chủ. Để đảm bảo an ninh, tính năng thay đổi mật khẩu trực tiếp qua giao diện web sẽ được bổ sung sau khi kích hoạt xác thực hai yếu tố.
+              </p>
+            </div>
+          </CardContent>
         </Card>
       </div>
     </div>

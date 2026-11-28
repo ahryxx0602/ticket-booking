@@ -7,19 +7,17 @@ import {
   Pencil,
   Trash2,
   CheckCircle2,
-  XCircle,
   AlertTriangle,
   ExternalLink,
   RefreshCw,
   Loader2,
   Filter,
-  Eye,
-  Clock,
-  Ban
+  Ban,
+  AlertCircle
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
@@ -59,48 +57,42 @@ const isLoading = ref(false)
 const loadError = ref('')
 const selectedStatusFilter = ref('ALL')
 
-// Baseline mock data fallback if backend returns empty or runs offline
-const initialFallbackBanners = [
-  {
-    id: 1,
-    operatorId: 2,
-    operatorName: 'Phương Trang Velo',
-    title: 'Trải nghiệm Limousine VIP 24 Phòng Đôi sang trọng',
-    imageUrl: 'https://images.unsplash.com/photo-1570125909232-eb263c188f7e?w=600&auto=format&fit=crop&q=60',
-    targetUrl: 'https://velobus.vn/trips/TRIP-02/seats',
-    position: 'HOME_CAROUSEL',
-    priority: 1,
-    status: 'PENDING_APPROVAL',
-    createdAt: '2026-11-23T10:00:00Z'
-  },
-  {
-    id: 2,
-    operatorId: 1,
-    operatorName: 'Hoàng Long Limousine',
-    title: 'Khuyến mãi mùa hè: Giảm 15% chặng Hà Nội - Đà Nẵng',
-    imageUrl: 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=600&auto=format&fit=crop&q=60',
-    targetUrl: 'https://velobus.vn/search?from=HN-GP&to=DN-TT',
-    position: 'HOME_CAROUSEL',
-    priority: 2,
-    status: 'ACTIVE',
-    createdAt: '2026-11-20T10:00:00Z'
-  }
+const uploaderRef = ref(null)
+
+// D1-PRE-03: Actual supported positions in backend BannerPosition enum
+const BANNER_POSITIONS = [
+  { value: 'HOMEPAGE_HERO', label: 'Hero Carousel (Đầu trang chủ)' },
+  { value: 'HOMEPAGE_BANNER', label: 'Banner Thân Trang (Giữa trang chủ)' },
+  { value: 'SEARCH_SIDEBAR', label: 'Cột Bên Tìm Kiếm (Trang tìm vé)' }
 ]
 
+// D1-PRE-01: Remove all production fallback fixtures. Real authoritative API only.
 async function fetchBanners() {
+  if (!hasPermission('BANNER_VIEW')) {
+    loadError.value = 'Bạn không có quyền xem danh sách banner quảng cáo (Yêu cầu BANNER_VIEW).'
+    return
+  }
+
   isLoading.value = true
   loadError.value = ''
   try {
     const statusParam = selectedStatusFilter.value !== 'ALL' ? selectedStatusFilter.value : null
     const res = await adminApi.getBanners(statusParam)
-    if (res?.data && Array.isArray(res.data)) {
-      banners.value = res.data.length > 0 ? res.data : initialFallbackBanners
-    } else {
-      banners.value = initialFallbackBanners
+    
+    // Validate response schema
+    const data = res?.data?.data !== undefined ? res.data.data : res?.data
+    if (!Array.isArray(data)) {
+      throw new Error('Dữ liệu danh sách banner từ máy chủ không hợp lệ hoặc sai cấu trúc.')
     }
+    banners.value = data
   } catch (err) {
-    console.warn('[AdminBanners] Không tải được dữ liệu từ API:', err?.message)
-    banners.value = initialFallbackBanners
+    const status = err?.response?.status
+    if (status === 403 || status === 401) {
+      loadError.value = 'Truy cập bị từ chối: Phiên đăng nhập hết hạn hoặc thiếu quyền BANNER_VIEW.'
+    } else {
+      loadError.value = err?.response?.data?.message || err?.message || 'Không thể kết nối đến máy chủ để tải danh sách banner.'
+    }
+    banners.value = []
   } finally {
     isLoading.value = false
   }
@@ -123,22 +115,21 @@ const bannerForm = ref({
   title: '',
   imageUrl: '',
   targetUrl: '',
-  position: 'HOME_CAROUSEL',
-  priority: 1,
-  operatorName: 'VeloBus Platform (Banner Sàn)'
+  position: 'HOMEPAGE_HERO',
+  priority: 1
 })
 const formError = ref('')
 
 function openCreateBannerModal() {
   editingBanner.value = null
   formError.value = ''
+  // D1-PRE-01: No default sample Unsplash image or fabricated target URL
   bannerForm.value = {
     title: '',
-    imageUrl: 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=600&auto=format&fit=crop&q=60',
-    targetUrl: 'https://velobus.vn/search',
-    position: 'HOME_CAROUSEL',
-    priority: 1,
-    operatorName: 'VeloBus Platform (Banner Sàn)'
+    imageUrl: '',
+    targetUrl: '',
+    position: 'HOMEPAGE_HERO',
+    priority: 1
   }
   isFormModalOpen.value = true
 }
@@ -150,37 +141,47 @@ function openEditBannerModal(b) {
     title: b.title || '',
     imageUrl: b.imageUrl || '',
     targetUrl: b.targetUrl || '',
-    position: b.position || 'HOME_CAROUSEL',
-    priority: b.priority || 1,
-    operatorName: b.operatorName || (b.operatorId ? `Nhà xe #${b.operatorId}` : 'VeloBus Platform')
+    position: b.position || 'HOMEPAGE_HERO',
+    priority: b.priority !== undefined ? b.priority : 1
   }
   isFormModalOpen.value = true
 }
 
 function closeFormModal() {
+  if (isSubmitting.value) return
   isFormModalOpen.value = false
   editingBanner.value = null
+  formError.value = ''
 }
 
+// D1-PRE-02: Authoritative mutations without optimistic unshift or swallowed errors
 async function handleSaveBanner() {
   formError.value = ''
+
+  if (uploaderRef.value?.uploading) {
+    formError.value = 'Tệp ảnh đang được tải lên máy chủ. Vui lòng chờ hoàn tất trước khi lưu.'
+    return
+  }
+
   if (!bannerForm.value.title.trim()) {
-    formError.value = 'Vui lòng nhập tiêu đề chiến dịch quảng cáo'
+    formError.value = 'Vui lòng nhập tiêu đề chiến dịch quảng cáo.'
     return
   }
+
   if (!bannerForm.value.imageUrl.trim()) {
-    formError.value = 'Vui lòng cung cấp URL hoặc tải ảnh banner lên Cloud'
+    formError.value = 'Vui lòng cung cấp URL hoặc tải ảnh banner lên máy chủ.'
     return
   }
+
   if (bannerForm.value.targetUrl.trim() && !bannerForm.value.targetUrl.startsWith('https://')) {
-    formError.value = 'Đường dẫn liên kết phải sử dụng giao thức an toàn https://'
+    formError.value = 'Đường dẫn liên kết phải bắt đầu bằng giao thức an toàn https://'
     return
   }
 
   isSubmitting.value = true
   try {
     if (!editingBanner.value) {
-      // Create Platform Banner with Optimistic UI unshift
+      // D1-PRE-03: Use actual BannerCommand
       const payload = {
         title: bannerForm.value.title.trim(),
         imageUrl: bannerForm.value.imageUrl.trim(),
@@ -188,37 +189,30 @@ async function handleSaveBanner() {
         position: bannerForm.value.position,
         priority: Number(bannerForm.value.priority) || 1
       }
-      const created = {
-        id: Date.now(),
-        ...payload,
-        operatorName: bannerForm.value.operatorName,
-        status: 'ACTIVE',
-        createdAt: new Date().toISOString()
-      }
-      banners.value.unshift(created)
-      adminApi.createPlatformBanner(payload)
-        .then(res => {
-          if (res?.data?.id) created.id = res.data.id
-        })
-        .catch(() => {})
-      toast.success('Đã đăng banner sàn mới thành công')
+      await adminApi.createPlatformBanner(payload)
+      toast.success('Đã tạo mới banner sàn thành công trên hệ thống.')
+      isFormModalOpen.value = false
+      await fetchBanners()
     } else {
-      // Update Banner with Optimistic UI update
+      // Preserve unexposed fields (startDate, endDate, priority)
       const payload = {
         title: bannerForm.value.title.trim(),
         imageUrl: bannerForm.value.imageUrl.trim(),
         targetUrl: bannerForm.value.targetUrl.trim(),
         position: bannerForm.value.position,
-        priority: Number(bannerForm.value.priority) || 1
+        priority: Number(bannerForm.value.priority) || 1,
+        startDate: editingBanner.value.startDate || null,
+        endDate: editingBanner.value.endDate || null
       }
-      Object.assign(editingBanner.value, payload)
-      adminApi.updateBanner(editingBanner.value.id, payload).catch(() => {})
-      toast.success(`Cập nhật banner #${editingBanner.value.id} thành công`)
+      await adminApi.updateBanner(editingBanner.value.id, payload)
+      toast.success(`Cập nhật banner #${editingBanner.value.id} thành công.`)
+      isFormModalOpen.value = false
+      await fetchBanners()
     }
-    closeFormModal()
   } catch (err) {
-    formError.value = err?.message || 'Có lỗi khi lưu banner'
+    formError.value = err?.response?.data?.message || err?.message || 'Không thể lưu thông tin banner do lỗi từ máy chủ.'
     toast.error(formError.value)
+    // Retain form modal and user inputs on failure
   } finally {
     isSubmitting.value = false
   }
@@ -228,14 +222,16 @@ async function handleSaveBanner() {
 const approveDialogState = ref({
   isOpen: false,
   banner: null,
-  isProcessing: false
+  isProcessing: false,
+  error: ''
 })
 
 function confirmApproveBanner(b) {
   approveDialogState.value = {
     isOpen: true,
     banner: b,
-    isProcessing: false
+    isProcessing: false,
+    error: ''
   }
 }
 
@@ -243,13 +239,15 @@ async function executeApproveBanner() {
   const b = approveDialogState.value.banner
   if (!b) return
   approveDialogState.value.isProcessing = true
+  approveDialogState.value.error = ''
   try {
     await adminApi.approveBanner(b.id)
-    b.status = 'ACTIVE'
-    toast.success(`Đã duyệt hiển thị banner #${b.id} lên trang chủ sàn`)
+    toast.success(`Đã phê duyệt hiển thị banner #${b.id}.`)
     approveDialogState.value.isOpen = false
+    await fetchBanners()
   } catch (err) {
-    toast.error(err?.message || 'Không thể phê duyệt banner')
+    approveDialogState.value.error = err?.response?.data?.message || err?.message || 'Phê duyệt banner thất bại.'
+    toast.error(approveDialogState.value.error)
   } finally {
     approveDialogState.value.isProcessing = false
   }
@@ -278,18 +276,18 @@ async function executeRejectBanner() {
   const b = rejectDialogState.value.banner
   if (!b) return
   if (!rejectDialogState.value.reason.trim()) {
-    rejectDialogState.value.error = 'Vui lòng nêu rõ lý do từ chối để thông báo cho đối tác'
+    rejectDialogState.value.error = 'Vui lòng nêu rõ lý do từ chối để thông báo cho đối tác.'
     return
   }
   rejectDialogState.value.isProcessing = true
+  rejectDialogState.value.error = ''
   try {
     await adminApi.rejectBanner(b.id, rejectDialogState.value.reason.trim())
-    b.status = 'REJECTED'
-    b.rejectionReason = rejectDialogState.value.reason.trim()
-    toast.success(`Đã từ chối và gỡ bỏ banner #${b.id}`)
+    toast.success(`Đã từ chối và gỡ bỏ banner #${b.id}.`)
     rejectDialogState.value.isOpen = false
+    await fetchBanners()
   } catch (err) {
-    rejectDialogState.value.error = err?.message || 'Không thể từ chối banner'
+    rejectDialogState.value.error = err?.response?.data?.message || err?.message || 'Từ chối banner thất bại.'
     toast.error(rejectDialogState.value.error)
   } finally {
     rejectDialogState.value.isProcessing = false
@@ -300,14 +298,16 @@ async function executeRejectBanner() {
 const deleteDialogState = ref({
   isOpen: false,
   banner: null,
-  isProcessing: false
+  isProcessing: false,
+  error: ''
 })
 
 function confirmDeleteBanner(b) {
   deleteDialogState.value = {
     isOpen: true,
     banner: b,
-    isProcessing: false
+    isProcessing: false,
+    error: ''
   }
 }
 
@@ -315,13 +315,15 @@ async function executeDeleteBanner() {
   const b = deleteDialogState.value.banner
   if (!b) return
   deleteDialogState.value.isProcessing = true
+  deleteDialogState.value.error = ''
   try {
     await adminApi.deleteBanner(b.id)
-    banners.value = banners.value.filter(item => item.id !== b.id)
-    toast.success(`Đã xóa vĩnh viễn banner #${b.id}`)
+    toast.success(`Đã xóa vĩnh viễn banner #${b.id}.`)
     deleteDialogState.value.isOpen = false
+    await fetchBanners()
   } catch (err) {
-    toast.error(err?.message || 'Không thể xóa banner')
+    deleteDialogState.value.error = err?.response?.data?.message || err?.message || 'Không thể xóa banner.'
+    toast.error(deleteDialogState.value.error)
   } finally {
     deleteDialogState.value.isProcessing = false
   }
@@ -330,7 +332,6 @@ async function executeDeleteBanner() {
 function getStatusBadgeVariant(status) {
   switch (status) {
     case 'ACTIVE':
-    case 'APPROVED':
       return 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
     case 'PENDING_APPROVAL':
       return 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
@@ -345,7 +346,6 @@ function getStatusBadgeVariant(status) {
 function getStatusLabel(status) {
   switch (status) {
     case 'ACTIVE':
-    case 'APPROVED':
       return 'Đang Hiển Thị'
     case 'PENDING_APPROVAL':
       return 'Chờ Duyệt'
@@ -356,6 +356,11 @@ function getStatusLabel(status) {
     default:
       return status || 'Không rõ'
   }
+}
+
+function getPositionLabel(pos) {
+  const found = BANNER_POSITIONS.find(p => p.value === pos)
+  return found ? found.label : (pos || 'HOMEPAGE_HERO')
 }
 </script>
 
@@ -399,6 +404,18 @@ function getStatusLabel(status) {
       </div>
     </div>
 
+    <!-- Error State -->
+    <Alert v-if="loadError" variant="destructive" class="py-3">
+      <AlertTriangle class="w-4 h-4" />
+      <AlertTitle class="text-xs font-semibold">Lỗi tải dữ liệu banner</AlertTitle>
+      <AlertDescription class="text-xs flex items-center justify-between gap-4 mt-1">
+        <span>{{ loadError }}</span>
+        <Button variant="outline" size="sm" class="h-7 text-xs bg-background shrink-0" @click="fetchBanners">
+          Thử Lại
+        </Button>
+      </AlertDescription>
+    </Alert>
+
     <!-- Filter Bar -->
     <Card class="shadow-sm">
       <CardContent class="p-3 sm:p-4">
@@ -419,7 +436,7 @@ function getStatusLabel(status) {
               size="sm"
               :variant="selectedStatusFilter === f.id ? 'default' : 'outline'"
               class="h-7 text-xs font-medium"
-              @click="selectedStatusFilter = f.id"
+              @click="() => { selectedStatusFilter = f.id; fetchBanners(); }"
             >
               {{ f.label }}
             </Button>
@@ -436,7 +453,7 @@ function getStatusLabel(status) {
             <span>Danh Sách Banner ({{ filteredBanners.length }})</span>
           </CardTitle>
           <Badge variant="outline" class="text-[11px] font-mono">
-            Vị trí: Hero Carousel (Trang Chủ)
+            Vị trí hiển thị chuẩn: HOMEPAGE_HERO
           </Badge>
         </div>
       </CardHeader>
@@ -449,15 +466,30 @@ function getStatusLabel(status) {
                 <TableHead class="w-[120px] font-semibold text-xs">Ảnh Preview</TableHead>
                 <TableHead class="font-semibold text-xs">Nhà Xe / Đơn Vị</TableHead>
                 <TableHead class="font-semibold text-xs">Tiêu Đề Chiến Dịch</TableHead>
-                <TableHead class="font-semibold text-xs">Đường Dẫn Đích</TableHead>
+                <TableHead class="font-semibold text-xs">Vị Trí & Đường Dẫn</TableHead>
                 <TableHead class="w-[120px] text-center font-semibold text-xs">Trạng Thái</TableHead>
                 <TableHead class="w-[200px] text-right font-semibold text-xs">Thao Tác Quản Trị</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow v-if="filteredBanners.length === 0">
-                <TableCell colspan="6" class="h-32 text-center text-muted-foreground text-xs">
-                  Không tìm thấy banner nào phù hợp với bộ lọc hiện tại.
+              <!-- Loading Skeleton -->
+              <TableRow v-if="isLoading && banners.length === 0">
+                <TableCell colspan="6" class="h-36 text-center text-muted-foreground text-xs">
+                  <div class="flex flex-col items-center justify-center gap-2">
+                    <Loader2 class="w-6 h-6 animate-spin text-primary" />
+                    <span>Đang tải danh sách banner xác thực...</span>
+                  </div>
+                </TableCell>
+              </TableRow>
+
+              <!-- Empty State -->
+              <TableRow v-else-if="!isLoading && filteredBanners.length === 0">
+                <TableCell colspan="6" class="h-36 text-center text-muted-foreground text-xs">
+                  <div class="flex flex-col items-center justify-center gap-1.5 py-4">
+                    <ImageIcon class="w-8 h-8 text-muted-foreground/60" />
+                    <p class="font-semibold text-foreground">Không có banner nào</p>
+                    <p class="text-[11px]">Hệ thống chưa ghi nhận banner nào phù hợp với bộ lọc hiện tại.</p>
+                  </div>
                 </TableCell>
               </TableRow>
 
@@ -478,10 +510,10 @@ function getStatusLabel(status) {
                   </div>
                 </TableCell>
 
-                <!-- Operator -->
+                <!-- Operator: D1-PRE-03 honest display without fabricated business names -->
                 <TableCell class="py-3">
                   <div class="font-semibold text-xs text-foreground">
-                    {{ b.operatorName || (b.operatorId ? `Nhà xe #${b.operatorId}` : 'VeloBus Platform') }}
+                    {{ b.operatorId ? `Nhà xe #${b.operatorId}` : 'VeloBus Platform (Banner Sàn)' }}
                   </div>
                   <div class="text-[10px] text-muted-foreground font-mono mt-0.5">
                     ID: BAN-{{ String(b.id).padStart(2, '0') }}
@@ -499,13 +531,16 @@ function getStatusLabel(status) {
                   </div>
                 </TableCell>
 
-                <!-- Target URL -->
+                <!-- Position & Target URL -->
                 <TableCell class="py-3">
+                  <div class="text-[11px] font-medium text-foreground">
+                    {{ getPositionLabel(b.position) }}
+                  </div>
                   <a
                     :href="b.targetUrl"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="inline-flex items-center gap-1 text-[11px] font-mono text-primary hover:underline max-w-[200px] truncate"
+                    class="inline-flex items-center gap-1 text-[11px] font-mono text-primary hover:underline max-w-[200px] truncate mt-0.5"
                   >
                     <span class="truncate">{{ b.targetUrl }}</span>
                     <ExternalLink class="w-3 h-3 shrink-0" />
@@ -527,7 +562,7 @@ function getStatusLabel(status) {
                   <div class="flex items-center justify-end gap-1.5">
                     <!-- Approve Button -->
                     <Button
-                      v-if="b.status !== 'ACTIVE' && b.status !== 'APPROVED' && hasPermission('BANNER_APPROVE_REJECT')"
+                      v-if="b.status !== 'ACTIVE' && hasPermission('BANNER_APPROVE_REJECT')"
                       type="button"
                       size="sm"
                       variant="outline"
@@ -588,7 +623,7 @@ function getStatusLabel(status) {
     </Card>
 
     <!-- Dialog: Create / Edit Banner -->
-    <Dialog :open="isFormModalOpen" @update:open="val => { if (!val) closeFormModal() }">
+    <Dialog :open="isFormModalOpen" @update:open="val => { if (!val && !isSubmitting) closeFormModal() }">
       <DialogContent class="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle class="text-base font-bold text-foreground flex items-center gap-2">
@@ -596,7 +631,7 @@ function getStatusLabel(status) {
             <span>{{ editingBanner ? `Chỉnh Sửa Banner #${editingBanner.id}` : 'Tạo Banner Truyền Thông Sàn' }}</span>
           </DialogTitle>
           <DialogDescription class="text-xs text-muted-foreground">
-            Thiết lập tiêu đề chiến dịch, hình ảnh quảng cáo và liên kết điều hướng an toàn.
+            Thiết lập tiêu đề chiến dịch, vị trí hiển thị, hình ảnh quảng cáo và liên kết điều hướng an toàn.
           </DialogDescription>
         </DialogHeader>
 
@@ -621,6 +656,22 @@ function getStatusLabel(status) {
             />
           </div>
 
+          <!-- Position Selection (D1-PRE-03) -->
+          <div class="space-y-1.5">
+            <label for="banner-position" class="block text-xs font-semibold text-foreground">
+              Vị trí hiển thị <span class="text-destructive">*</span>
+            </label>
+            <select
+              id="banner-position"
+              v-model="bannerForm.position"
+              class="w-full h-9 px-3 rounded-lg border border-input bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              <option v-for="p in BANNER_POSITIONS" :key="p.value" :value="p.value">
+                {{ p.label }}
+              </option>
+            </select>
+          </div>
+
           <!-- Target URL -->
           <div class="space-y-1.5">
             <label for="banner-target" class="block text-xs font-semibold text-foreground">
@@ -641,6 +692,7 @@ function getStatusLabel(status) {
               Hình ảnh Banner (Tỷ lệ 16:9) <span class="text-destructive">*</span>
             </label>
             <FirebaseUploader
+              ref="uploaderRef"
               v-model="bannerForm.imageUrl"
               folder="banners"
               label="Chọn hoặc kéo thả ảnh banner tải lên Cloud"
@@ -664,6 +716,7 @@ function getStatusLabel(status) {
             variant="outline"
             size="sm"
             class="text-xs"
+            :disabled="isSubmitting"
             @click="closeFormModal"
           >
             Hủy Bỏ
@@ -684,7 +737,7 @@ function getStatusLabel(status) {
     </Dialog>
 
     <!-- AlertDialog: Approve Confirmation -->
-    <AlertDialog :open="approveDialogState.isOpen" @update:open="val => { if (!val) approveDialogState.isOpen = false }">
+    <AlertDialog :open="approveDialogState.isOpen" @update:open="val => { if (!val && !approveDialogState.isProcessing) approveDialogState.isOpen = false }">
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle class="text-sm font-bold flex items-center gap-2">
@@ -692,11 +745,16 @@ function getStatusLabel(status) {
             <span>Xác Nhận Phê Duyệt Banner</span>
           </AlertDialogTitle>
           <AlertDialogDescription class="text-xs text-muted-foreground">
-            Banner "{{ approveDialogState.banner?.title }}" sẽ được kích hoạt trạng thái Đang Hiển Thị và xuất hiện công khai trên Hero Carousel của trang chủ sàn VeloBus.
+            Banner "{{ approveDialogState.banner?.title }}" sẽ được kích hoạt trạng thái Đang Hiển Thị và xuất hiện công khai trên sàn VeloBus.
           </AlertDialogDescription>
         </AlertDialogHeader>
+
+        <Alert v-if="approveDialogState.error" variant="destructive" class="py-2">
+          <AlertDescription class="text-xs">{{ approveDialogState.error }}</AlertDescription>
+        </Alert>
+
         <AlertDialogFooter>
-          <AlertDialogCancel size="sm" class="text-xs">Hủy</AlertDialogCancel>
+          <AlertDialogCancel size="sm" class="text-xs" :disabled="approveDialogState.isProcessing">Hủy</AlertDialogCancel>
           <AlertDialogAction
             size="sm"
             class="text-xs font-semibold"
@@ -711,7 +769,7 @@ function getStatusLabel(status) {
     </AlertDialog>
 
     <!-- Dialog: Reject with Reason -->
-    <Dialog :open="rejectDialogState.isOpen" @update:open="val => { if (!val) rejectDialogState.isOpen = false }">
+    <Dialog :open="rejectDialogState.isOpen" @update:open="val => { if (!val && !rejectDialogState.isProcessing) rejectDialogState.isOpen = false }">
       <DialogContent class="sm:max-w-[450px]">
         <DialogHeader>
           <DialogTitle class="text-sm font-bold flex items-center gap-2 text-rose-600">
@@ -743,6 +801,7 @@ function getStatusLabel(status) {
             variant="outline"
             size="sm"
             class="text-xs"
+            :disabled="rejectDialogState.isProcessing"
             @click="rejectDialogState.isOpen = false"
           >
             Hủy Bỏ
@@ -763,7 +822,7 @@ function getStatusLabel(status) {
     </Dialog>
 
     <!-- AlertDialog: Delete Confirmation -->
-    <AlertDialog :open="deleteDialogState.isOpen" @update:open="val => { if (!val) deleteDialogState.isOpen = false }">
+    <AlertDialog :open="deleteDialogState.isOpen" @update:open="val => { if (!val && !deleteDialogState.isProcessing) deleteDialogState.isOpen = false }">
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle class="text-sm font-bold flex items-center gap-2 text-destructive">
@@ -774,8 +833,13 @@ function getStatusLabel(status) {
             Hành động này không thể hoàn tác. Banner "{{ deleteDialogState.banner?.title }}" sẽ bị gỡ bỏ hoàn toàn khỏi cơ sở dữ liệu sàn.
           </AlertDialogDescription>
         </AlertDialogHeader>
+
+        <Alert v-if="deleteDialogState.error" variant="destructive" class="py-2">
+          <AlertDescription class="text-xs">{{ deleteDialogState.error }}</AlertDescription>
+        </Alert>
+
         <AlertDialogFooter>
-          <AlertDialogCancel size="sm" class="text-xs">Hủy</AlertDialogCancel>
+          <AlertDialogCancel size="sm" class="text-xs" :disabled="deleteDialogState.isProcessing">Hủy</AlertDialogCancel>
           <AlertDialogAction
             size="sm"
             variant="destructive"

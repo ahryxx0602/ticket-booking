@@ -1,23 +1,20 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { toast } from 'vue-sonner'
 import {
   Image as ImageIcon,
   Plus,
   ExternalLink,
-  Clock,
   CheckCircle2,
-  XCircle,
   AlertCircle,
   AlertTriangle,
   RefreshCw,
   Loader2,
-  Calendar,
   Sparkles
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
   Sheet,
@@ -42,44 +39,37 @@ import { partnerApi } from '@/modules/partner/api'
 // Banners List state
 const banners = ref([])
 const isLoading = ref(false)
+const loadError = ref('')
 const isSubmitting = ref(false)
 const bannerError = ref('')
 
-const fallbackBanners = [
-  {
-    id: 1,
-    title: 'Khuyến mãi mùa hè: Giảm 15% chặng Hà Nội - Đà Nẵng',
-    imageUrl: 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=600&auto=format&fit=crop&q=60',
-    targetUrl: 'https://velobus.vn/search?from=HN-GP&to=DN-TT',
-    position: 'HOME_CAROUSEL',
-    status: 'ACTIVE',
-    createdAt: '2026-11-20T08:30:00Z',
-    registeredAt: '20/11/2026'
-  },
-  {
-    id: 2,
-    title: 'Trải nghiệm Limousine VIP 24 Phòng Đôi sang trọng',
-    imageUrl: 'https://images.unsplash.com/photo-1570125909232-eb263c188f7e?w=600&auto=format&fit=crop&q=60',
-    targetUrl: 'https://velobus.vn/trips/TRIP-02/seats',
-    position: 'HOME_CAROUSEL',
-    status: 'PENDING_APPROVAL',
-    createdAt: '2026-11-23T14:15:00Z',
-    registeredAt: '23/11/2026'
-  }
+const uploaderRef = ref(null)
+
+const BANNER_POSITIONS = [
+  { value: 'HOMEPAGE_HERO', label: 'Hero Carousel (Đầu trang chủ)' },
+  { value: 'HOMEPAGE_BANNER', label: 'Banner Thân Trang (Giữa trang chủ)' },
+  { value: 'SEARCH_SIDEBAR', label: 'Cột Bên Tìm Kiếm (Trang tìm vé)' }
 ]
 
+// D1-PRE-01: Remove all fallback mock banners. Authoritative API only.
 async function fetchMyBanners() {
   isLoading.value = true
+  loadError.value = ''
   try {
     const res = await partnerApi.getMyBanners()
-    if (res?.data && Array.isArray(res.data)) {
-      banners.value = res.data.length > 0 ? res.data : fallbackBanners
-    } else {
-      banners.value = fallbackBanners
+    const data = res?.data?.data !== undefined ? res.data.data : res?.data
+    if (!Array.isArray(data)) {
+      throw new Error('Dữ liệu phản hồi từ máy chủ không hợp lệ.')
     }
+    banners.value = data
   } catch (err) {
-    console.warn('[OperatorBanners] Không tải được banner nhà xe:', err?.message)
-    banners.value = fallbackBanners
+    const status = err?.response?.status
+    if (status === 401 || status === 403) {
+      loadError.value = 'Truy cập bị từ chối: Vui lòng đăng nhập với tư cách Đối Tác Nhà Xe (OPERATOR).'
+    } else {
+      loadError.value = err?.response?.data?.message || err?.message || 'Không thể kết nối máy chủ để tải danh sách banner.'
+    }
+    banners.value = []
   } finally {
     isLoading.value = false
   }
@@ -95,34 +85,43 @@ const bannerForm = ref({
   title: '',
   targetUrl: '',
   imageUrl: '',
-  position: 'HOME_CAROUSEL'
+  position: 'HOMEPAGE_HERO'
 })
 
 function openRegisterSheet() {
   bannerError.value = ''
+  // D1-PRE-01: No default sample Unsplash image or fabricated URLs
   bannerForm.value = {
     title: '',
-    targetUrl: 'https://velobus.vn/search',
-    imageUrl: 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=600&auto=format&fit=crop&q=60',
-    position: 'HOME_CAROUSEL'
+    targetUrl: '',
+    imageUrl: '',
+    position: 'HOMEPAGE_HERO'
   }
   isSheetOpen.value = true
 }
 
 function closeRegisterSheet() {
+  if (isSubmitting.value) return
   isSheetOpen.value = false
+  bannerError.value = ''
 }
 
+// D1-PRE-02: Authoritative registration without fabricated records
 async function handleRegisterBanner() {
   bannerError.value = ''
 
+  if (uploaderRef.value?.uploading) {
+    bannerError.value = 'Tệp ảnh đang được tải lên. Vui lòng chờ hoàn tất trước khi gửi duyệt.'
+    return
+  }
+
   if (!bannerForm.value.title.trim()) {
-    bannerError.value = 'Vui lòng nhập tiêu đề thông điệp banner'
+    bannerError.value = 'Vui lòng nhập tiêu đề thông điệp banner.'
     return
   }
 
   if (!bannerForm.value.imageUrl.trim()) {
-    bannerError.value = 'Vui lòng tải lên ảnh hoặc nhập URL hình ảnh banner'
+    bannerError.value = 'Vui lòng tải lên ảnh hoặc nhập URL hình ảnh banner.'
     return
   }
 
@@ -140,21 +139,14 @@ async function handleRegisterBanner() {
       position: bannerForm.value.position
     }
 
-    const res = await partnerApi.createBanner(payload)
-    const newBanner = res?.data || {
-      id: Date.now(),
-      ...payload,
-      status: 'PENDING_APPROVAL',
-      registeredAt: 'Vừa xong',
-      createdAt: new Date().toISOString()
-    }
-
-    banners.value.unshift(newBanner)
+    await partnerApi.createBanner(payload)
     toast.success('Đã gửi đăng ký banner quảng cáo lên Ban Quản Trị sàn thành công!')
-    closeRegisterSheet()
+    isSheetOpen.value = false
+    await fetchMyBanners()
   } catch (err) {
-    bannerError.value = err?.message || 'Có lỗi khi gửi yêu cầu đăng ký banner'
+    bannerError.value = err?.response?.data?.message || err?.message || 'Có lỗi khi gửi yêu cầu đăng ký banner.'
     toast.error(bannerError.value)
+    // Retain form inputs and open sheet on failure
   } finally {
     isSubmitting.value = false
   }
@@ -163,7 +155,6 @@ async function handleRegisterBanner() {
 function getStatusBadgeClass(status) {
   switch (status) {
     case 'ACTIVE':
-    case 'APPROVED':
       return 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
     case 'PENDING_APPROVAL':
       return 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
@@ -178,7 +169,6 @@ function getStatusBadgeClass(status) {
 function getStatusLabel(status) {
   switch (status) {
     case 'ACTIVE':
-    case 'APPROVED':
       return 'Đã Phê Duyệt'
     case 'PENDING_APPROVAL':
       return 'Chờ Duyệt'
@@ -191,9 +181,13 @@ function getStatusLabel(status) {
   }
 }
 
+function getPositionLabel(pos) {
+  const found = BANNER_POSITIONS.find(p => p.value === pos)
+  return found ? found.label : (pos || 'HOMEPAGE_HERO')
+}
+
 function formatDate(isoStr) {
   if (!isoStr) return '—'
-  if (isoStr.includes('/')) return isoStr
   try {
     const d = new Date(isoStr)
     return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
@@ -213,7 +207,7 @@ function formatDate(isoStr) {
           <span>Banner & Chiến Dịch Quảng Cáo Sàn</span>
         </h1>
         <p class="text-xs text-muted-foreground mt-1">
-          Đăng ký banner quảng cáo của nhà xe để hiển thị nổi bật trên Hero Carousel của trang chủ sàn VeloBus.
+          Đăng ký banner quảng cáo của nhà xe để hiển thị nổi bật trên Hero Carousel và các vị trí truyền thông của sàn VeloBus.
         </p>
       </div>
 
@@ -242,6 +236,18 @@ function formatDate(isoStr) {
       </div>
     </div>
 
+    <!-- Error State -->
+    <Alert v-if="loadError" variant="destructive" class="py-3">
+      <AlertTriangle class="w-4 h-4" />
+      <AlertTitle class="text-xs font-semibold">Lỗi tải dữ liệu banner nhà xe</AlertTitle>
+      <AlertDescription class="text-xs flex items-center justify-between gap-4 mt-1">
+        <span>{{ loadError }}</span>
+        <Button variant="outline" size="sm" class="h-7 text-xs bg-background shrink-0" @click="fetchMyBanners">
+          Thử Lại
+        </Button>
+      </AlertDescription>
+    </Alert>
+
     <!-- Table Card -->
     <Card class="shadow-sm overflow-hidden">
       <CardHeader class="px-6 py-4 border-b border-border bg-muted/20">
@@ -250,7 +256,7 @@ function formatDate(isoStr) {
             <span>Danh Sách Banner Của Nhà Xe ({{ banners.length }})</span>
           </CardTitle>
           <Badge variant="outline" class="text-[11px] font-mono">
-            Vị trí hiển thị: Hero Carousel (Trang Chủ)
+            Vị trí hiển thị: Toàn sàn
           </Badge>
         </div>
       </CardHeader>
@@ -264,14 +270,29 @@ function formatDate(isoStr) {
                 <TableHead class="font-semibold text-xs">Tiêu Đề Banner</TableHead>
                 <TableHead class="font-semibold text-xs">Vị Trí Hiển Thị</TableHead>
                 <TableHead class="font-semibold text-xs">Đường Dẫn Đích</TableHead>
-                <TableHead class="w-[130px] font-semibold text-xs">Ngày Gửi Duyệt</TableHead>
+                <TableHead class="w-[130px] font-semibold text-xs">Ngày Tạo</TableHead>
                 <TableHead class="w-[120px] text-center font-semibold text-xs">Trạng Thái</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow v-if="banners.length === 0">
-                <TableCell colspan="6" class="h-32 text-center text-muted-foreground text-xs">
-                  Chưa có banner quảng cáo nào được đăng ký. Bấm "Đăng Ký Banner Mới" để bắt đầu.
+              <!-- Loading Skeleton -->
+              <TableRow v-if="isLoading && banners.length === 0">
+                <TableCell colspan="6" class="h-36 text-center text-muted-foreground text-xs">
+                  <div class="flex flex-col items-center justify-center gap-2">
+                    <Loader2 class="w-6 h-6 animate-spin text-primary" />
+                    <span>Đang tải danh sách banner nhà xe...</span>
+                  </div>
+                </TableCell>
+              </TableRow>
+
+              <!-- Empty State -->
+              <TableRow v-else-if="!isLoading && banners.length === 0">
+                <TableCell colspan="6" class="h-36 text-center text-muted-foreground text-xs">
+                  <div class="flex flex-col items-center justify-center gap-1.5 py-4">
+                    <ImageIcon class="w-8 h-8 text-muted-foreground/60" />
+                    <p class="font-semibold text-foreground">Chưa có banner quảng cáo nào</p>
+                    <p class="text-[11px]">Bấm nút "Đăng Ký Banner Mới" để tạo chiến dịch quảng cáo đầu tiên.</p>
+                  </div>
                 </TableCell>
               </TableRow>
 
@@ -292,20 +313,20 @@ function formatDate(isoStr) {
                   </div>
                 </TableCell>
 
-                <!-- Title -->
+                <!-- Title & Rejection Reason -->
                 <TableCell class="py-3">
                   <div class="font-semibold text-xs text-foreground line-clamp-2 max-w-sm">
                     {{ b.title }}
                   </div>
                   <div v-if="b.rejectionReason" class="text-[11px] text-rose-600 dark:text-rose-400 mt-1 flex items-center gap-1 font-medium">
-                    <AlertCircle class="w-3 h-3 shrink-0" />
+                    <AlertCircle class="w-3.5 h-3.5 shrink-0" />
                     <span>Lý do từ chối: {{ b.rejectionReason }}</span>
                   </div>
                 </TableCell>
 
                 <!-- Position -->
                 <TableCell class="py-3 text-xs text-muted-foreground">
-                  Trang Chủ (Hero Carousel)
+                  {{ getPositionLabel(b.position) }}
                 </TableCell>
 
                 <!-- Target URL -->
@@ -323,7 +344,7 @@ function formatDate(isoStr) {
 
                 <!-- Date -->
                 <TableCell class="py-3 text-xs text-muted-foreground">
-                  {{ formatDate(b.createdAt || b.registeredAt) }}
+                  {{ formatDate(b.createdAt) }}
                 </TableCell>
 
                 <!-- Status Badge -->
@@ -343,7 +364,7 @@ function formatDate(isoStr) {
     </Card>
 
     <!-- Right-Side Sheet (520px) Đăng Ký Banner Mới -->
-    <Sheet :open="isSheetOpen" @update:open="val => { if (!val) closeRegisterSheet() }">
+    <Sheet :open="isSheetOpen" @update:open="val => { if (!val && !isSubmitting) closeRegisterSheet() }">
       <SheetContent side="right" class="w-full sm:max-w-[520px] flex flex-col justify-between p-6">
         <div>
           <SheetHeader class="space-y-1 pb-4 border-b border-border text-left">
@@ -352,7 +373,7 @@ function formatDate(isoStr) {
               <span>Đăng Ký Banner Quảng Cáo Mới</span>
             </SheetTitle>
             <SheetDescription class="text-xs text-muted-foreground">
-              Yêu cầu hình ảnh tỷ lệ chuẩn 16:9, độ phân giải sắc nét và không chứa nội dung vi phạm bản quyền hay quy định sàn.
+              Yêu cầu hình ảnh tỷ lệ chuẩn 16:9, độ phân giải sắc nét và không chứa nội dung vi phạm quy định sàn.
             </SheetDescription>
           </SheetHeader>
 
@@ -377,6 +398,22 @@ function formatDate(isoStr) {
               />
             </div>
 
+            <!-- Position Selection (D1-PRE-03) -->
+            <div class="space-y-1.5">
+              <label for="op-banner-position" class="block text-xs font-semibold text-foreground">
+                Vị trí hiển thị mong muốn <span class="text-destructive">*</span>
+              </label>
+              <select
+                id="op-banner-position"
+                v-model="bannerForm.position"
+                class="w-full h-9 px-3 rounded-lg border border-input bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option v-for="p in BANNER_POSITIONS" :key="p.value" :value="p.value">
+                  {{ p.label }}
+                </option>
+              </select>
+            </div>
+
             <!-- Target URL -->
             <div class="space-y-1.5">
               <label for="op-banner-target" class="block text-xs font-semibold text-foreground">
@@ -394,9 +431,10 @@ function formatDate(isoStr) {
             <!-- Image Upload -->
             <div class="space-y-1.5">
               <label class="block text-xs font-semibold text-foreground">
-                URL Hình ảnh banner (Tỷ lệ 16:9) <span class="text-destructive">*</span>
+                Hình ảnh banner (Tỷ lệ 16:9) <span class="text-destructive">*</span>
               </label>
               <FirebaseUploader
+                ref="uploaderRef"
                 v-model="bannerForm.imageUrl"
                 folder="banners"
                 label="Chọn hoặc kéo thả ảnh tải lên Cloud CDN"
@@ -412,21 +450,6 @@ function formatDate(isoStr) {
                 />
               </div>
             </div>
-
-            <!-- Image Preview Box -->
-            <div v-if="bannerForm.imageUrl" class="space-y-1.5 pt-2">
-              <span class="text-xs text-muted-foreground font-semibold flex items-center gap-1">
-                <Sparkles class="w-3.5 h-3.5 text-primary" />
-                <span>Xem trước hiển thị:</span>
-              </span>
-              <div class="w-full h-36 rounded-xl overflow-hidden border border-border bg-muted/40 shadow-xs">
-                <img
-                  :src="bannerForm.imageUrl"
-                  alt="Banner preview"
-                  class="w-full h-full object-cover"
-                />
-              </div>
-            </div>
           </div>
         </div>
 
@@ -436,6 +459,7 @@ function formatDate(isoStr) {
             variant="outline"
             size="sm"
             class="text-xs"
+            :disabled="isSubmitting"
             @click="closeRegisterSheet"
           >
             Hủy Bỏ
