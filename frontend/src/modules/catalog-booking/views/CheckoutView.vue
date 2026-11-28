@@ -109,6 +109,14 @@ function stopCountdown() {
 let pollTimer = null
 const pollGeneration = ref(0)
 const paymentStatusInfo = ref(null)
+const paymentStatusLoading = ref(true)
+const paymentStatusError = ref('')
+
+const canAttemptPayment = computed(() => {
+  if (paymentStatusLoading.value || paymentStatusError.value) return false
+  if (!paymentStatusInfo.value) return false
+  return paymentStatusInfo.value.canAttemptPayment !== false
+})
 
 function stopPolling() {
   if (pollTimer) {
@@ -218,7 +226,7 @@ async function pollAuthoritativeConfirmation(attempt = 1) {
       } else if (payData.paymentStatus === 'FAILED' && payData.hasPaymentAttempt && !payData.activePaymentReference) {
         stopPolling()
         const currentUnresolved = operationGuard.getUnresolvedPayment(bookingReference.value)
-        if (!currentUnresolved?.paymentReference || currentUnresolved.paymentReference === payData.paymentReference) {
+        if (currentUnresolved?.paymentReference && payData.paymentReference && currentUnresolved.paymentReference === payData.paymentReference) {
           operationGuard.clearUnresolvedPayment(bookingReference.value)
         }
         paymentGatewayError.value = 'Giao dịch thanh toán đã bị cổng VNPay từ chối hoặc thất bại.'
@@ -375,9 +383,9 @@ async function handleProceedPayment() {
     return
   }
 
-  // D0-PRE-02: Check backend authoritative canAttemptPayment flag if provided
-  if (paymentStatusInfo.value && paymentStatusInfo.value.canAttemptPayment === false) {
-    toast.error('Đơn giữ chỗ hiện tại không đủ điều kiện khởi tạo thanh toán theo quy định bảo mật hệ thống.')
+  // D0-PRE-02 & D2-PRE-09: Require authoritative payment eligibility
+  if (!canAttemptPayment.value) {
+    toast.error('Đơn giữ chỗ hiện tại chưa sẵn sàng hoặc không đủ điều kiện khởi tạo thanh toán theo quy định bảo mật hệ thống.')
     return
   }
 
@@ -438,12 +446,14 @@ async function handleProceedPayment() {
 onMounted(async () => {
   await fetchBookingDetail()
 
-  // D0-PRE-02: Check relevant server payment state on initial Checkout load regardless of browser storage
+  // D0-PRE-02 & D2-PRE-09: Check relevant server payment state on initial Checkout load regardless of browser storage
   if (bookingReference.value) {
+    paymentStatusLoading.value = true
+    paymentStatusError.value = ''
     try {
       const resPayment = await catalogBookingApi.getPaymentStatus(bookingReference.value)
       const payData = resPayment.data?.data || resPayment.data
-      if (payData) {
+      if (payData && (!payData.bookingReference || payData.bookingReference === bookingReference.value)) {
         paymentStatusInfo.value = payData
         if (payData.reconciliationRequired) {
           isReconciliationRequired.value = true
@@ -458,10 +468,17 @@ onMounted(async () => {
             startedAt: Date.now()
           })
         }
+      } else {
+        paymentStatusError.value = 'Dữ liệu phản hồi trạng thái thanh toán từ máy chủ không hợp lệ.'
       }
     } catch (err) {
       console.warn('[Checkout] Failed to inspect initial payment status:', err)
+      paymentStatusError.value = 'Không thể kết nối máy chủ để xác thực điều kiện thanh toán.'
+    } finally {
+      paymentStatusLoading.value = false
     }
+  } else {
+    paymentStatusLoading.value = false
   }
 })
 
@@ -848,10 +865,10 @@ onUnmounted(() => {
             <!-- Submit VNPay Button (Shadcn Button) -->
             <Button
               class="w-full h-11 text-xs font-bold"
-              :disabled="isSubmittingPayment || isVerifyingPayment || isExpiringSoon || isExpired || isBlockedByCancel || isPaymentUnresolved"
+              :disabled="isSubmittingPayment || isVerifyingPayment || isExpiringSoon || isExpired || isBlockedByCancel || isPaymentUnresolved || !canAttemptPayment"
               @click="handleProceedPayment"
             >
-              <Loader2 v-if="isSubmittingPayment" class="w-4 h-4 animate-spin mr-1.5" />
+              <Loader2 v-if="isSubmittingPayment || paymentStatusLoading" class="w-4 h-4 animate-spin mr-1.5" />
               <ExternalLink v-else class="w-4 h-4 mr-1.5" />
               <span>
                 {{
@@ -863,9 +880,13 @@ onUnmounted(() => {
                         ? 'Thời gian < 60s - Vui lòng chọn lại'
                         : isPaymentUnresolved
                           ? 'Giao dịch trước chưa hoàn tất'
-                          : isSubmittingPayment
-                            ? 'Đang chuyển sang VNPay...'
-                            : 'Thanh Toán Qua VNPay'
+                          : paymentStatusLoading
+                            ? 'Đang kiểm tra điều kiện...'
+                            : !canAttemptPayment
+                              ? 'Không đủ điều kiện thanh toán'
+                              : isSubmittingPayment
+                                ? 'Đang chuyển sang VNPay...'
+                                : 'Thanh Toán Qua VNPay'
                 }}
               </span>
             </Button>

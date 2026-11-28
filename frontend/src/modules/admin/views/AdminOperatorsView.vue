@@ -59,7 +59,9 @@ import { adminApi } from '@/modules/admin/api'
 const { hasPermission } = useAdminPermissions()
 
 const operators = ref([])
-const globalDefaultRate = ref(10.0)
+const globalDefaultRate = ref(null)
+const globalCommissionLoading = ref(false)
+const globalCommissionError = ref('')
 const isLoading = ref(false)
 const loadError = ref('')
 const isMutating = ref(false)
@@ -107,7 +109,11 @@ async function fetchOperators() {
       const commData = commRes.value?.data?.data !== undefined ? commRes.value.data.data : commRes.value?.data
       if (commData?.commissionRate !== undefined && commData.commissionRate !== null) {
         globalDefaultRate.value = Number(commData.commissionRate)
+        globalCommissionError.value = ''
       }
+    } else {
+      globalCommissionError.value = 'Không thể tải mức hoa hồng toàn sàn'
+      globalDefaultRate.value = null
     }
   } catch (err) {
     const status = err?.response?.status
@@ -256,7 +262,7 @@ async function executeDeleteOperator() {
 }
 
 // =========================================================================
-// APPROVE / REJECT / SUSPEND
+// APPROVE / REJECT / SUSPEND MODERATION
 // =========================================================================
 const moderationDialog = ref({
   isOpen: false,
@@ -313,45 +319,25 @@ async function executeModeration() {
   }
 }
 
-// Direct quick-actions for backward test compatibility
-async function updateOperatorStatus(op, newStatus) {
-  const previousStatus = op.status
-  op.status = newStatus
-  isMutating.value = true
-  try {
-    if (newStatus === 'ACTIVE') {
-      await adminApi.approveOperator(op.id)
-      toast.success(`Đã duyệt nhà xe #${op.id}`)
-    } else if (newStatus === 'REJECTED') {
-      await adminApi.rejectOperator(op.id, 'Từ chối bởi Quản trị viên sàn')
-      toast.success(`Đã từ chối nhà xe #${op.id}`)
-    } else if (newStatus === 'SUSPENDED') {
-      await adminApi.suspendOperator(op.id, 'Tạm đình chỉ bởi Quản trị viên sàn')
-      toast.success(`Đã đình chỉ nhà xe #${op.id}`)
-    }
-  } catch (err) {
-    op.status = previousStatus
-    toast.error(err?.response?.data?.message || err?.message || 'Thao tác thất bại')
-  } finally {
-    isMutating.value = false
-  }
-}
-
 // =========================================================================
-// 2-TIER COMMISSION MODAL
+// 2-TIER COMMISSION MODAL (0.0% to 100.0% range, null inheritance)
 // =========================================================================
 const selectedOperatorForCommission = ref(null)
 const commissionInput = ref(10.0)
 const useGlobalFallback = ref(false)
 const commissionError = ref('')
+const isConfirmCommissionOpen = ref(false)
 
 function openCommissionModal(op) {
   selectedOperatorForCommission.value = op
   commissionError.value = ''
-  const currentRate = op.customCommissionRate !== undefined ? op.customCommissionRate : op.commissionRate
+  const currentRate = op.commissionRate !== undefined && op.commissionRate !== null
+    ? op.commissionRate
+    : op.customCommissionRate
+
   if (currentRate === null || currentRate === undefined) {
     useGlobalFallback.value = true
-    commissionInput.value = globalDefaultRate.value
+    commissionInput.value = globalDefaultRate.value !== null ? globalDefaultRate.value : 10.0
   } else {
     useGlobalFallback.value = false
     commissionInput.value = Number(currentRate)
@@ -361,29 +347,36 @@ function openCommissionModal(op) {
 function closeCommissionModal() {
   if (isMutating.value) return
   selectedOperatorForCommission.value = null
+  isConfirmCommissionOpen.value = false
 }
 
-async function handleSaveCommission() {
+function handleOpenConfirmCommission() {
   commissionError.value = ''
+  if (!useGlobalFallback.value) {
+    const val = Number(commissionInput.value)
+    if (commissionInput.value === '' || isNaN(val) || val < 0 || val > 100) {
+      commissionError.value = 'Tỷ lệ hoa hồng riêng phải nằm trong khoảng từ 0.0% đến 100.0%'
+      return
+    }
+  }
+  isConfirmCommissionOpen.value = true
+}
+
+async function executeSaveCommission() {
+  commissionError.value = ''
+  isConfirmCommissionOpen.value = false
 
   let rateToSave = null
   if (!useGlobalFallback.value) {
-    if (commissionInput.value === '' || Number(commissionInput.value) < 0 || Number(commissionInput.value) > 50) {
-      commissionError.value = 'Tỷ lệ hoa hồng riêng phải nằm trong khoảng từ 0% đến 50%'
-      return
-    }
     rateToSave = Number(commissionInput.value)
   }
 
   isMutating.value = true
   try {
     await adminApi.updateOperatorCommission(selectedOperatorForCommission.value.id, rateToSave)
-    if (selectedOperatorForCommission.value) {
-      selectedOperatorForCommission.value.customCommissionRate = rateToSave
-      selectedOperatorForCommission.value.commissionRate = rateToSave
-    }
     toast.success(`Đã cập nhật hoa hồng cho nhà xe #${selectedOperatorForCommission.value.id}`)
     closeCommissionModal()
+    await fetchOperators()
   } catch (err) {
     commissionError.value = err?.response?.data?.message || err?.message || 'Không thể lưu tỷ lệ hoa hồng.'
   } finally {
@@ -403,14 +396,19 @@ onMounted(() => {
       <div>
         <h1 class="text-2xl font-bold tracking-tight text-foreground">Phê Duyệt Hồ Sơ Nhà Xe & Cấu Hình Hoa Hồng 2 Cấp</h1>
         <p class="text-xs text-muted-foreground mt-1">
-          Thẩm định pháp lý đối tác vận tải, quản lý hồ sơ nhà xe và thiết lập mức chiết khấu hoa hồng riêng (Custom Tier) hoặc mặc định toàn sàn ({{ globalDefaultRate }}%).
+          Thẩm định pháp lý đối tác vận tải, quản lý hồ sơ nhà xe và thiết lập mức chiết khấu hoa hồng riêng (Custom Tier 0-100%) hoặc mặc định toàn sàn.
         </p>
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
-        <Badge variant="outline" class="px-3 py-1.5 text-xs font-semibold tabular-nums border-primary/30 text-primary bg-primary/5">
+        <Badge
+          variant="outline"
+          class="px-3 py-1.5 text-xs font-semibold tabular-nums border-primary/30 text-primary bg-primary/5"
+        >
           <Percent class="w-3.5 h-3.5 mr-1 text-primary inline" />
-          Mặc định toàn sàn: {{ globalDefaultRate.toFixed(1) }}%
+          <span v-if="globalDefaultRate !== null">Mặc định toàn sàn: {{ globalDefaultRate.toFixed(1) }}%</span>
+          <span v-else-if="globalCommissionLoading">Đang tải hoa hồng sàn...</span>
+          <span v-else class="text-muted-foreground">Mặc định sàn: Chưa tải được</span>
         </Badge>
 
         <Button
@@ -472,7 +470,7 @@ onMounted(() => {
       </CardContent>
     </Card>
 
-    <!-- Table Card -->
+    <!-- Table Card with Responsive Mobile Handling (D2-PRE-10) -->
     <Card class="border-border shadow-sm overflow-hidden">
       <!-- Loading State -->
       <div v-if="isLoading" class="p-12 text-center text-muted-foreground text-xs flex flex-col items-center justify-center space-y-3">
@@ -500,11 +498,11 @@ onMounted(() => {
       </div>
 
       <!-- Real Authoritative Operators Table -->
-      <div v-else class="overflow-x-auto">
-        <Table>
+      <div v-else class="overflow-x-auto min-w-full">
+        <Table class="min-w-[700px]">
           <TableHeader>
             <TableRow class="bg-muted/40 hover:bg-muted/40">
-              <TableHead class="font-semibold text-xs py-3">Mã Đối Tác</TableHead>
+              <TableHead class="font-semibold text-xs py-3 w-20">Mã Đối Tác</TableHead>
               <TableHead class="font-semibold text-xs py-3">Tên Nhà Xe & MST</TableHead>
               <TableHead class="font-semibold text-xs py-3">Liên Hệ</TableHead>
               <TableHead class="font-semibold text-xs py-3 text-center">Hoa Hồng Áp Dụng</TableHead>
@@ -544,17 +542,15 @@ onMounted(() => {
                   variant="outline"
                   class="font-bold tabular-nums text-[11px]"
                   :class="[
-                    (op.customCommissionRate !== null && op.customCommissionRate !== undefined) || (op.commissionRate !== null && op.commissionRate !== undefined)
+                    op.commissionRate !== null && op.commissionRate !== undefined
                       ? 'border-amber-500/30 text-amber-600 bg-amber-500/10'
                       : 'border-muted text-muted-foreground bg-muted/20'
                   ]"
                 >
                   {{
-                    (op.customCommissionRate !== null && op.customCommissionRate !== undefined)
-                      ? `${Number(op.customCommissionRate).toFixed(1)}% (Riêng)`
-                      : (op.commissionRate !== null && op.commissionRate !== undefined)
-                        ? `${Number(op.commissionRate).toFixed(1)}% (Riêng)`
-                        : `${globalDefaultRate.toFixed(1)}% (Chuẩn)`
+                    op.commissionRate !== null && op.commissionRate !== undefined
+                      ? `${Number(op.commissionRate).toFixed(1)}% (Riêng)`
+                      : (globalDefaultRate !== null ? `${globalDefaultRate.toFixed(1)}% (Chuẩn)` : 'Mặc định sàn')
                   }}
                 </Badge>
               </TableCell>
@@ -582,7 +578,7 @@ onMounted(() => {
                   v-if="op.status === 'PENDING_APPROVAL' && hasPermission('OPERATOR_APPROVE_REJECT')"
                   type="button"
                   size="sm"
-                  @click="updateOperatorStatus(op, 'ACTIVE')"
+                  @click="openModerationDialog(op, 'APPROVE')"
                   :data-testid="`btn-approve-${op.id}`"
                   class="h-8 text-xs font-semibold text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/10"
                   variant="outline"
@@ -756,7 +752,7 @@ onMounted(() => {
             Cấu Hình Hoa Hồng — {{ selectedOperatorForCommission?.brandName || selectedOperatorForCommission?.name }}
           </DialogTitle>
           <DialogDescription class="text-xs">
-            Thiết lập tỷ lệ hoa hồng riêng (Custom Tier) hoặc sử dụng tỷ lệ mặc định toàn sàn.
+            Thiết lập tỷ lệ hoa hồng riêng (Custom Tier 0.0% – 100.0%) hoặc sử dụng tỷ lệ mặc định toàn sàn.
           </DialogDescription>
         </DialogHeader>
 
@@ -769,7 +765,9 @@ onMounted(() => {
           <div class="p-3 rounded-lg bg-muted/40 border border-border space-y-2">
             <div class="flex items-center justify-between">
               <span class="text-muted-foreground">Tỷ lệ sàn mặc định:</span>
-              <span class="font-bold text-foreground tabular-nums">{{ globalDefaultRate.toFixed(1) }}%</span>
+              <span class="font-bold text-foreground tabular-nums">
+                {{ globalDefaultRate !== null ? `${globalDefaultRate.toFixed(1)}%` : 'Chưa tải được' }}
+              </span>
             </div>
             <label class="flex items-center gap-2 cursor-pointer pt-1">
               <input
@@ -777,7 +775,7 @@ onMounted(() => {
                 v-model="useGlobalFallback"
                 class="rounded border-border text-primary focus:ring-primary w-4 h-4"
               />
-              <span class="font-medium text-foreground">Sử dụng mức mặc định toàn sàn</span>
+              <span class="font-medium text-foreground">Sử dụng mức mặc định toàn sàn (Kế thừa null)</span>
             </label>
           </div>
 
@@ -791,13 +789,13 @@ onMounted(() => {
                 type="number"
                 step="0.1"
                 min="0"
-                max="50"
+                max="100"
                 data-testid="input-custom-commission"
-                class="h-9 text-xs pr-8 tabular-nums"
+                class="h-9 text-xs pr-8 tabular-nums font-bold"
               />
               <span class="absolute right-3 top-2 text-muted-foreground text-xs">%</span>
             </div>
-            <p class="text-[11px] text-muted-foreground">Hạn mức quy định: từ 0.0% đến 50.0%</p>
+            <p class="text-[11px] text-muted-foreground">Hạn mức miền hợp lệ: từ 0.0% đến 100.0% (cho phép 0%)</p>
           </div>
         </div>
 
@@ -808,7 +806,7 @@ onMounted(() => {
           <Button
             size="sm"
             data-testid="btn-save-commission"
-            @click="handleSaveCommission"
+            @click="handleOpenConfirmCommission"
             :disabled="isMutating"
             class="text-xs"
           >
@@ -819,18 +817,25 @@ onMounted(() => {
       </DialogContent>
     </Dialog>
 
-    <!-- Modal 3: Moderation Note Dialog (Reject / Suspend) -->
+    <!-- Modal 3: Moderation Note Dialog (Reject / Suspend / Approve) -->
     <Dialog :open="moderationDialog.isOpen" @update:open="(v) => !v && closeModerationDialog()">
       <DialogContent class="max-w-md">
         <DialogHeader>
           <DialogTitle class="text-base font-bold flex items-center gap-2">
-            <ShieldAlert class="w-5 h-5 text-amber-500" />
+            <ShieldAlert v-if="moderationDialog.action !== 'APPROVE'" class="w-5 h-5 text-amber-500" />
+            <CheckCircle2 v-else class="w-5 h-5 text-emerald-500" />
             <span>
-              {{ moderationDialog.action === 'REJECT' ? 'Từ Chối Hồ Sơ Đối Tác' : 'Tạm Đình Chỉ Nhà Xe' }}
+              {{
+                moderationDialog.action === 'APPROVE'
+                  ? 'Phê Duyệt Hồ Sơ Nhà Xe'
+                  : moderationDialog.action === 'REJECT'
+                    ? 'Từ Chối Hồ Sơ Đối Tác'
+                    : 'Tạm Đình Chỉ Nhà Xe'
+              }}
             </span>
           </DialogTitle>
           <DialogDescription class="text-xs">
-            Hành động này sẽ cập nhật trạng thái vận hành của đối tác trên toàn sàn.
+            Hành động này sẽ cập nhật trạng thái vận hành của đối tác (#{{ moderationDialog.operator?.id }}) trên toàn sàn.
           </DialogDescription>
         </DialogHeader>
 
@@ -839,7 +844,7 @@ onMounted(() => {
           <AlertDescription>{{ moderationDialog.error }}</AlertDescription>
         </Alert>
 
-        <div class="space-y-2 py-2 text-xs">
+        <div v-if="moderationDialog.action !== 'APPROVE'" class="space-y-2 py-2 text-xs">
           <label class="block font-semibold text-foreground">
             Lý do xử lý <span class="text-destructive">*</span>
           </label>
@@ -850,6 +855,9 @@ onMounted(() => {
             class="w-full p-2.5 rounded-md border border-input bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           ></textarea>
         </div>
+        <div v-else class="py-2 text-xs text-muted-foreground">
+          Xác nhận phê duyệt đối tác nhà xe <strong>{{ moderationDialog.operator?.brandName || moderationDialog.operator?.name }}</strong>. Nhà xe sẽ được kích hoạt trạng thái ACTIVE để vận hành chuyến xe.
+        </div>
 
         <DialogFooter>
           <Button variant="outline" size="sm" @click="closeModerationDialog" :disabled="isMutating" class="text-xs">
@@ -857,7 +865,7 @@ onMounted(() => {
           </Button>
           <Button
             size="sm"
-            variant="destructive"
+            :variant="moderationDialog.action === 'APPROVE' ? 'default' : 'destructive'"
             @click="executeModeration"
             :disabled="isMutating"
             class="text-xs"
@@ -868,6 +876,34 @@ onMounted(() => {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <!-- Commission Confirmation AlertDialog -->
+    <AlertDialog :open="isConfirmCommissionOpen" @update:open="(v) => !v && (isConfirmCommissionOpen = false)">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle class="text-base font-bold">Xác nhận thay đổi hoa hồng đối tác?</AlertDialogTitle>
+          <AlertDialogDescription class="text-xs space-y-1">
+            <p>
+              Áp dụng mức hoa hồng đối với nhà xe <strong>{{ selectedOperatorForCommission?.brandName || selectedOperatorForCommission?.name }}</strong>:
+            </p>
+            <p class="font-bold text-foreground">
+              {{ useGlobalFallback ? 'Kế thừa mức mặc định toàn sàn (null)' : `${Number(commissionInput).toFixed(1)}%` }}
+            </p>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel :disabled="isMutating" class="text-xs">Hủy</AlertDialogCancel>
+          <AlertDialogAction
+            @click="executeSaveCommission"
+            :disabled="isMutating"
+            class="text-xs font-semibold"
+          >
+            <Loader2 v-if="isMutating" class="w-3.5 h-3.5 mr-1.5 animate-spin" />
+            Xác Nhận Cập Nhật
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
 
     <!-- Delete Confirmation AlertDialog -->
     <AlertDialog :open="!!operatorToDelete" @update:open="(v) => !v && (operatorToDelete = null)">

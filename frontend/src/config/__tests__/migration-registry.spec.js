@@ -13,9 +13,9 @@ describe('D0-PRE-05: Central Migration Registry & Linter Unit Tests', () => {
     const pendingD1 = registry.views.filter((v) => v.migrationStatus === 'PENDING_MIGRATION')
     const unmigrated = registry.views.filter((v) => v.migrationStatus === 'UNMIGRATED')
 
-    expect(migrated.length).toBe(15)
+    expect(migrated.length).toBe(18)
     expect(pendingD1.length).toBe(0)
-    expect(unmigrated.length).toBe(3)
+    expect(unmigrated.length).toBe(0)
 
     // Verify all views have required fields
     registry.views.forEach((v) => {

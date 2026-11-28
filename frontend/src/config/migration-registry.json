@@ -152,8 +152,8 @@
       "route": "/operator/fleet-drivers",
       "featureModule": "partner",
       "migrationGate": "Gate D3",
-      "migrationStatus": "UNMIGRATED",
-      "strictLint": false,
+      "migrationStatus": "MIGRATED",
+      "strictLint": true,
       "exceptions": []
     },
     {
@@ -161,8 +161,8 @@
       "route": "/operator/trips",
       "featureModule": "partner",
       "migrationGate": "Gate D3",
-      "migrationStatus": "UNMIGRATED",
-      "strictLint": false,
+      "migrationStatus": "MIGRATED",
+      "strictLint": true,
       "exceptions": []
     },
     {
@@ -170,8 +170,8 @@
       "route": "/operator/profile",
       "featureModule": "partner",
       "migrationGate": "Gate D3",
-      "migrationStatus": "UNMIGRATED",
-      "strictLint": false,
+      "migrationStatus": "MIGRATED",
+      "strictLint": true,
       "exceptions": []
     }
   ]

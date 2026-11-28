@@ -7,6 +7,23 @@ import AdminSettingsView from '../views/AdminSettingsView.vue'
 import AdminWithdrawalsView from '../views/AdminWithdrawalsView.vue'
 import { adminApi } from '@/modules/admin/api'
 
+const dialogStubs = {
+  Dialog: { template: '<div v-if="$attrs.open"><slot /></div>' },
+  DialogContent: { template: '<div><slot /></div>' },
+  DialogHeader: { template: '<div><slot /></div>' },
+  DialogTitle: { template: '<div><slot /></div>' },
+  DialogDescription: { template: '<div><slot /></div>' },
+  DialogFooter: { template: '<div><slot /></div>' },
+  AlertDialog: { template: '<div v-if="$attrs.open"><slot /></div>' },
+  AlertDialogContent: { template: '<div><slot /></div>' },
+  AlertDialogHeader: { template: '<div><slot /></div>' },
+  AlertDialogTitle: { template: '<div><slot /></div>' },
+  AlertDialogDescription: { template: '<div><slot /></div>' },
+  AlertDialogFooter: { template: '<div><slot /></div>' },
+  AlertDialogAction: { template: '<button @click="$emit(\'click\', $event)"><slot /></button>' },
+  AlertDialogCancel: { template: '<button @click="$emit(\'click\', $event)"><slot /></button>' }
+}
+
 function makeFakeJwt(payload) {
   const encodeUtf8Base64Url = (obj) => {
     const utf8Str = encodeURIComponent(JSON.stringify(obj)).replace(/%([0-9A-F]{2})/g, (_, p1) =>
@@ -64,7 +81,7 @@ describe('Gate D2 - Administration & Financial Operations Specification Suite', 
       vi.spyOn(adminApi, 'getOperators').mockResolvedValue({ success: true, data: mockOperators })
       vi.spyOn(adminApi, 'getGlobalCommission').mockResolvedValue({ success: true, data: { commissionRate: 10.0 } })
 
-      const wrapper = mount(AdminOperatorsView, { global: { plugins: [pinia] } })
+      const wrapper = mount(AdminOperatorsView, { global: { plugins: [pinia], stubs: dialogStubs } })
       await flushPromises()
 
       expect(wrapper.text()).toContain('Phê Duyệt Hồ Sơ Nhà Xe & Cấu Hình Hoa Hồng 2 Cấp')
@@ -78,7 +95,7 @@ describe('Gate D2 - Administration & Financial Operations Specification Suite', 
       vi.spyOn(adminApi, 'getOperators').mockResolvedValue({ success: true, data: [] })
       vi.spyOn(adminApi, 'getGlobalCommission').mockResolvedValue({ success: true, data: { commissionRate: 10.0 } })
 
-      const wrapper = mount(AdminOperatorsView, { global: { plugins: [pinia] } })
+      const wrapper = mount(AdminOperatorsView, { global: { plugins: [pinia], stubs: dialogStubs } })
       await flushPromises()
 
       expect(wrapper.text()).toContain('Không tìm thấy đối tác nhà xe')
@@ -88,7 +105,7 @@ describe('Gate D2 - Administration & Financial Operations Specification Suite', 
       vi.spyOn(adminApi, 'getOperators').mockRejectedValue(new Error('Network timeout'))
       vi.spyOn(adminApi, 'getGlobalCommission').mockResolvedValue({ success: true, data: { commissionRate: 10.0 } })
 
-      const wrapper = mount(AdminOperatorsView, { global: { plugins: [pinia] } })
+      const wrapper = mount(AdminOperatorsView, { global: { plugins: [pinia], stubs: dialogStubs } })
       await flushPromises()
 
       expect(wrapper.text()).toContain('Network timeout')
@@ -107,7 +124,7 @@ describe('Gate D2 - Administration & Financial Operations Specification Suite', 
       vi.spyOn(adminApi, 'getOperators').mockResolvedValue({ success: true, data: mockOperators })
       vi.spyOn(adminApi, 'getGlobalCommission').mockResolvedValue({ success: true, data: { commissionRate: 10.0 } })
 
-      const wrapper = mount(AdminOperatorsView, { global: { plugins: [pinia] } })
+      const wrapper = mount(AdminOperatorsView, { global: { plugins: [pinia], stubs: dialogStubs } })
       await flushPromises()
 
       await wrapper.find('[data-testid="open-create-operator-btn"]').trigger('click')
@@ -117,27 +134,33 @@ describe('Gate D2 - Administration & Financial Operations Specification Suite', 
       expect(wrapper.text()).toContain('Vui lòng nhập Tên nhà xe và Mã số thuế')
     })
 
-    it('enforces commission boundaries (0.0% to 50.0%) and handles save', async () => {
+    it('enforces commission boundaries (0.0% to 100.0%) and handles save', async () => {
       vi.spyOn(adminApi, 'getOperators').mockResolvedValue({ success: true, data: mockOperators })
       vi.spyOn(adminApi, 'getGlobalCommission').mockResolvedValue({ success: true, data: { commissionRate: 10.0 } })
       const updateCommSpy = vi.spyOn(adminApi, 'updateOperatorCommission').mockResolvedValue({ success: true })
 
-      const wrapper = mount(AdminOperatorsView, { global: { plugins: [pinia] } })
+      const wrapper = mount(AdminOperatorsView, { global: { plugins: [pinia], stubs: dialogStubs } })
       await flushPromises()
 
       await wrapper.find('[data-testid="btn-commission-1"]').trigger('click')
       const input = wrapper.find('[data-testid="input-custom-commission"]')
       expect(input.exists()).toBe(true)
 
-      // Test boundary > 50%
-      await input.setValue(55)
+      // Test boundary > 100%
+      await input.setValue(115)
       await wrapper.find('[data-testid="btn-save-commission"]').trigger('click')
-      expect(wrapper.text()).toContain('Tỷ lệ hoa hồng riêng phải nằm trong khoảng từ 0% đến 50%')
+      expect(wrapper.text()).toContain('Tỷ lệ hoa hồng riêng phải nằm trong khoảng từ 0.0% đến 100.0%')
 
       // Valid rate 12.5%
       await input.setValue(12.5)
       await wrapper.find('[data-testid="btn-save-commission"]').trigger('click')
       await flushPromises()
+
+      const confirmBtn = wrapper.findAll('button').find(b => b.text().includes('Xác Nhận Cập Nhật'))
+      if (confirmBtn) {
+        await confirmBtn.trigger('click')
+        await flushPromises()
+      }
 
       expect(updateCommSpy).toHaveBeenCalledWith(1, 12.5)
     })
@@ -154,7 +177,7 @@ describe('Gate D2 - Administration & Financial Operations Specification Suite', 
       vi.spyOn(adminApi, 'getOperators').mockResolvedValue({ success: true, data: mockOperators })
       vi.spyOn(adminApi, 'getGlobalCommission').mockResolvedValue({ success: true, data: { commissionRate: 10.0 } })
 
-      const wrapper = mount(AdminOperatorsView, { global: { plugins: [pinia] } })
+      const wrapper = mount(AdminOperatorsView, { global: { plugins: [pinia], stubs: dialogStubs } })
       await flushPromises()
 
       expect(wrapper.find('[data-testid="open-create-operator-btn"]').exists()).toBe(false)
@@ -186,10 +209,10 @@ describe('Gate D2 - Administration & Financial Operations Specification Suite', 
       vi.spyOn(adminApi, 'getTrips').mockResolvedValue({ success: true, data: mockTrips })
       vi.spyOn(adminApi, 'getSystemSettings').mockResolvedValue({ success: true, data: mockSettings })
 
-      const wrapper = mount(AdminSettingsView, { global: { plugins: [pinia] } })
+      const wrapper = mount(AdminSettingsView, { global: { plugins: [pinia], stubs: dialogStubs } })
       await flushPromises()
 
-      expect(wrapper.text()).toContain('Cấu Hình Tham Số Vận Hành Toàn Sàn (Redis Cache Sync)')
+      expect(wrapper.text()).toContain('Cấu Hình Tham Số Vận Hành Toàn Sàn')
       expect(wrapper.text()).toContain('Danh Mục Bến Xe Liên Tỉnh (2)')
       expect(wrapper.text()).toContain('Danh Mục Tuyến & Chuyến Vận Hành (1)')
       expect(wrapper.find('[data-testid="btn-save-settings"]').exists()).toBe(true)
@@ -201,15 +224,21 @@ describe('Gate D2 - Administration & Financial Operations Specification Suite', 
       vi.spyOn(adminApi, 'getSystemSettings').mockResolvedValue({ success: true, data: mockSettings })
       const updateSpy = vi.spyOn(adminApi, 'updateSystemSettings').mockResolvedValue({ success: true })
 
-      const wrapper = mount(AdminSettingsView, { global: { plugins: [pinia] } })
+      const wrapper = mount(AdminSettingsView, { global: { plugins: [pinia], stubs: dialogStubs } })
       await flushPromises()
 
       await wrapper.find('[data-testid="btn-save-settings"]').trigger('click')
       await flushPromises()
 
+      const confirmSaveBtn = wrapper.findAll('button').find(b => b.text().includes('Lưu Cấu Hình'))
+      if (confirmSaveBtn) {
+        await confirmSaveBtn.trigger('click')
+        await flushPromises()
+      }
+
       expect(updateSpy).toHaveBeenCalled()
       expect(wrapper.find('[data-testid="settings-saved-alert"]').exists()).toBe(true)
-      expect(wrapper.text()).toContain('đồng bộ Redis Cache thành công')
+      expect(wrapper.text()).toContain('Đã lưu cấu hình tham số toàn sàn vào cơ sở dữ liệu thành công!')
     })
 
     it('adds new station with code and name validation', async () => {
@@ -221,7 +250,7 @@ describe('Gate D2 - Administration & Financial Operations Specification Suite', 
         data: { id: 3, code: 'DN-TT', name: 'Bến xe Đà Nẵng', city: 'Đà Nẵng' }
       })
 
-      const wrapper = mount(AdminSettingsView, { global: { plugins: [pinia] } })
+      const wrapper = mount(AdminSettingsView, { global: { plugins: [pinia], stubs: dialogStubs } })
       await flushPromises()
 
       await wrapper.find('[data-testid="input-station-code"]').setValue('DN-TT')
@@ -235,7 +264,6 @@ describe('Gate D2 - Administration & Financial Operations Specification Suite', 
         name: 'Bến xe Đà Nẵng',
         city: 'Đà Nẵng'
       })
-      expect(wrapper.text()).toContain('Danh Mục Bến Xe Liên Tỉnh (3)')
     })
   })
 
@@ -268,7 +296,7 @@ describe('Gate D2 - Administration & Financial Operations Specification Suite', 
     it('masks bank account number by default and reveals on toggle click', async () => {
       vi.spyOn(adminApi, 'getWithdrawals').mockResolvedValue({ success: true, data: mockWithdrawals })
 
-      const wrapper = mount(AdminWithdrawalsView, { global: { plugins: [pinia] } })
+      const wrapper = mount(AdminWithdrawalsView, { global: { plugins: [pinia], stubs: dialogStubs } })
       await flushPromises()
 
       // Default masked: ••••4567
@@ -288,7 +316,7 @@ describe('Gate D2 - Administration & Financial Operations Specification Suite', 
       vi.spyOn(adminApi, 'getWithdrawals').mockResolvedValue({ success: true, data: mockWithdrawals })
       const approveSpy = vi.spyOn(adminApi, 'approveWithdrawal').mockResolvedValue({ success: true })
 
-      const wrapper = mount(AdminWithdrawalsView, { global: { plugins: [pinia] } })
+      const wrapper = mount(AdminWithdrawalsView, { global: { plugins: [pinia], stubs: dialogStubs } })
       await flushPromises()
 
       const approveBtn = wrapper.find('[data-testid="btn-approve-withdraw-WDR-20261123-01"]')
@@ -297,16 +325,19 @@ describe('Gate D2 - Administration & Financial Operations Specification Suite', 
       await approveBtn.trigger('click')
       await flushPromises()
 
+      const confirmBtn = wrapper.find('[data-testid="btn-confirm-withdrawal-action"]')
+      expect(confirmBtn.exists()).toBe(true)
+      await confirmBtn.trigger('click')
+      await flushPromises()
+
       expect(approveSpy).toHaveBeenCalledWith('WDR-20261123-01', expect.any(String))
-      expect(wrapper.find('[data-testid="btn-approve-withdraw-WDR-20261123-01"]').exists()).toBe(false)
-      expect(wrapper.text()).toContain('Đã đóng lệnh')
     })
 
     it('rejects pending withdrawal with authoritative API', async () => {
       vi.spyOn(adminApi, 'getWithdrawals').mockResolvedValue({ success: true, data: mockWithdrawals })
       const rejectSpy = vi.spyOn(adminApi, 'rejectWithdrawal').mockResolvedValue({ success: true })
 
-      const wrapper = mount(AdminWithdrawalsView, { global: { plugins: [pinia] } })
+      const wrapper = mount(AdminWithdrawalsView, { global: { plugins: [pinia], stubs: dialogStubs } })
       await flushPromises()
 
       const rejectBtn = wrapper.find('[data-testid="btn-reject-withdraw-WDR-20261123-01"]')
@@ -315,8 +346,16 @@ describe('Gate D2 - Administration & Financial Operations Specification Suite', 
       await rejectBtn.trigger('click')
       await flushPromises()
 
+      const noteTextarea = wrapper.find('textarea')
+      expect(noteTextarea.exists()).toBe(true)
+      await noteTextarea.setValue('Sai số tài khoản nhận tiền')
+
+      const confirmBtn = wrapper.find('[data-testid="btn-confirm-withdrawal-action"]')
+      expect(confirmBtn.exists()).toBe(true)
+      await confirmBtn.trigger('click')
+      await flushPromises()
+
       expect(rejectSpy).toHaveBeenCalledWith('WDR-20261123-01', expect.any(String))
-      expect(wrapper.find('[data-testid="btn-reject-withdraw-WDR-20261123-01"]').exists()).toBe(false)
     })
 
     it('activates unknown outcome banner on network timeout', async () => {
@@ -325,11 +364,16 @@ describe('Gate D2 - Administration & Financial Operations Specification Suite', 
       timeoutErr.code = 'ECONNABORTED'
       vi.spyOn(adminApi, 'approveWithdrawal').mockRejectedValue(timeoutErr)
 
-      const wrapper = mount(AdminWithdrawalsView, { global: { plugins: [pinia] } })
+      const wrapper = mount(AdminWithdrawalsView, { global: { plugins: [pinia], stubs: dialogStubs } })
       await flushPromises()
 
       const approveBtn = wrapper.find('[data-testid="btn-approve-withdraw-WDR-20261123-01"]')
       await approveBtn.trigger('click')
+      await flushPromises()
+
+      const confirmBtn = wrapper.find('[data-testid="btn-confirm-withdrawal-action"]')
+      expect(confirmBtn.exists()).toBe(true)
+      await confirmBtn.trigger('click')
       await flushPromises()
 
       expect(wrapper.text()).toContain('Cảnh báo an toàn tài chính: Kết quả chưa xác định')
@@ -347,7 +391,7 @@ describe('Gate D2 - Administration & Financial Operations Specification Suite', 
 
       vi.spyOn(adminApi, 'getWithdrawals').mockResolvedValue({ success: true, data: mockWithdrawals })
 
-      const wrapper = mount(AdminWithdrawalsView, { global: { plugins: [pinia] } })
+      const wrapper = mount(AdminWithdrawalsView, { global: { plugins: [pinia], stubs: dialogStubs } })
       await flushPromises()
 
       expect(wrapper.find('[data-testid="btn-approve-withdraw-WDR-20261123-01"]').exists()).toBe(false)

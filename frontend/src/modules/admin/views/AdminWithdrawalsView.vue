@@ -14,7 +14,8 @@ import {
   ShieldAlert,
   Building2,
   Calendar,
-  Lock
+  Lock,
+  FileText
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
@@ -28,6 +29,16 @@ import {
   DialogFooter
 } from '@/components/ui/dialog'
 import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction
+} from '@/components/ui/alert-dialog'
+import {
   Table,
   TableHeader,
   TableHead,
@@ -39,26 +50,102 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import EmptyState from '@/shared/components/EmptyState.vue'
 import StatusBadge from '@/shared/components/StatusBadge.vue'
 import { useAdminPermissions } from '@/modules/admin/composables/useAdminPermissions'
+import { useAuthStore } from '@/modules/auth/store'
 import { adminApi } from '@/modules/admin/api'
 
 const { hasPermission } = useAdminPermissions()
+const authStore = useAuthStore()
 
 const withdrawals = ref([])
 const isLoading = ref(false)
 const loadError = ref('')
-const selectedFilter = ref('ALL') // 'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'
+const selectedFilter = ref('PENDING') // Default is 'PENDING' according to backend default contract
 const processingIds = ref(new Set())
 const unmaskedAccountIds = ref(new Set())
-const unknownOutcome = ref(null)
+
+// Persistent Unknown Outcome Registry (D2-PRE-02)
+const unresolvedOperations = ref(new Map())
+const isVerifying = ref(false)
+
+const unresolvedList = computed(() => {
+  return Array.from(unresolvedOperations.value.values())
+})
+
+const currentAdminId = computed(() => {
+  return authStore.user?.id || authStore.userId || 'admin'
+})
 
 const WITHDRAWAL_FILTERS = [
-  { value: 'ALL', label: 'Tất cả lệnh' },
   { value: 'PENDING', label: 'Chờ giải ngân' },
   { value: 'APPROVED', label: 'Đã duyệt chi' },
-  { value: 'REJECTED', label: 'Bị từ chối' }
+  { value: 'REJECTED', label: 'Bị từ chối' },
+  { value: 'ALL', label: 'Tất cả lệnh' }
 ]
 
-// Authoritative API fetching
+function getStorageKey(adminId, withdrawalId) {
+  return `velobus_unknown_wdr_${adminId}_${withdrawalId}`
+}
+
+function loadPersistedUnknownOutcomes() {
+  try {
+    const adminId = String(currentAdminId.value)
+    const prefix = `velobus_unknown_wdr_${adminId}_`
+    const legacyPrefix = 'velobus_unknown_wdr_admin_'
+    const recovered = new Map()
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && (key.startsWith(prefix) || key.startsWith(legacyPrefix) || key.startsWith('velobus_unknown_wdr_'))) {
+        const raw = localStorage.getItem(key)
+        if (raw) {
+          try {
+            const context = JSON.parse(raw)
+            if (context && context.withdrawalId) {
+              recovered.set(context.withdrawalId, context)
+            }
+          } catch (_) {}
+        }
+      }
+    }
+    unresolvedOperations.value = recovered
+  } catch (_) {
+    // localStorage may be restricted or corrupted
+  }
+}
+
+function persistUnknownOutcome(context) {
+  try {
+    const adminId = currentAdminId.value
+    const key = getStorageKey(adminId, context.withdrawalId)
+    try {
+      localStorage.setItem(key, JSON.stringify(context))
+    } catch (_) {}
+  } catch (_) {}
+  const updated = new Map(unresolvedOperations.value)
+  updated.set(context.withdrawalId, context)
+  unresolvedOperations.value = updated
+}
+
+function clearPersistedUnknownOutcome(withdrawalId) {
+  try {
+    const adminId = String(currentAdminId.value)
+    const keysToRemove = [
+      getStorageKey(adminId, withdrawalId),
+      `velobus_unknown_wdr_admin_${withdrawalId}`,
+      `velobus_unknown_wdr_1_${withdrawalId}`
+    ]
+    for (const key of keysToRemove) {
+      try {
+        localStorage.removeItem(key)
+      } catch (_) {}
+    }
+  } catch (_) {}
+  const updated = new Map(unresolvedOperations.value)
+  updated.delete(withdrawalId)
+  unresolvedOperations.value = updated
+}
+
+// Authoritative API fetching (D2-PRE-03)
 async function fetchWithdrawals() {
   if (!hasPermission('WITHDRAWAL_VIEW')) {
     loadError.value = 'Bạn không có quyền xem danh sách lệnh rút tiền (Yêu cầu WITHDRAWAL_VIEW).'
@@ -68,18 +155,30 @@ async function fetchWithdrawals() {
   isLoading.value = true
   loadError.value = ''
   try {
-    const statusParam = selectedFilter.value !== 'ALL' ? selectedFilter.value : null
-    const res = await adminApi.getWithdrawals(statusParam)
-    const data = res?.data?.data !== undefined ? res.data.data : res?.data
-    if (Array.isArray(data)) {
-      withdrawals.value = data.map(item => ({
-        ...item,
-        // Normalize status: map legacy COMPLETED or PENDING_APPROVAL to backend WithdrawalStatus
-        status: item.status === 'COMPLETED' ? 'APPROVED' : (item.status === 'PENDING_APPROVAL' ? 'PENDING' : item.status),
-        operatorName: item.operatorName || (item.operatorId ? `Nhà xe đối tác #${item.operatorId}` : 'Nhà xe đối tác')
-      }))
+    if (selectedFilter.value === 'ALL') {
+      // Explicitly aggregate all three supported status lists with independent failure handling
+      const [pendingRes, approvedRes, rejectedRes] = await Promise.all([
+        adminApi.getWithdrawals('PENDING'),
+        adminApi.getWithdrawals('APPROVED'),
+        adminApi.getWithdrawals('REJECTED')
+      ])
+
+      const pData = pendingRes?.data?.data !== undefined ? pendingRes.data.data : pendingRes?.data
+      const aData = approvedRes?.data?.data !== undefined ? approvedRes.data.data : approvedRes?.data
+      const rData = rejectedRes?.data?.data !== undefined ? rejectedRes.data.data : rejectedRes?.data
+
+      if (!Array.isArray(pData) || !Array.isArray(aData) || !Array.isArray(rData)) {
+        throw new Error('Dữ liệu danh sách lệnh rút tiền từ máy chủ không hợp lệ.')
+      }
+
+      withdrawals.value = [...pData, ...aData, ...rData].map(normalizeWithdrawalItem)
     } else {
-      withdrawals.value = []
+      const res = await adminApi.getWithdrawals(selectedFilter.value)
+      const data = res?.data?.data !== undefined ? res.data.data : res?.data
+      if (!Array.isArray(data)) {
+        throw new Error('Dữ liệu danh sách lệnh rút tiền từ máy chủ không hợp lệ.')
+      }
+      withdrawals.value = data.map(normalizeWithdrawalItem)
     }
   } catch (err) {
     const status = err?.response?.status
@@ -91,6 +190,20 @@ async function fetchWithdrawals() {
     withdrawals.value = []
   } finally {
     isLoading.value = false
+  }
+}
+
+function normalizeWithdrawalItem(item) {
+  return {
+    ...item,
+    id: item.id,
+    operatorId: item.operatorId,
+    amount: Number(item.amount) || 0,
+    bankName: item.bankName,
+    accountNumber: item.accountNumber,
+    accountHolderName: item.accountHolderName,
+    status: item.status, // Canonical: PENDING | APPROVED | REJECTED
+    operatorName: item.operatorName || (item.operatorId ? `Nhà xe đối tác #${item.operatorId}` : 'Nhà xe đối tác')
   }
 }
 
@@ -115,9 +228,25 @@ function toggleMask(id) {
   }
 }
 
-// Processing Approvals & Rejections
-async function processWithdrawal(item, action, customNote = null) {
-  const isApprove = action === 'APPROVED' || action === 'COMPLETED'
+// =========================================================================
+// REAL CONFIRMATION DIALOG & AUTHORITATIVE MUTATIONS (D2-PRE-01)
+// =========================================================================
+const confirmDialog = ref({
+  isOpen: false,
+  item: null,
+  action: 'APPROVE', // 'APPROVE' | 'REJECT'
+  adminNote: '',
+  isSubmitting: false,
+  error: ''
+})
+
+function openConfirmDialog(item, action) {
+  if (!item || item.status !== 'PENDING') {
+    toast.error('Chỉ có thể thao tác với lệnh rút tiền ở trạng thái PENDING.')
+    return
+  }
+
+  const isApprove = action === 'APPROVE'
   if (isApprove && !hasPermission('WITHDRAWAL_APPROVE')) {
     toast.error('Thiếu quyền phê duyệt giải ngân WITHDRAWAL_APPROVE')
     return
@@ -127,39 +256,169 @@ async function processWithdrawal(item, action, customNote = null) {
     return
   }
 
-  const previousStatus = item.status
-  item.status = isApprove ? 'APPROVED' : 'REJECTED'
+  if (processingIds.value.has(item.id)) {
+    toast.warning('Yêu cầu xử lý lệnh này đang được thực hiện.')
+    return
+  }
+
+  if (unresolvedOperations.value.has(item.id)) {
+    toast.error('Lệnh này đang bị khóa an toàn do kết quả xử lý trước đó chưa xác định. Vui lòng xác thực trước.')
+    return
+  }
+
+  confirmDialog.value = {
+    isOpen: true,
+    item,
+    action,
+    adminNote: '',
+    isSubmitting: false,
+    error: ''
+  }
+}
+
+function closeConfirmDialog() {
+  if (confirmDialog.value.isSubmitting) return
+  confirmDialog.value.isOpen = false
+  confirmDialog.value.item = null
+  confirmDialog.value.error = ''
+}
+
+async function executeWithdrawalMutation() {
+  const { item, action, adminNote } = confirmDialog.value
+  if (!item) return
+
+  const isApprove = action === 'APPROVE'
+  if (isApprove && !hasPermission('WITHDRAWAL_APPROVE')) {
+    confirmDialog.value.error = 'Thiếu quyền WITHDRAWAL_APPROVE'
+    return
+  }
+  if (!isApprove && !hasPermission('WITHDRAWAL_REJECT')) {
+    confirmDialog.value.error = 'Thiếu quyền WITHDRAWAL_REJECT'
+    return
+  }
+
+  if (!isApprove && (!adminNote || adminNote.trim().length < 5)) {
+    confirmDialog.value.error = 'Vui lòng nhập lý do từ chối (tối thiểu 5 ký tự) để nhà xe đối soát.'
+    return
+  }
+
+  // Synchronous double-submission check
+  if (processingIds.value.has(item.id)) return
   processingIds.value.add(item.id)
-  unknownOutcome.value = null
-  const defaultNote = isApprove ? 'Duyệt chi giải ngân thành công qua tài khoản ngân hàng' : 'Từ chối giải ngân và hoàn trả số dư về ví khả dụng'
-  const note = customNote || defaultNote
+  confirmDialog.value.isSubmitting = true
+  confirmDialog.value.error = ''
+
+  const noteToSend = adminNote ? adminNote.trim() : (isApprove ? 'Duyệt chi giải ngân thành công qua tài khoản ngân hàng' : 'Từ chối giải ngân')
+
+  // Persist context before mutation dispatch (D2-PRE-02)
+  const operationContext = {
+    withdrawalId: item.id,
+    action: isApprove ? 'APPROVE' : 'REJECT',
+    amount: item.amount,
+    timestamp: Date.now(),
+    note: noteToSend
+  }
+  persistUnknownOutcome(operationContext)
 
   try {
-    if (isApprove) {
-      await adminApi.approveWithdrawal(item.id, note)
-      toast.success(`Đã duyệt chi giải ngân lệnh #${item.id}`)
-    } else {
-      await adminApi.rejectWithdrawal(item.id, note)
-      toast.success(`Đã từ chối lệnh #${item.id}`)
+    const res = isApprove
+      ? await adminApi.approveWithdrawal(item.id, noteToSend)
+      : await adminApi.rejectWithdrawal(item.id, noteToSend)
+
+    const resData = res?.data?.data !== undefined ? res.data.data : res?.data
+    const expectedStatus = isApprove ? 'APPROVED' : 'REJECTED'
+
+    if (resData && resData.status && resData.status !== expectedStatus) {
+      throw new Error(`Trạng thái phản hồi không khớp kỳ vọng (${resData.status} !== ${expectedStatus})`)
+    }
+
+    // Definitive server success -> clear persistent recovery guard
+    clearPersistedUnknownOutcome(item.id)
+    confirmDialog.value.isOpen = false
+    confirmDialog.value.item = null
+    toast.success(`Đã ${isApprove ? 'phê duyệt' : 'từ chối'} giải ngân lệnh #${item.id} thành công.`)
+
+    // Authoritative refresh
+    try {
+      await fetchWithdrawals()
+    } catch (_) {
+      toast.warning('Đã ghi nhận kết quả giải ngân, nhưng làm mới danh sách thất bại. Bấm Làm Mới để xem trạng thái mới nhất.')
     }
   } catch (err) {
-    const errorMsg = err?.response?.data?.message || err?.message || 'Lỗi xử lý giao dịch'
-    if (err?.code === 'ECONNABORTED' || err?.message?.includes('timeout') || err?.message?.includes('Network Error')) {
-      unknownOutcome.value = {
-        id: item.id,
-        action: isApprove ? 'Duyệt Chi' : 'Từ Chối',
-        message: 'Giao dịch gặp sự cố kết nối. Vui lòng làm mới để xác thực trạng thái từ máy chủ.'
-      }
+    const isNetworkOrTimeout = !err.response || err.code === 'ECONNABORTED' || err.message?.includes('timeout') || err.message?.includes('Network Error')
+
+    if (isNetworkOrTimeout) {
+      // Retain guard in localStorage and surface Unknown Outcome Alert
+      confirmDialog.value.isOpen = false
+      confirmDialog.value.item = null
+      toast.error('Kết nối máy chủ bị gián đoạn hoặc timeout. Lệnh đã được khóa an toàn để xác thực.')
     } else {
-      item.status = previousStatus
-      toast.error(errorMsg)
+      // Definitive backend business rejection (e.g. 400 Invalid Status, 404, 403)
+      // Keep dialog open so administrator can review note and error message
+      clearPersistedUnknownOutcome(item.id)
+      confirmDialog.value.error = err?.response?.data?.message || err?.message || 'Thao tác giải ngân bị máy chủ từ chối.'
     }
   } finally {
     processingIds.value.delete(item.id)
+    confirmDialog.value.isSubmitting = false
+  }
+}
+
+// =========================================================================
+// READ-ONLY AUTHORITATIVE STATUS VERIFICATION (D2-PRE-02)
+// =========================================================================
+async function verifyUnknownOutcome(withdrawalId) {
+  if (!withdrawalId) return
+  isVerifying.value = true
+  try {
+    // Read-only queries to check if record reached terminal APPROVED or REJECTED
+    const [appRes, rejRes, pendRes] = await Promise.allSettled([
+      adminApi.getWithdrawals('APPROVED'),
+      adminApi.getWithdrawals('REJECTED'),
+      adminApi.getWithdrawals('PENDING')
+    ])
+
+    let matchingRecord = null
+
+    if (appRes.status === 'fulfilled') {
+      const data = appRes.value?.data?.data || appRes.value?.data
+      if (Array.isArray(data)) matchingRecord = data.find(w => String(w.id) === String(withdrawalId))
+    }
+    if (!matchingRecord && rejRes.status === 'fulfilled') {
+      const data = rejRes.value?.data?.data || rejRes.value?.data
+      if (Array.isArray(data)) matchingRecord = data.find(w => String(w.id) === String(withdrawalId))
+    }
+
+    if (matchingRecord && (matchingRecord.status === 'APPROVED' || matchingRecord.status === 'REJECTED')) {
+      // Terminal state confirmed! Clear guard
+      clearPersistedUnknownOutcome(withdrawalId)
+      toast.success(`Xác thực thành công: Lệnh #${withdrawalId} đã ở trạng thái ${matchingRecord.status}. Đã gỡ bỏ khóa an toàn.`)
+      await fetchWithdrawals()
+    } else {
+      // Check if still in PENDING
+      let stillPending = false
+      if (pendRes.status === 'fulfilled') {
+        const data = pendRes.value?.data?.data || pendRes.value?.data
+        if (Array.isArray(data) && data.some(w => String(w.id) === String(withdrawalId))) {
+          stillPending = true
+        }
+      }
+
+      if (stillPending) {
+        toast.warning(`Lệnh #${withdrawalId} hiện vẫn ở trạng thái PENDING trên máy chủ. Giao dịch chưa được áp dụng hoặc đã bị hủy.`)
+      } else {
+        toast.error(`Chưa thể xác thực trạng thái dứt điểm của lệnh #${withdrawalId}. Khóa an toàn tiếp tục được duy trì.`)
+      }
+    }
+  } catch (err) {
+    toast.error('Lỗi khi truy vấn máy chủ để xác thực: ' + (err?.message || 'Lỗi mạng'))
+  } finally {
+    isVerifying.value = false
   }
 }
 
 onMounted(() => {
+  loadPersistedUnknownOutcomes()
   fetchWithdrawals()
 })
 </script>
@@ -171,7 +430,7 @@ onMounted(() => {
       <div>
         <h1 class="text-2xl font-bold tracking-tight text-foreground">Kiểm Duyệt Lệnh Rút Tiền Ví Ký Quỹ Escrow</h1>
         <p class="text-xs text-muted-foreground mt-1">
-          Duyệt giải ngân chuyển khoản ngân hàng (trừ số dư Locked Balance) hoặc từ chối để hoàn trả số dư về ví khả dụng của nhà xe.
+          Duyệt giải ngân nội bộ (khấu trừ Locked Balance và cập nhật sổ cái) hoặc từ chối để hoàn trả số dư về ví khả dụng của đối tác.
         </p>
       </div>
 
@@ -182,21 +441,53 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Unknown Outcome Guard Alert -->
-    <Alert v-if="unknownOutcome" variant="destructive" class="border-destructive/50 bg-destructive/5">
-      <AlertCircle class="h-4 w-4" />
-      <AlertTitle>Cảnh báo an toàn tài chính: Kết quả chưa xác định</AlertTitle>
-      <AlertDescription class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-        <span>Lệnh #{{ unknownOutcome.id }} ({{ unknownOutcome.action }}): {{ unknownOutcome.message }}</span>
-        <Button
-          size="sm"
-          variant="outline"
-          @click="fetchWithdrawals; unknownOutcome = null"
-          class="h-7 text-xs whitespace-nowrap"
+    <!-- Unknown Outcome Guard Alert Banner (D2-PRE-02) -->
+    <Alert
+      v-if="unresolvedList.length > 0"
+      variant="destructive"
+      class="border-destructive/50 bg-destructive/5 space-y-2"
+    >
+      <div class="flex items-start gap-2">
+        <AlertCircle class="h-4 w-4 mt-0.5 text-destructive" />
+        <div class="space-y-1 flex-1">
+          <AlertTitle class="font-bold text-xs text-destructive">
+            Cảnh báo an toàn tài chính: Kết quả chưa xác định (Phát hiện {{ unresolvedList.length }} giao dịch)
+          </AlertTitle>
+          <AlertDescription class="text-xs text-muted-foreground">
+            Các yêu cầu sau gặp sự cố mạng hoặc phản hồi chưa dứt điểm. Thao tác tiếp theo trên các lệnh này bị khóa an toàn cho đến khi xác thực máy chủ.
+          </AlertDescription>
+        </div>
+      </div>
+
+      <div class="divide-y divide-border/40 pt-1">
+        <div
+          v-for="ctx in unresolvedList"
+          :key="ctx.withdrawalId"
+          class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-1.5 text-xs"
         >
-          <RefreshCw class="w-3.5 h-3.5 mr-1" /> Kiểm tra lại trạng thái
-        </Button>
-      </AlertDescription>
+          <div class="flex items-center gap-2">
+            <Badge variant="outline" class="font-mono text-[11px]">#{{ ctx.withdrawalId }}</Badge>
+            <span class="font-semibold text-foreground">
+              Thao tác: {{ ctx.action === 'APPROVE' ? 'Duyệt Chi' : 'Từ Chối' }}
+            </span>
+            <span class="text-muted-foreground text-[11px] tabular-nums">
+              ({{ new Date(ctx.timestamp).toLocaleTimeString('vi-VN') }})
+            </span>
+          </div>
+
+          <Button
+            size="sm"
+            variant="outline"
+            :disabled="isVerifying"
+            @click="verifyUnknownOutcome(ctx.withdrawalId)"
+            class="h-7 text-xs font-semibold"
+          >
+            <Loader2 v-if="isVerifying" class="w-3 h-3 mr-1 animate-spin" />
+            <RefreshCw v-else class="w-3 h-3 mr-1" />
+            Kiểm tra lại trạng thái
+          </Button>
+        </div>
+      </div>
     </Alert>
 
     <!-- Error State -->
@@ -254,7 +545,7 @@ onMounted(() => {
         />
       </div>
 
-      <!-- Real Table -->
+      <!-- Authoritative Table -->
       <div v-else class="overflow-x-auto">
         <Table>
           <TableHeader>
@@ -275,7 +566,7 @@ onMounted(() => {
               class="hover:bg-muted/30 transition-colors"
             >
               <TableCell class="py-3.5 px-4 font-bold text-primary tabular-nums text-xs">
-                {{ w.id }}
+                #{{ w.id }}
               </TableCell>
 
               <TableCell class="py-3.5 px-4 text-xs">
@@ -315,41 +606,52 @@ onMounted(() => {
               </TableCell>
 
               <TableCell class="py-3.5 px-4 text-right space-x-2 text-xs">
-                <template v-if="w.status === 'PENDING' || w.status === 'PENDING_APPROVAL'">
-                  <Button
-                    v-if="hasPermission('WITHDRAWAL_APPROVE')"
-                    type="button"
-                    size="sm"
-                    @click="processWithdrawal(w, 'APPROVED')"
-                    :data-testid="`btn-approve-withdraw-${w.id}`"
-                    :disabled="processingIds.has(w.id)"
-                    class="h-8 text-xs font-semibold text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/10"
+                <template v-if="w.status === 'PENDING'">
+                  <!-- Locked due to unknown outcome -->
+                  <Badge
+                    v-if="unresolvedOperations.has(w.id)"
                     variant="outline"
+                    class="border-destructive/40 text-destructive text-[11px]"
                   >
-                    <Loader2 v-if="processingIds.has(w.id)" class="w-3.5 h-3.5 mr-1 animate-spin" />
-                    <CheckCircle2 v-else class="w-3.5 h-3.5 mr-1" /> Duyệt Chi
-                  </Button>
+                    <Lock class="w-3 h-3 mr-1 inline" /> Đang khóa an toàn
+                  </Badge>
 
-                  <Button
-                    v-if="hasPermission('WITHDRAWAL_REJECT')"
-                    type="button"
-                    size="sm"
-                    variant="destructive"
-                    @click="processWithdrawal(w, 'REJECTED')"
-                    :data-testid="`btn-reject-withdraw-${w.id}`"
-                    :disabled="processingIds.has(w.id)"
-                    class="h-8 text-xs font-semibold"
-                  >
-                    <Loader2 v-if="processingIds.has(w.id)" class="w-3.5 h-3.5 mr-1 animate-spin" />
-                    <XCircle v-else class="w-3.5 h-3.5 mr-1" /> Từ Chối
-                  </Button>
+                  <template v-else>
+                    <Button
+                      v-if="hasPermission('WITHDRAWAL_APPROVE')"
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      @click="openConfirmDialog(w, 'APPROVE')"
+                      :data-testid="`btn-approve-withdraw-${w.id}`"
+                      :disabled="processingIds.has(w.id)"
+                      class="h-8 text-xs font-semibold text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/10"
+                    >
+                      <Loader2 v-if="processingIds.has(w.id)" class="w-3.5 h-3.5 mr-1 animate-spin" />
+                      <CheckCircle2 v-else class="w-3.5 h-3.5 mr-1" /> Duyệt Chi
+                    </Button>
 
-                  <span
-                    v-if="!hasPermission('WITHDRAWAL_APPROVE') && !hasPermission('WITHDRAWAL_REJECT')"
-                    class="text-muted-foreground text-[11px]"
-                  >
-                    Chỉ xem (Thiếu quyền duyệt)
-                  </span>
+                    <Button
+                      v-if="hasPermission('WITHDRAWAL_REJECT')"
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      @click="openConfirmDialog(w, 'REJECT')"
+                      :data-testid="`btn-reject-withdraw-${w.id}`"
+                      :disabled="processingIds.has(w.id)"
+                      class="h-8 text-xs font-semibold"
+                    >
+                      <Loader2 v-if="processingIds.has(w.id)" class="w-3.5 h-3.5 mr-1 animate-spin" />
+                      <XCircle v-else class="w-3.5 h-3.5 mr-1" /> Từ Chối
+                    </Button>
+
+                    <span
+                      v-if="!hasPermission('WITHDRAWAL_APPROVE') && !hasPermission('WITHDRAWAL_REJECT')"
+                      class="text-muted-foreground text-[11px]"
+                    >
+                      Chỉ xem (Thiếu quyền duyệt)
+                    </span>
+                  </template>
                 </template>
 
                 <span v-else class="text-muted-foreground text-[11px] font-medium">
@@ -361,5 +663,90 @@ onMounted(() => {
         </Table>
       </div>
     </Card>
+
+    <!-- REAL CONFIRMATION DIALOG (D2-PRE-01) -->
+    <AlertDialog :open="confirmDialog.isOpen" @update:open="(v) => !v && closeConfirmDialog()">
+      <AlertDialogContent class="max-w-md">
+        <AlertDialogHeader>
+          <AlertDialogTitle class="text-base font-bold flex items-center gap-2">
+            <CheckCircle2 v-if="confirmDialog.action === 'APPROVE'" class="w-5 h-5 text-emerald-600" />
+            <XCircle v-else class="w-5 h-5 text-destructive" />
+            <span>
+              {{ confirmDialog.action === 'APPROVE' ? 'Xác Nhận Phê Duyệt Giải Ngân' : 'Xác Nhận Từ Chối Yêu Cầu Rút Tiền' }}
+            </span>
+          </AlertDialogTitle>
+          <AlertDialogDescription class="text-xs space-y-2 pt-1 text-muted-foreground">
+            <p>
+              {{ confirmDialog.action === 'APPROVE'
+                ? 'Hành động này sẽ ghi nhận phê duyệt lệnh giải ngân, khấu trừ số dư ký quỹ bị khóa (Locked Balance) và ghi nhận vào sổ cái ví đối tác.'
+                : 'Hành động này sẽ từ chối lệnh rút tiền và hoàn trả toàn bộ số tiền đang khóa về ví khả dụng (Available Balance) của nhà xe.'
+              }}
+            </p>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+
+        <!-- Summary of verified financial context -->
+        <div v-if="confirmDialog.item" class="p-3 rounded-lg bg-muted/40 border border-border space-y-1.5 text-xs">
+          <div class="flex justify-between">
+            <span class="text-muted-foreground">Mã yêu cầu:</span>
+            <span class="font-bold text-foreground">#{{ confirmDialog.item.id }}</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-muted-foreground">Nhà xe thụ hưởng:</span>
+            <span class="font-bold text-foreground">{{ confirmDialog.item.operatorName }}</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-muted-foreground">Số tiền yêu cầu:</span>
+            <span class="font-extrabold text-emerald-600 tabular-nums">
+              {{ Number(confirmDialog.item.amount).toLocaleString('vi-VN') }} đ
+            </span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-muted-foreground">Tài khoản nhận:</span>
+            <span class="font-mono text-[11px] text-foreground">
+              {{ confirmDialog.item.bankName }} - {{ maskAccountNumber(confirmDialog.item.accountNumber, confirmDialog.item.id) }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Note input -->
+        <div class="space-y-1.5 py-1 text-xs">
+          <label class="block font-semibold text-foreground">
+            {{ confirmDialog.action === 'APPROVE' ? 'Ghi chú phê duyệt (Tùy chọn)' : 'Lý do từ chối (Bắt buộc tối thiểu 5 ký tự) *' }}
+          </label>
+          <textarea
+            v-model="confirmDialog.adminNote"
+            rows="2"
+            :placeholder="confirmDialog.action === 'APPROVE' ? 'Nhập mã giao dịch ngân hàng hoặc ghi chú nội bộ...' : 'Nhập chi tiết lý do từ chối để đối tác nhận thông báo...'"
+            class="w-full p-2 rounded-md border border-input bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          ></textarea>
+        </div>
+
+        <Alert v-if="confirmDialog.error" variant="destructive" class="py-2 text-xs">
+          <AlertCircle class="h-4 w-4" />
+          <AlertDescription>{{ confirmDialog.error }}</AlertDescription>
+        </Alert>
+
+        <AlertDialogFooter>
+          <AlertDialogCancel :disabled="confirmDialog.isSubmitting" class="text-xs">
+            Hủy Bỏ
+          </AlertDialogCancel>
+          <AlertDialogAction
+            @click="executeWithdrawalMutation"
+            :disabled="confirmDialog.isSubmitting"
+            data-testid="btn-confirm-withdrawal-action"
+            :class="[
+              'text-xs font-semibold',
+              confirmDialog.action === 'APPROVE'
+                ? 'bg-primary hover:bg-primary/90 text-primary-foreground'
+                : 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+            ]"
+          >
+            <Loader2 v-if="confirmDialog.isSubmitting" class="w-3.5 h-3.5 mr-1.5 animate-spin inline" />
+            {{ confirmDialog.action === 'APPROVE' ? 'Xác Nhận Duyệt Chi' : 'Xác Nhận Từ Chối' }}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </div>
 </template>

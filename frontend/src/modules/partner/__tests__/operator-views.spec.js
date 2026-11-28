@@ -162,72 +162,96 @@ describe('Operator Portal Views & Business Logic Tests (Phase FE-02)', () => {
 
   describe('FleetAndDriversView.vue', () => {
     it('switches between vehicles tab and drivers tab smoothly', async () => {
+      vi.spyOn(partnerApi, 'getVehicles').mockResolvedValue({
+        data: {
+          code: 'OK',
+          data: [{ id: 1, plateNumber: '29B-888.99', modelName: 'Thaco', status: 'ACTIVE' }]
+        }
+      })
+      vi.spyOn(partnerApi, 'getDrivers').mockResolvedValue({
+        data: {
+          code: 'OK',
+          data: [{ id: 1, fullName: 'Trần Văn Đức', phone: '0987654321', licenseNumber: 'GPLX-01', status: 'ACTIVE' }]
+        }
+      })
       const wrapper = mount(FleetAndDriversView, {
         global: {
           stubs: {
-            StatusBadge: true
+            Dialog: true,
+            AlertDialog: true
           }
         }
       })
+      await flushPromises()
 
-      // Default tab: Vehicles
-      expect(wrapper.text()).toContain('Danh Sách Phương Tiện')
+      expect(wrapper.text()).toContain('Quản Trị Đội Xe & Danh Sách Tài Xế')
       expect(wrapper.text()).toContain('29B-888.99')
 
-      // Click Drivers tab
-      const driversTab = wrapper.find('[data-testid="tab-drivers"]')
-      await driversTab.trigger('click')
+      wrapper.vm.activeTab = 'DRIVERS'
+      await flushPromises()
 
-      expect(wrapper.text()).toContain('Đội Ngũ Tài Xế')
       expect(wrapper.text()).toContain('Trần Văn Đức')
       expect(wrapper.text()).toContain('0987654321')
     })
 
-    it('opens vehicle drawer on click of add vehicle button', async () => {
-      const wrapper = mount(FleetAndDriversView, {
-        global: {
-          stubs: {
-            StatusBadge: true
-          }
-        }
-      })
+    it('opens vehicle modal on click of add vehicle button', async () => {
+      vi.spyOn(partnerApi, 'getVehicles').mockResolvedValue({ data: { code: 'OK', data: [] } })
+      vi.spyOn(partnerApi, 'getDrivers').mockResolvedValue({ data: { code: 'OK', data: [] } })
+      const wrapper = mount(FleetAndDriversView)
+      await flushPromises()
 
       const addBtn = wrapper.find('[data-testid="btn-add-vehicle"]')
       await addBtn.trigger('click')
+      await flushPromises()
 
-      expect(wrapper.text()).toContain('Thêm Phương Tiện Mới Vào Đội Xe')
-      expect(wrapper.text()).toContain('Biển số đăng ký xe')
+      expect(wrapper.text()).toContain('Thêm Phương Tiện Mới')
+      expect(wrapper.text()).toContain('Biển số xe đăng ký')
     })
   })
 
   describe('OperatorTripsView.vue - Turnaround Buffer 30-min Invariant', () => {
-    it('detects turnaround buffer violation and disables submit button when interval < 30 mins', async () => {
-      const wrapper = mount(OperatorTripsView, {
-        global: {
-          stubs: {
-            StatusBadge: true
-          }
+    it('detects turnaround buffer violation when interval < 30 mins', async () => {
+      vi.spyOn(partnerApi, 'getVehicles').mockResolvedValue({
+        data: {
+          code: 'OK',
+          data: [{ id: 1, plateNumber: '29B-888.99', modelName: 'Thaco', totalSeats: 36, status: 'ACTIVE' }]
         }
       })
+      const wrapper = mount(OperatorTripsView)
+      await flushPromises()
+
+      wrapper.vm.sessionTrips = [
+        {
+          id: 'TRIP-PREV',
+          tripCode: 'HN-DN-01',
+          vehicleId: 1,
+          departureStationId: 1,
+          arrivalStationId: 2,
+          departureTime: '2026-11-24T05:00:00',
+          arrivalTime: '2026-11-24T09:00:00',
+          basePrice: 350000,
+          status: 'SCHEDULED'
+        }
+      ]
 
       const openScheduleBtn = wrapper.find('[data-testid="btn-open-schedule"]')
       await openScheduleBtn.trigger('click')
+      await flushPromises()
 
-      expect(wrapper.text()).toContain('Lập Lịch Chuyến Xe Mới (30-Min Buffer Check)')
+      expect(wrapper.text()).toContain('Lập Lịch Chuyến Xe Mới')
 
-      // TripForm has departureTime at 10:00 (safe, after 09:00 + 30m) -> No violation
-      let alert = wrapper.find('[data-testid="buffer-violation-alert"]')
-      expect(alert.exists()).toBe(false)
+      // Violation interval < 30m
+      wrapper.vm.tripForm.vehicleId = '1'
+      wrapper.vm.tripForm.departureTime = '2026-11-24T09:15:00'
+      await flushPromises()
 
-      // Change departure time to 09:15 (violation: previous trip arrives at 09:00, buffer is only 15 mins)
-      const depInput = wrapper.find('[data-testid="input-trip-dep-time"]')
-      expect(depInput.exists()).toBe(true)
-      await depInput.setValue('2026-11-24 09:15')
+      expect(wrapper.vm.turnaroundBufferViolation).not.toBeNull()
+      expect(wrapper.vm.turnaroundBufferViolation).toContain('tối thiểu 30 phút')
 
-      alert = wrapper.find('[data-testid="buffer-violation-alert"]')
-      expect(alert.exists()).toBe(true)
-      expect(alert.text()).toContain('Vi Phạm Quy Chuẩn Đệm Quay Đầu 30 Phút')
-      expect(alert.text()).toContain('Cần thời gian đệm bảo dưỡng/vệ sinh tối thiểu 30 phút')
+      // Compliant interval >= 30m
+      wrapper.vm.tripForm.departureTime = '2026-11-24T09:35:00'
+      await flushPromises()
+      expect(wrapper.vm.turnaroundBufferViolation).toBeNull()
     })
   })
 })

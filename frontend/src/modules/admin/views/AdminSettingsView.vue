@@ -13,20 +13,24 @@ import {
   RefreshCw,
   Loader2,
   AlertCircle,
-  Save
+  AlertTriangle,
+  Save,
+  Info
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter
-} from '@/components/ui/dialog'
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction
+} from '@/components/ui/alert-dialog'
 import {
   Table,
   TableHeader,
@@ -53,6 +57,8 @@ const stationsLoading = ref(false)
 const stationsError = ref('')
 const newStation = ref({ id: '', name: '', province: '' })
 const editingStationId = ref(null)
+const isSubmittingStation = ref(false)
+const stationToDelete = ref(null)
 
 async function fetchStations() {
   if (!hasPermission('STATION_VIEW')) return
@@ -71,17 +77,21 @@ async function fetchStations() {
         status: s.status || 'ACTIVE'
       }))
     } else {
-      stations.value = []
+      throw new Error('Dữ liệu danh mục bến xe không đúng định dạng.')
     }
   } catch (err) {
     stationsError.value = err?.response?.data?.message || err?.message || 'Không thể tải danh sách bến xe.'
+    stations.value = []
   } finally {
     stationsLoading.value = false
   }
 }
 
 async function handleAddOrUpdateStation() {
-  if (!hasPermission('STATION_CREATE_UPDATE_DELETE')) return
+  if (!hasPermission('STATION_CREATE_UPDATE_DELETE')) {
+    toast.error('Bạn không có quyền quản lý bến xe (Yêu cầu STATION_CREATE_UPDATE_DELETE).')
+    return
+  }
   if (!newStation.value.id.trim() || !newStation.value.name.trim()) {
     toast.error('Vui lòng nhập Mã bến xe và Tên bến xe')
     return
@@ -91,40 +101,35 @@ async function handleAddOrUpdateStation() {
   const cleanName = newStation.value.name.trim()
   const cleanCity = newStation.value.province.trim() || 'Việt Nam'
 
-  if (editingStationId.value) {
-    const target = stations.value.find(s => s.id === editingStationId.value)
-    if (target) {
-      target.id = cleanCode
-      target.code = cleanCode
-      target.name = cleanName
-      target.province = cleanCity
+  isSubmittingStation.value = true
+  try {
+    if (editingStationId.value) {
+      const target = stations.value.find(s => s.id === editingStationId.value)
+      const targetId = target?.rawId || editingStationId.value
+      await adminApi.updateStation(targetId, {
+        code: cleanCode,
+        name: cleanName,
+        city: cleanCity
+      })
+      toast.success(`Cập nhật bến xe ${cleanName} thành công`)
+      editingStationId.value = null
+    } else {
+      await adminApi.createStation({
+        code: cleanCode,
+        name: cleanName,
+        city: cleanCity
+      })
+      toast.success(`Thêm bến xe ${cleanName} thành công`)
     }
-    const targetId = target?.rawId || editingStationId.value
-    editingStationId.value = null
-    adminApi.updateStation(targetId, {
-      code: cleanCode,
-      name: cleanName,
-      city: cleanCity
-    }).catch(() => {})
-    toast.success(`Cập nhật bến xe ${cleanName} thành công`)
-  } else {
-    stations.value.push({
-      id: cleanCode,
-      rawId: Date.now(),
-      code: cleanCode,
-      name: cleanName,
-      province: cleanCity,
-      status: 'ACTIVE'
-    })
-    adminApi.createStation({
-      code: cleanCode,
-      name: cleanName,
-      city: cleanCity
-    }).catch(() => {})
-    toast.success(`Thêm bến xe ${cleanName} thành công`)
+    newStation.value = { id: '', name: '', province: '' }
+    await fetchStations()
+  } catch (err) {
+    const msg = err?.response?.data?.message || err?.message || 'Có lỗi xảy ra khi lưu bến xe.'
+    toast.error(msg)
+    // Preserve form values on failure for user correction
+  } finally {
+    isSubmittingStation.value = false
   }
-
-  newStation.value = { id: '', name: '', province: '' }
 }
 
 function startEditStation(station) {
@@ -141,30 +146,54 @@ function cancelEditStation() {
   newStation.value = { id: '', name: '', province: '' }
 }
 
-async function handleDeleteStation(station) {
-  if (!hasPermission('STATION_CREATE_UPDATE_DELETE')) return
+function confirmDeleteStation(station) {
+  stationToDelete.value = station
+}
+
+async function executeDeleteStation() {
+  if (!stationToDelete.value || !hasPermission('STATION_CREATE_UPDATE_DELETE')) return
+  const target = stationToDelete.value
+  isSubmittingStation.value = true
   try {
-    const targetId = station.rawId || station.id
+    const targetId = target.rawId || target.id
     await adminApi.deleteStation(targetId)
-    toast.success('Đã xóa bến xe thành công')
-  } catch (_) {}
-  stations.value = stations.value.filter(s => s.id !== station.id)
+    toast.success(`Đã xóa bến xe ${target.name} thành công`)
+    stationToDelete.value = null
+    await fetchStations()
+  } catch (err) {
+    const msg = err?.response?.data?.message || err?.message || 'Không thể xóa bến xe do ràng buộc dữ liệu chuyến.'
+    toast.error(msg)
+  } finally {
+    isSubmittingStation.value = false
+  }
 }
 
 // =========================================================================
-// 2. SYSTEM TRIPS CATALOG (TBL-TRIPS)
+// 2. SYSTEM TRIPS CATALOG (TBL-TRIPS) - CreateTripCommand compliant
 // =========================================================================
 const trips = ref([])
 const tripsLoading = ref(false)
 const tripsError = ref('')
 const tripForm = ref({
   tripCode: '',
-  route: '',
-  departureTime: '2026-12-05 21:00',
+  departureStationId: '',
+  arrivalStationId: '',
+  departureTime: '',
+  arrivalTime: '',
+  transportType: 'BUS',
   basePrice: 400000,
-  totalSeats: 34
+  totalRows: 9,
+  seatsPerRow: 4,
+  vipRows: 2
 })
-const editingTripId = ref(null)
+const isSubmittingTrip = ref(false)
+const tripToCancel = ref(null)
+
+const calculatedSeats = computed(() => {
+  const rows = Number(tripForm.value.totalRows) || 0
+  const perRow = Number(tripForm.value.seatsPerRow) || 0
+  return rows * perRow
+})
 
 async function fetchTrips() {
   if (!hasPermission('TRIP_MANAGE_CRUD')) return
@@ -183,86 +212,136 @@ async function fetchTrips() {
           : (t.departureStationName && t.arrivalStationName
               ? `${t.departureStationName} → ${t.arrivalStationName}`
               : (t.route || 'Tuyến liên tỉnh')),
-        departureTime: t.departureTime ? String(t.departureTime).replace('T', ' ').substring(0, 16) : '2026-12-01 20:00',
-        basePrice: Number(t.basePrice) || 400000,
-        totalSeats: t.totalSeats || 34,
+        departureTime: t.departureTime ? String(t.departureTime).replace('T', ' ').substring(0, 16) : '---',
+        arrivalTime: t.arrivalTime ? String(t.arrivalTime).replace('T', ' ').substring(0, 16) : '---',
+        transportType: t.transportType || 'BUS',
+        basePrice: Number(t.basePrice) || 0,
+        totalSeats: t.totalSeats || 0,
         status: t.status || 'SCHEDULED'
       }))
     } else {
-      trips.value = []
+      throw new Error('Dữ liệu danh sách chuyến xe không đúng định dạng.')
     }
   } catch (err) {
     tripsError.value = err?.response?.data?.message || err?.message || 'Không thể tải danh sách chuyến xe.'
+    trips.value = []
   } finally {
     tripsLoading.value = false
   }
 }
 
-async function handleAddOrUpdateTrip() {
-  if (!hasPermission('TRIP_MANAGE_CRUD')) return
-  if (!tripForm.value.tripCode.trim() || !tripForm.value.route.trim()) {
-    toast.error('Vui lòng nhập Mã chuyến xe và Lộ trình')
+async function handleAddTrip() {
+  if (!hasPermission('TRIP_MANAGE_CRUD')) {
+    toast.error('Bạn không có quyền quản lý chuyến xe (Yêu cầu TRIP_MANAGE_CRUD).')
     return
   }
 
   const cleanTripCode = tripForm.value.tripCode.trim().toUpperCase()
-  const cleanRoute = tripForm.value.route.trim()
-  const cleanDepTime = tripForm.value.departureTime || '2026-12-05 21:00'
-  const cleanBasePrice = Number(tripForm.value.basePrice) || 400000
-  const cleanSeats = Number(tripForm.value.totalSeats) || 34
+  if (!cleanTripCode || cleanTripCode.length < 3 || cleanTripCode.length > 20) {
+    toast.error('Mã chuyến xe phải từ 3 đến 20 ký tự (chữ cái, số hoặc gạch ngang).')
+    return
+  }
+
+  if (!tripForm.value.departureStationId || !tripForm.value.arrivalStationId) {
+    toast.error('Vui lòng chọn bến đi và bến đến.')
+    return
+  }
+
+  if (Number(tripForm.value.departureStationId) === Number(tripForm.value.arrivalStationId)) {
+    toast.error('Bến đi và bến đến không được trùng nhau.')
+    return
+  }
+
+  if (!tripForm.value.departureTime || !tripForm.value.arrivalTime) {
+    toast.error('Vui lòng chọn thời gian khởi hành và thời gian đến nơi.')
+    return
+  }
+
+  const depMs = new Date(tripForm.value.departureTime).getTime()
+  const arrMs = new Date(tripForm.value.arrivalTime).getTime()
+  if (isNaN(depMs) || isNaN(arrMs) || arrMs <= depMs) {
+    toast.error('Thời gian đến nơi phải sau thời gian khởi hành.')
+    return
+  }
+
+  const price = Number(tripForm.value.basePrice)
+  if (!price || price <= 0) {
+    toast.error('Giá vé cơ bản phải lớn hơn 0.')
+    return
+  }
+
+  const totalRows = Number(tripForm.value.totalRows)
+  const seatsPerRow = Number(tripForm.value.seatsPerRow)
+  const vipRows = Number(tripForm.value.vipRows)
+
+  if (totalRows < 1 || totalRows > 60 || seatsPerRow < 1 || seatsPerRow > 10 || vipRows < 0 || vipRows > totalRows) {
+    toast.error('Cấu hình số hàng ghế không hợp lệ (Tổng hàng: 1-60, Ghế/hàng: 1-10, Hàng VIP <= Tổng hàng).')
+    return
+  }
+
+  // Format to standard ISO-8601 without timezone offset for backend LocalDateTime
+  const formatIso = (val) => {
+    return val.length === 16 ? `${val}:00` : val
+  }
 
   const payload = {
     tripCode: cleanTripCode,
-    departureStationId: stations.value[0]?.rawId || 1,
-    arrivalStationId: stations.value[1]?.rawId || 2,
-    departureTime: cleanDepTime.includes('T') ? cleanDepTime : `${cleanDepTime.replace(' ', 'T')}:00`,
-    arrivalTime: '2026-12-06T05:00:00',
-    transportType: 'BUS',
-    basePrice: cleanBasePrice,
-    totalRows: Math.ceil(cleanSeats / 4),
-    seatsPerRow: 4,
-    vipRows: 2
+    departureStationId: Number(tripForm.value.departureStationId),
+    arrivalStationId: Number(tripForm.value.arrivalStationId),
+    departureTime: formatIso(tripForm.value.departureTime),
+    arrivalTime: formatIso(tripForm.value.arrivalTime),
+    transportType: tripForm.value.transportType,
+    basePrice: price,
+    totalRows,
+    seatsPerRow,
+    vipRows
   }
 
-  if (editingTripId.value) {
-    const target = trips.value.find(t => t.id === editingTripId.value)
-    if (target) {
-      target.tripCode = cleanTripCode
-      target.route = cleanRoute
-      target.departureTime = cleanDepTime
-      target.basePrice = cleanBasePrice
-      target.totalSeats = cleanSeats
+  isSubmittingTrip.value = true
+  try {
+    await adminApi.createTrip(payload)
+    toast.success(`Tạo mới chuyến xe ${cleanTripCode} thành công!`)
+    tripForm.value = {
+      tripCode: '',
+      departureStationId: '',
+      arrivalStationId: '',
+      departureTime: '',
+      arrivalTime: '',
+      transportType: 'BUS',
+      basePrice: 400000,
+      totalRows: 9,
+      seatsPerRow: 4,
+      vipRows: 2
     }
-    const updatedId = editingTripId.value
-    editingTripId.value = null
-    adminApi.updateTrip(updatedId, payload).catch(() => {})
-    toast.success(`Cập nhật chuyến ${cleanTripCode} thành công`)
-  } else {
-    trips.value.unshift({
-      id: `TRIP-${100 + trips.value.length + 1}`,
-      rawId: Date.now(),
-      tripCode: cleanTripCode,
-      route: cleanRoute,
-      departureTime: cleanDepTime,
-      basePrice: cleanBasePrice,
-      totalSeats: cleanSeats,
-      status: 'SCHEDULED'
-    })
-    adminApi.createTrip(payload).catch(() => {})
-    toast.success(`Tạo mới chuyến ${cleanTripCode} thành công`)
+    await fetchTrips()
+  } catch (err) {
+    const msg = err?.response?.data?.message || err?.message || 'Có lỗi xảy ra khi tạo chuyến xe.'
+    toast.error(msg)
+  } finally {
+    isSubmittingTrip.value = false
   }
-
-  tripForm.value = { tripCode: '', route: '', departureTime: '2026-12-05 21:00', basePrice: 400000, totalSeats: 34 }
 }
 
-async function handleCancelTrip(trip) {
-  if (!hasPermission('TRIP_MANAGE_CRUD')) return
-  trip.status = 'CANCELLED'
+function confirmCancelTrip(trip) {
+  tripToCancel.value = trip
+}
+
+async function executeCancelTrip() {
+  if (!tripToCancel.value || !hasPermission('TRIP_MANAGE_CRUD')) return
+  const trip = tripToCancel.value
+  isSubmittingTrip.value = true
   try {
     const targetId = trip.rawId || trip.id
     await adminApi.cancelTrip(targetId)
-    toast.success(`Đã hủy chuyến ${trip.tripCode}`)
-  } catch (_) {}
+    toast.success(`Đã hủy lịch trình chuyến xe ${trip.tripCode}`)
+    tripToCancel.value = null
+    await fetchTrips()
+  } catch (err) {
+    const msg = err?.response?.data?.message || err?.message || 'Không thể hủy chuyến xe do ràng buộc vé đã bán.'
+    toast.error(msg)
+  } finally {
+    isSubmittingTrip.value = false
+  }
 }
 
 // =========================================================================
@@ -275,10 +354,16 @@ const systemSettings = ref({
   turnaroundBufferMinutes: 30,
   escrowSettlementDelayHours: 2
 })
+const settingsLoading = ref(false)
+const settingsError = ref('')
+const isSavingSettings = ref(false)
 const saveSuccessMsg = ref('')
+const isConfirmSaveOpen = ref(false)
 
 async function fetchSystemSettings() {
   if (!hasPermission('SYSTEM_SETTINGS_MANAGE')) return
+  settingsLoading.value = true
+  settingsError.value = ''
   try {
     const res = await adminApi.getSystemSettings()
     const data = res?.data?.data !== undefined ? res.data.data : res?.data
@@ -286,38 +371,61 @@ async function fetchSystemSettings() {
       if (data.platformName || data['platform.name']) {
         systemSettings.value.platformName = data.platformName || data['platform.name']
       }
-      if (data.defaultCommissionRate || data['commission.global_rate']) {
+      if (data.defaultCommissionRate !== undefined || data['commission.global_rate'] !== undefined) {
         systemSettings.value.defaultCommissionRate = Number(data.defaultCommissionRate || data['commission.global_rate'])
       }
-      if (data.seatHoldTtlMinutes || data['booking.hold_timeout_minutes']) {
+      if (data.seatHoldTtlMinutes !== undefined || data['booking.hold_timeout_minutes'] !== undefined) {
         systemSettings.value.seatHoldTtlMinutes = Number(data.seatHoldTtlMinutes || data['booking.hold_timeout_minutes'])
       }
-      if (data.turnaroundBufferMinutes || data['fleet.turnaround_buffer_minutes']) {
+      if (data.turnaroundBufferMinutes !== undefined || data['fleet.turnaround_buffer_minutes'] !== undefined) {
         systemSettings.value.turnaroundBufferMinutes = Number(data.turnaroundBufferMinutes || data['fleet.turnaround_buffer_minutes'])
       }
-      if (data.escrowSettlementDelayHours || data['escrow.settlement_delay_hours']) {
+      if (data.escrowSettlementDelayHours !== undefined || data['escrow.settlement_delay_hours'] !== undefined) {
         systemSettings.value.escrowSettlementDelayHours = Number(data.escrowSettlementDelayHours || data['escrow.settlement_delay_hours'])
       }
     }
-  } catch (_) {}
+  } catch (err) {
+    settingsError.value = err?.response?.data?.message || err?.message || 'Không thể tải cấu hình tham số hệ thống.'
+  } finally {
+    settingsLoading.value = false
+  }
 }
 
-async function handleSaveSettings() {
+function handleOpenConfirmSave() {
+  if (!hasPermission('SYSTEM_SETTINGS_MANAGE')) {
+    toast.error('Bạn không có quyền quản trị tham số hệ thống (Yêu cầu SYSTEM_SETTINGS_MANAGE).')
+    return
+  }
+  isConfirmSaveOpen.value = true
+}
+
+async function executeSaveSettings() {
   if (!hasPermission('SYSTEM_SETTINGS_MANAGE')) return
+  isSavingSettings.value = true
+  saveSuccessMsg.value = ''
+  isConfirmSaveOpen.value = false
 
-  saveSuccessMsg.value = 'Đã lưu cấu hình tham số toàn sàn và đồng bộ Redis Cache thành công!'
-  adminApi.updateSystemSettings({
-    platformName: systemSettings.value.platformName,
-    defaultCommissionRate: String(systemSettings.value.defaultCommissionRate),
-    seatHoldTtlMinutes: String(systemSettings.value.seatHoldTtlMinutes),
-    turnaroundBufferMinutes: String(systemSettings.value.turnaroundBufferMinutes),
-    escrowSettlementDelayHours: String(systemSettings.value.escrowSettlementDelayHours)
-  }).catch(() => {})
+  try {
+    await adminApi.updateSystemSettings({
+      platformName: systemSettings.value.platformName,
+      defaultCommissionRate: String(systemSettings.value.defaultCommissionRate),
+      seatHoldTtlMinutes: String(systemSettings.value.seatHoldTtlMinutes),
+      turnaroundBufferMinutes: String(systemSettings.value.turnaroundBufferMinutes),
+      escrowSettlementDelayHours: String(systemSettings.value.escrowSettlementDelayHours)
+    })
 
-  toast.success('Đã lưu cấu hình tham số toàn sàn thành công')
-  setTimeout(() => {
-    saveSuccessMsg.value = ''
-  }, 4000)
+    saveSuccessMsg.value = 'Đã lưu cấu hình tham số toàn sàn vào cơ sở dữ liệu thành công!'
+    toast.success('Đã lưu cấu hình tham số toàn sàn thành công')
+    setTimeout(() => {
+      saveSuccessMsg.value = ''
+    }, 5000)
+    await fetchSystemSettings()
+  } catch (err) {
+    const msg = err?.response?.data?.message || err?.message || 'Lỗi khi lưu tham số toàn sàn.'
+    toast.error(msg)
+  } finally {
+    isSavingSettings.value = false
+  }
 }
 
 onMounted(async () => {
@@ -336,7 +444,7 @@ onMounted(async () => {
       <div>
         <h1 class="text-2xl font-bold tracking-tight text-foreground">Cấu Hình Toàn Sàn & Danh Mục Tuyến Vận Tải</h1>
         <p class="text-xs text-muted-foreground mt-1">
-          Quản trị tham số hệ thống toàn cục, danh mục bến xe liên tỉnh và lịch trình tuyến xe đồng bộ Redis Cache.
+          Quản trị tham số hệ thống toàn cục, danh mục bến xe liên tỉnh và lịch trình tuyến xe.
         </p>
       </div>
 
@@ -381,18 +489,26 @@ onMounted(async () => {
     <section v-show="activeSection === 'all' || activeSection === 'system'" class="space-y-4">
       <Card class="border-border shadow-sm">
         <CardHeader class="pb-3 border-b border-border flex flex-row items-center justify-between">
-          <CardTitle class="text-base font-bold flex items-center gap-2">
-            <SettingsIcon class="w-4 h-4 text-primary" />
-            <span>Cấu Hình Tham Số Vận Hành Toàn Sàn (Redis Cache Sync)</span>
-          </CardTitle>
+          <div>
+            <CardTitle class="text-base font-bold flex items-center gap-2">
+              <SettingsIcon class="w-4 h-4 text-primary" />
+              <span>Cấu Hình Tham Số Vận Hành Toàn Sàn</span>
+            </CardTitle>
+            <p class="text-[11px] text-muted-foreground mt-0.5">
+              Các tham số được lưu trong TBL-SYSTEM-SETTINGS và tiêu thụ theo từng dịch vụ miền chuyên biệt.
+            </p>
+          </div>
           <Button
             v-if="hasPermission('SYSTEM_SETTINGS_MANAGE')"
             size="sm"
             data-testid="btn-save-settings"
-            @click="handleSaveSettings"
+            :disabled="isSavingSettings || settingsLoading"
+            @click="handleOpenConfirmSave"
             class="text-xs font-semibold"
           >
-            <Save class="w-3.5 h-3.5 mr-1.5" /> Lưu Tham Số
+            <Loader2 v-if="isSavingSettings" class="w-3.5 h-3.5 mr-1.5 animate-spin" />
+            <Save v-else class="w-3.5 h-3.5 mr-1.5" />
+            Lưu Tham Số
           </Button>
         </CardHeader>
 
@@ -404,15 +520,24 @@ onMounted(async () => {
             <AlertDescription>{{ saveSuccessMsg }}</AlertDescription>
           </Alert>
 
+          <!-- Alert Error -->
+          <Alert v-if="settingsError" variant="destructive">
+            <AlertCircle class="h-4 w-4" />
+            <AlertTitle>Lỗi tải tham số</AlertTitle>
+            <AlertDescription>{{ settingsError }}</AlertDescription>
+          </Alert>
+
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div class="space-y-1.5">
               <label class="block font-semibold text-foreground">Tên Nền Tảng Thương Hiệu Sàn</label>
               <Input
                 v-model="systemSettings.platformName"
-                :disabled="!hasPermission('SYSTEM_SETTINGS_MANAGE')"
+                :disabled="!hasPermission('SYSTEM_SETTINGS_MANAGE') || isSavingSettings"
                 class="h-9 text-xs"
               />
-              <p class="text-[11px] text-muted-foreground">Hiển thị trên hóa đơn, email vé và VNPay.</p>
+              <p class="text-[11px] text-muted-foreground">
+                Tiêu thụ thực tế: PublicSettingsController đọc để hiển thị thông tin nền tảng trên giao diện.
+              </p>
             </div>
 
             <div class="space-y-1.5">
@@ -423,46 +548,76 @@ onMounted(async () => {
                   type="number"
                   step="0.5"
                   min="0"
-                  max="50"
+                  max="100"
                   data-testid="input-global-commission"
-                  :disabled="!hasPermission('SYSTEM_SETTINGS_MANAGE')"
+                  :disabled="!hasPermission('SYSTEM_SETTINGS_MANAGE') || isSavingSettings"
                   class="h-9 text-xs pr-8 tabular-nums font-bold"
                 />
                 <span class="absolute right-3 top-2 text-muted-foreground text-xs">%</span>
               </div>
-              <p class="text-[11px] text-muted-foreground">Áp dụng cho các nhà xe không có hoa hồng riêng.</p>
+              <p class="text-[11px] text-muted-foreground">
+                Tiêu thụ thực tế: PartnerQueryService.getGlobalCommissionRate() áp dụng cho nhà xe không có tỷ lệ riêng.
+              </p>
             </div>
 
             <div class="space-y-1.5">
-              <label class="block font-semibold text-foreground">Thời Gian Giữ Chỗ Tạm Thời (Phút)</label>
+              <label class="block font-semibold text-foreground">
+                Thời Gian Giữ Chỗ Tạm Thời (Phút)
+                <Badge variant="outline" class="ml-1 text-[9px] text-amber-600 border-amber-300">Lưu DB (Static 10m in code)</Badge>
+              </label>
               <div class="relative">
                 <Input
                   v-model.number="systemSettings.seatHoldTtlMinutes"
                   type="number"
                   min="5"
                   max="30"
-                  :disabled="!hasPermission('SYSTEM_SETTINGS_MANAGE')"
+                  :disabled="!hasPermission('SYSTEM_SETTINGS_MANAGE') || isSavingSettings"
                   class="h-9 text-xs pr-12 tabular-nums font-bold"
                 />
                 <span class="absolute right-3 top-2 text-muted-foreground text-xs">phút</span>
               </div>
-              <p class="text-[11px] text-muted-foreground">TTL khóa phân tán Redis cho mỗi phiên đặt vé.</p>
+              <p class="text-[11px] text-muted-foreground">
+                Lưu trữ cấu hình DB. Lưu ý: BookingCommandServiceImpl hiện cố định thời lượng giữ chỗ 10 phút qua hằng số miền.
+              </p>
             </div>
 
             <div class="space-y-1.5">
-              <label class="block font-semibold text-foreground">Thời Gian Khóa Quỹ Escrow Sau Chuyến (Giờ)</label>
+              <label class="block font-semibold text-foreground">
+                Khoảng Đệm Quay Đầu Tuyến (Phút)
+                <Badge variant="outline" class="ml-1 text-[9px] text-amber-600 border-amber-300">Lưu DB (Static 30m in code)</Badge>
+              </label>
               <div class="relative">
+                <Input
+                  v-model.number="systemSettings.turnaroundBufferMinutes"
+                  type="number"
+                  min="15"
+                  max="120"
+                  :disabled="!hasPermission('SYSTEM_SETTINGS_MANAGE') || isSavingSettings"
+                  class="h-9 text-xs pr-12 tabular-nums font-bold"
+                />
+                <span class="absolute right-3 top-2 text-muted-foreground text-xs">phút</span>
+              </div>
+              <p class="text-[11px] text-muted-foreground">
+                Lưu trữ cấu hình DB. Lưu ý: PartnerCommandServiceImpl hiện cố định thời gian quay đầu 30 phút khi lập lịch.
+              </p>
+            </div>
+
+            <div class="space-y-1.5 md:col-span-2">
+              <label class="block font-semibold text-foreground">Thời Gian Khóa Quỹ Escrow Sau Chuyến (Giờ)</label>
+              <div class="relative max-w-xs">
                 <Input
                   v-model.number="systemSettings.escrowSettlementDelayHours"
                   type="number"
                   min="1"
                   max="48"
-                  :disabled="!hasPermission('SYSTEM_SETTINGS_MANAGE')"
+                  :disabled="!hasPermission('SYSTEM_SETTINGS_MANAGE') || isSavingSettings"
                   class="h-9 text-xs pr-12 tabular-nums font-bold"
                 />
                 <span class="absolute right-3 top-2 text-muted-foreground text-xs">giờ</span>
               </div>
-              <p class="text-[11px] text-muted-foreground">Thời gian giải tỏa khiếu nại trước khi hoàn ví nhà xe.</p>
+              <p class="text-[11px] text-muted-foreground">
+                Tiêu thụ thực tế: Tham số quyết toán ví Escrow giải tỏa khiếu nại trước khi hoàn trả số dư khả dụng.
+              </p>
             </div>
           </div>
         </CardContent>
@@ -492,7 +647,7 @@ onMounted(async () => {
                 data-testid="input-station-code"
                 placeholder="VD: HN-GP, SG-MD..."
                 class="h-9 text-xs uppercase tabular-nums"
-                :disabled="!!editingStationId"
+                :disabled="!!editingStationId || isSubmittingStation"
               />
             </div>
 
@@ -504,6 +659,7 @@ onMounted(async () => {
                 v-model="newStation.name"
                 data-testid="input-station-name"
                 placeholder="VD: Bến xe Giáp Bát"
+                :disabled="isSubmittingStation"
                 class="h-9 text-xs"
               />
             </div>
@@ -514,6 +670,7 @@ onMounted(async () => {
                 v-model="newStation.province"
                 data-testid="input-station-city"
                 placeholder="VD: Hà Nội, TP. Hồ Chí Minh"
+                :disabled="isSubmittingStation"
                 class="h-9 text-xs"
               />
             </div>
@@ -523,6 +680,7 @@ onMounted(async () => {
                 v-if="editingStationId"
                 variant="outline"
                 size="sm"
+                :disabled="isSubmittingStation"
                 @click="cancelEditStation"
                 class="text-xs flex-1"
               >
@@ -532,10 +690,12 @@ onMounted(async () => {
                 v-if="hasPermission('STATION_CREATE_UPDATE_DELETE')"
                 size="sm"
                 data-testid="save-station-btn"
+                :disabled="isSubmittingStation"
                 @click="handleAddOrUpdateStation"
                 class="text-xs flex-1"
               >
-                <Plus v-if="!editingStationId" class="w-3.5 h-3.5 mr-1" />
+                <Loader2 v-if="isSubmittingStation" class="w-3.5 h-3.5 mr-1 animate-spin" />
+                <Plus v-else-if="!editingStationId" class="w-3.5 h-3.5 mr-1" />
                 <Save v-else class="w-3.5 h-3.5 mr-1" />
                 {{ editingStationId ? 'Cập Nhật' : 'Lưu Bến Xe' }}
               </Button>
@@ -550,14 +710,20 @@ onMounted(async () => {
               <CardTitle class="text-sm font-bold text-foreground">
                 Danh Mục Bến Xe Liên Tỉnh ({{ stations.length }})
               </CardTitle>
-              <Button variant="ghost" size="sm" @click="fetchStations" class="h-8 text-xs">
-                <RefreshCw class="w-3.5 h-3.5 mr-1" /> Làm mới
+              <Button variant="ghost" size="sm" :disabled="stationsLoading" @click="fetchStations" class="h-8 text-xs">
+                <RefreshCw class="w-3.5 h-3.5 mr-1" :class="{ 'animate-spin': stationsLoading }" /> Làm mới
               </Button>
             </CardHeader>
 
             <div v-if="stationsLoading" class="p-8 text-center text-xs text-muted-foreground">
               <Loader2 class="w-6 h-6 animate-spin mx-auto mb-2 text-primary" />
               Đang tải danh mục bến xe...
+            </div>
+
+            <div v-else-if="stationsError" class="p-6 text-center text-xs text-destructive space-y-2">
+              <AlertCircle class="w-6 h-6 mx-auto" />
+              <p>{{ stationsError }}</p>
+              <Button variant="outline" size="sm" @click="fetchStations" class="text-xs">Thử lại</Button>
             </div>
 
             <div v-else-if="stations.length === 0" class="p-6">
@@ -603,7 +769,7 @@ onMounted(async () => {
                         v-if="hasPermission('STATION_CREATE_UPDATE_DELETE')"
                         variant="ghost"
                         size="sm"
-                        @click="handleDeleteStation(s)"
+                        @click="confirmDeleteStation(s)"
                         class="h-7 px-2 text-xs text-destructive hover:bg-destructive/10"
                       >
                         <Trash2 class="w-3 h-3" />
@@ -628,8 +794,11 @@ onMounted(async () => {
           <CardHeader class="pb-3 border-b border-border">
             <CardTitle class="text-sm font-bold flex items-center gap-2">
               <Route class="w-4 h-4 text-primary" />
-              <span>{{ editingTripId ? 'Chỉnh Sửa Chuyến Xe' : 'Tạo Chuyến Xe Toàn Sàn' }}</span>
+              <span>Tạo Chuyến Xe Toàn Sàn (CreateTripCommand)</span>
             </CardTitle>
+            <p class="text-[11px] text-muted-foreground mt-0.5">
+              Khởi tạo chuyến xe mới với dữ liệu bến và sơ đồ ghế xác thực từ cơ sở dữ liệu.
+            </p>
           </CardHeader>
           <CardContent class="p-4 space-y-3 text-xs">
             <div class="space-y-1">
@@ -641,40 +810,144 @@ onMounted(async () => {
                 data-testid="input-trip-code"
                 placeholder="VD: VB-HN-DN-01"
                 class="h-9 text-xs uppercase tabular-nums"
+                :disabled="isSubmittingTrip"
               />
             </div>
 
-            <div class="space-y-1">
-              <label class="block font-semibold text-foreground">
-                Lộ Trình Tuyến <span class="text-destructive">*</span>
-              </label>
-              <Input
-                v-model="tripForm.route"
-                data-testid="input-trip-route"
-                placeholder="VD: Hà Nội → Đà Nẵng"
-                class="h-9 text-xs"
-              />
-            </div>
-
-            <div class="grid grid-cols-2 gap-2">
+            <!-- Station Selectors -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div class="space-y-1">
-                <label class="block font-semibold text-foreground">Giá Cơ Bản (đ)</label>
+                <label class="block font-semibold text-foreground">
+                  Bến Đi <span class="text-destructive">*</span>
+                </label>
+                <select
+                  v-model="tripForm.departureStationId"
+                  data-testid="select-dep-station"
+                  :disabled="isSubmittingTrip || stations.length === 0"
+                  class="w-full h-9 px-2 text-xs rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                >
+                  <option value="" disabled>-- Chọn bến đi --</option>
+                  <option v-for="s in stations" :key="s.rawId || s.id" :value="s.rawId || s.id">
+                    {{ s.name }} ({{ s.province }})
+                  </option>
+                </select>
+              </div>
+
+              <div class="space-y-1">
+                <label class="block font-semibold text-foreground">
+                  Bến Đến <span class="text-destructive">*</span>
+                </label>
+                <select
+                  v-model="tripForm.arrivalStationId"
+                  data-testid="select-arr-station"
+                  :disabled="isSubmittingTrip || stations.length === 0"
+                  class="w-full h-9 px-2 text-xs rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                >
+                  <option value="" disabled>-- Chọn bến đến --</option>
+                  <option v-for="s in stations" :key="s.rawId || s.id" :value="s.rawId || s.id">
+                    {{ s.name }} ({{ s.province }})
+                  </option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Departure and Arrival Datetime -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div class="space-y-1">
+                <label class="block font-semibold text-foreground">
+                  Giờ Khởi Hành <span class="text-destructive">*</span>
+                </label>
+                <Input
+                  v-model="tripForm.departureTime"
+                  type="datetime-local"
+                  data-testid="input-dep-time"
+                  :disabled="isSubmittingTrip"
+                  class="h-9 text-xs tabular-nums"
+                />
+              </div>
+
+              <div class="space-y-1">
+                <label class="block font-semibold text-foreground">
+                  Giờ Đến Nơi <span class="text-destructive">*</span>
+                </label>
+                <Input
+                  v-model="tripForm.arrivalTime"
+                  type="datetime-local"
+                  data-testid="input-arr-time"
+                  :disabled="isSubmittingTrip"
+                  class="h-9 text-xs tabular-nums"
+                />
+              </div>
+            </div>
+
+            <!-- Transport Type & Base Price -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div class="space-y-1">
+                <label class="block font-semibold text-foreground">Loại Phương Tiện</label>
+                <select
+                  v-model="tripForm.transportType"
+                  :disabled="isSubmittingTrip"
+                  class="w-full h-9 px-2 text-xs rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                >
+                  <option value="BUS">Xe Khách (BUS)</option>
+                  <option value="TRAIN">Tàu Hỏa (TRAIN)</option>
+                  <option value="FLIGHT">Máy Bay (FLIGHT)</option>
+                </select>
+              </div>
+
+              <div class="space-y-1">
+                <label class="block font-semibold text-foreground">Giá Vé Cơ Bản (đ)</label>
                 <Input
                   v-model.number="tripForm.basePrice"
                   type="number"
                   step="10000"
-                  class="h-9 text-xs tabular-nums"
+                  min="10000"
+                  :disabled="isSubmittingTrip"
+                  class="h-9 text-xs tabular-nums font-bold"
                 />
               </div>
-              <div class="space-y-1">
-                <label class="block font-semibold text-foreground">Số Lượng Ghế</label>
-                <Input
-                  v-model.number="tripForm.totalSeats"
-                  type="number"
-                  min="10"
-                  max="60"
-                  class="h-9 text-xs tabular-nums"
-                />
+            </div>
+
+            <!-- Seating Geometry (totalRows, seatsPerRow, vipRows) -->
+            <div class="p-3 bg-muted/30 rounded-lg border border-border space-y-2">
+              <span class="font-semibold text-foreground flex items-center justify-between">
+                <span>Cấu Hình Sơ Đồ Ghế</span>
+                <span class="text-primary font-mono font-bold">{{ calculatedSeats }} Chỗ</span>
+              </span>
+              <div class="grid grid-cols-3 gap-2">
+                <div class="space-y-1">
+                  <label class="block text-[11px] text-muted-foreground">Tổng Hàng (1-60)</label>
+                  <Input
+                    v-model.number="tripForm.totalRows"
+                    type="number"
+                    min="1"
+                    max="60"
+                    :disabled="isSubmittingTrip"
+                    class="h-8 text-xs tabular-nums"
+                  />
+                </div>
+                <div class="space-y-1">
+                  <label class="block text-[11px] text-muted-foreground">Ghế/Hàng (1-10)</label>
+                  <Input
+                    v-model.number="tripForm.seatsPerRow"
+                    type="number"
+                    min="1"
+                    max="10"
+                    :disabled="isSubmittingTrip"
+                    class="h-8 text-xs tabular-nums"
+                  />
+                </div>
+                <div class="space-y-1">
+                  <label class="block text-[11px] text-muted-foreground">Hàng VIP</label>
+                  <Input
+                    v-model.number="tripForm.vipRows"
+                    type="number"
+                    min="0"
+                    :max="tripForm.totalRows"
+                    :disabled="isSubmittingTrip"
+                    class="h-8 text-xs tabular-nums"
+                  />
+                </div>
               </div>
             </div>
 
@@ -683,11 +956,13 @@ onMounted(async () => {
                 v-if="hasPermission('TRIP_MANAGE_CRUD')"
                 size="sm"
                 data-testid="save-trip-btn"
-                @click="handleAddOrUpdateTrip"
-                class="w-full text-xs"
+                :disabled="isSubmittingTrip"
+                @click="handleAddTrip"
+                class="w-full text-xs font-semibold"
               >
-                <Plus class="w-3.5 h-3.5 mr-1" />
-                {{ editingTripId ? 'Cập Nhật Tuyến' : 'Lưu Chuyến Xe' }}
+                <Loader2 v-if="isSubmittingTrip" class="w-3.5 h-3.5 mr-1 animate-spin" />
+                <Plus v-else class="w-3.5 h-3.5 mr-1" />
+                Tạo Chuyến Xe
               </Button>
             </div>
           </CardContent>
@@ -697,17 +972,28 @@ onMounted(async () => {
         <div class="lg:col-span-2 space-y-3">
           <Card class="border-border shadow-sm overflow-hidden">
             <CardHeader class="p-4 border-b border-border flex flex-row items-center justify-between">
-              <CardTitle class="text-sm font-bold text-foreground">
-                Danh Mục Tuyến & Chuyến Vận Hành ({{ trips.length }})
-              </CardTitle>
-              <Button variant="ghost" size="sm" @click="fetchTrips" class="h-8 text-xs">
-                <RefreshCw class="w-3.5 h-3.5 mr-1" /> Làm mới
+              <div>
+                <CardTitle class="text-sm font-bold text-foreground">
+                  Danh Mục Tuyến & Chuyến Vận Hành ({{ trips.length }})
+                </CardTitle>
+                <p class="text-[11px] text-muted-foreground mt-0.5">
+                  Lưu ý: Không hỗ trợ sửa sơ đồ chuyến đã tạo do thiếu thông tin hình học ghế gốc trong hợp đồng đọc.
+                </p>
+              </div>
+              <Button variant="ghost" size="sm" :disabled="tripsLoading" @click="fetchTrips" class="h-8 text-xs">
+                <RefreshCw class="w-3.5 h-3.5 mr-1" :class="{ 'animate-spin': tripsLoading }" /> Làm mới
               </Button>
             </CardHeader>
 
             <div v-if="tripsLoading" class="p-8 text-center text-xs text-muted-foreground">
               <Loader2 class="w-6 h-6 animate-spin mx-auto mb-2 text-primary" />
               Đang tải danh sách chuyến xe...
+            </div>
+
+            <div v-else-if="tripsError" class="p-6 text-center text-xs text-destructive space-y-2">
+              <AlertCircle class="w-6 h-6 mx-auto" />
+              <p>{{ tripsError }}</p>
+              <Button variant="outline" size="sm" @click="fetchTrips" class="text-xs">Thử lại</Button>
             </div>
 
             <div v-else-if="trips.length === 0" class="p-6">
@@ -748,11 +1034,14 @@ onMounted(async () => {
                         v-if="t.status !== 'CANCELLED' && hasPermission('TRIP_MANAGE_CRUD')"
                         variant="ghost"
                         size="sm"
-                        @click="handleCancelTrip(t)"
+                        @click="confirmCancelTrip(t)"
                         class="h-7 px-2 text-xs text-amber-600 hover:bg-amber-50"
                       >
                         <Ban class="w-3 h-3 mr-1" /> Hủy
                       </Button>
+                      <Badge v-else-if="t.status === 'CANCELLED'" variant="outline" class="text-[10px] text-muted-foreground">
+                        Đã Hủy
+                      </Badge>
                     </TableCell>
                   </TableRow>
                 </TableBody>
@@ -762,5 +1051,102 @@ onMounted(async () => {
         </div>
       </div>
     </section>
+
+    <!-- Confirmation Dialog: Delete Station -->
+    <AlertDialog :open="!!stationToDelete" @update:open="(val) => { if (!val) stationToDelete = null }">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle class="flex items-center gap-2 text-destructive">
+            <AlertTriangle class="w-5 h-5" />
+            Xác Nhận Xóa Bến Xe Liên Tỉnh
+          </AlertDialogTitle>
+          <AlertDialogDescription class="text-xs space-y-2">
+            <p>
+              Bạn có chắc chắn muốn xóa bến xe: <strong>{{ stationToDelete?.name }}</strong> (Mã: {{ stationToDelete?.code || stationToDelete?.id }})?
+            </p>
+            <p class="text-muted-foreground">
+              Lưu ý: Bến xe đã có chuyến liên kết trong quá khứ hoặc hiện tại sẽ bị máy chủ từ chối xóa để bảo đảm toàn vẹn dữ liệu.
+            </p>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel :disabled="isSubmittingStation">Hủy bỏ</AlertDialogCancel>
+          <AlertDialogAction
+            :disabled="isSubmittingStation"
+            class="bg-destructive text-destructive-foreground hover:bg-destructive/90 text-xs"
+            @click="executeDeleteStation"
+          >
+            <Loader2 v-if="isSubmittingStation" class="w-3.5 h-3.5 mr-1.5 animate-spin" />
+            Xác Nhận Xóa
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    <!-- Confirmation Dialog: Cancel Trip -->
+    <AlertDialog :open="!!tripToCancel" @update:open="(val) => { if (!val) tripToCancel = null }">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle class="flex items-center gap-2 text-amber-600">
+            <AlertTriangle class="w-5 h-5" />
+            Xác Nhận Hủy Lịch Trình Chuyến Xe
+          </AlertDialogTitle>
+          <AlertDialogDescription class="text-xs space-y-2">
+            <p>
+              Bạn có chắc chắn muốn hủy chuyến xe mã: <strong>{{ tripToCancel?.tripCode }}</strong> (Lộ trình: {{ tripToCancel?.route }})?
+            </p>
+            <p class="text-muted-foreground">
+              Thao tác này sẽ chuyển trạng thái chuyến xe sang CANCELLED và ngăn chặn các giao dịch đặt chỗ mới.
+            </p>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel :disabled="isSubmittingTrip">Không Hủy</AlertDialogCancel>
+          <AlertDialogAction
+            :disabled="isSubmittingTrip"
+            class="bg-amber-600 text-white hover:bg-amber-700 text-xs"
+            @click="executeCancelTrip"
+          >
+            <Loader2 v-if="isSubmittingTrip" class="w-3.5 h-3.5 mr-1.5 animate-spin" />
+            Xác Nhận Hủy Chuyến
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    <!-- Confirmation Dialog: Save System Settings -->
+    <AlertDialog :open="isConfirmSaveOpen" @update:open="(val) => { isConfirmSaveOpen = val }">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle class="flex items-center gap-2 text-primary">
+            <Info class="w-5 h-5" />
+            Xác Nhận Cập Nhật Tham Số Toàn Sàn
+          </AlertDialogTitle>
+          <AlertDialogDescription class="text-xs space-y-2">
+            <p>
+              Các thay đổi sẽ được ghi nhận vào cơ sở dữ liệu hệ thống (TBL-SYSTEM-SETTINGS) và có hiệu lực tức thì đối với các dịch vụ miền đang tiêu thụ tham số này:
+            </p>
+            <ul class="list-disc list-inside space-y-1 text-foreground font-mono text-[11px]">
+              <li>Tên sàn: {{ systemSettings.platformName }}</li>
+              <li>Hoa hồng mặc định: {{ systemSettings.defaultCommissionRate }}%</li>
+              <li>Giữ chỗ DB: {{ systemSettings.seatHoldTtlMinutes }} phút (Static 10m trong Booking)</li>
+              <li>Đệm quay đầu DB: {{ systemSettings.turnaroundBufferMinutes }} phút (Static 30m trong Partner)</li>
+              <li>Giải tỏa Escrow: {{ systemSettings.escrowSettlementDelayHours }} giờ</li>
+            </ul>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel :disabled="isSavingSettings">Đóng</AlertDialogCancel>
+          <AlertDialogAction
+            :disabled="isSavingSettings"
+            class="text-xs font-semibold"
+            @click="executeSaveSettings"
+          >
+            <Loader2 v-if="isSavingSettings" class="w-3.5 h-3.5 mr-1.5 animate-spin" />
+            Lưu Cấu Hình
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </div>
 </template>
