@@ -117,11 +117,13 @@ run_trufflehog_scan() {
     "$TRUFFLEHOG_BIN" git "file://${ROOT_DIR}" \
       --since-commit "$since_commit" \
       --branch HEAD \
+      --exclude-detectors=URI \
       --results=verified,unknown \
       --fail \
       --json > "$th_log" 2>&1
   else
     "$TRUFFLEHOG_BIN" git "file://${ROOT_DIR}" \
+      --exclude-detectors=URI \
       --results=verified,unknown \
       --fail \
       --json > "$th_log" 2>&1

@@ -7,6 +7,22 @@ import AdminSettingsView from '../views/AdminSettingsView.vue'
 import AdminWithdrawalsView from '../views/AdminWithdrawalsView.vue'
 import { adminApi } from '@/modules/admin/api'
 
+const storageMap = new Map()
+const localStorageMock = {
+  getItem: (key) => (storageMap.has(String(key)) ? storageMap.get(String(key)) : null),
+  setItem: (key, val) => storageMap.set(String(key), String(val)),
+  removeItem: (key) => storageMap.delete(String(key)),
+  clear: () => storageMap.clear(),
+  key: (i) => Array.from(storageMap.keys())[i] || null,
+  get length() { return storageMap.size }
+}
+
+Object.defineProperty(globalThis, 'localStorage', {
+  value: localStorageMock,
+  writable: true,
+  configurable: true
+})
+
 const dialogStubs = {
   Dialog: { template: '<div v-if="$attrs.open"><slot /></div>' },
   DialogContent: { template: '<div><slot /></div>' },
@@ -39,6 +55,7 @@ describe('Gate D2 - Administration & Financial Operations Specification Suite', 
   let auth
 
   beforeEach(() => {
+    localStorage.clear()
     pinia = createPinia()
     setActivePinia(pinia)
     auth = useAuthStore()
@@ -314,7 +331,15 @@ describe('Gate D2 - Administration & Financial Operations Specification Suite', 
 
     it('approves pending withdrawal with authoritative API and updates status', async () => {
       vi.spyOn(adminApi, 'getWithdrawals').mockResolvedValue({ success: true, data: mockWithdrawals })
-      const approveSpy = vi.spyOn(adminApi, 'approveWithdrawal').mockResolvedValue({ success: true })
+      const approveSpy = vi.spyOn(adminApi, 'approveWithdrawal').mockResolvedValue({
+        success: true,
+        data: {
+          id: 'WDR-20261123-01',
+          operatorId: 1,
+          amount: 15000000,
+          status: 'APPROVED'
+        }
+      })
 
       const wrapper = mount(AdminWithdrawalsView, { global: { plugins: [pinia], stubs: dialogStubs } })
       await flushPromises()
@@ -335,7 +360,15 @@ describe('Gate D2 - Administration & Financial Operations Specification Suite', 
 
     it('rejects pending withdrawal with authoritative API', async () => {
       vi.spyOn(adminApi, 'getWithdrawals').mockResolvedValue({ success: true, data: mockWithdrawals })
-      const rejectSpy = vi.spyOn(adminApi, 'rejectWithdrawal').mockResolvedValue({ success: true })
+      const rejectSpy = vi.spyOn(adminApi, 'rejectWithdrawal').mockResolvedValue({
+        success: true,
+        data: {
+          id: 'WDR-20261123-01',
+          operatorId: 1,
+          amount: 15000000,
+          status: 'REJECTED'
+        }
+      })
 
       const wrapper = mount(AdminWithdrawalsView, { global: { plugins: [pinia], stubs: dialogStubs } })
       await flushPromises()
