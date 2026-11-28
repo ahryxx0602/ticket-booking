@@ -135,9 +135,32 @@ async function fetchStationsList() {
   }
 }
 
+// =========================================================================
+// 5. SIDEBAR PROMOTIONAL BANNERS (SEARCH_SIDEBAR)
+// =========================================================================
+const sidebarBanners = ref([])
+const isLoadingSidebarBanners = ref(false)
+
+async function fetchSidebarBanners() {
+  isLoadingSidebarBanners.value = true
+  try {
+    const res = await catalogBookingApi.getPublicBanners(10)
+    const list = res?.data?.data || res?.data || []
+    if (Array.isArray(list)) {
+      const filtered = list.filter(b => b.position === 'SEARCH_SIDEBAR')
+      sidebarBanners.value = filtered.length > 0 ? filtered : list.slice(0, 2)
+    }
+  } catch {
+    sidebarBanners.value = []
+  } finally {
+    isLoadingSidebarBanners.value = false
+  }
+}
+
 onMounted(() => {
   fetchStationsList()
   fetchTrips()
+  fetchSidebarBanners()
 })
 
 // Watch route changes to support browser back/forward navigation
@@ -570,6 +593,42 @@ function toggleTimeSlot(slot) {
           <div class="flex justify-between text-[11px] text-muted-foreground font-mono tabular-nums">
             <span>{{ minAvailablePrice.toLocaleString('vi-VN') }} đ</span>
             <span>{{ maxAvailablePrice.toLocaleString('vi-VN') }} đ</span>
+          </div>
+        </div>
+
+        <!-- Sidebar Promotional Banners (SEARCH_SIDEBAR) -->
+        <div v-if="sidebarBanners.length > 0" class="pt-4 border-t border-border space-y-3" data-testid="sidebar-banners">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-bold text-foreground uppercase tracking-wider">
+              Ưu đãi đối tác
+            </span>
+            <Badge variant="outline" class="text-[10px] px-1.5 py-0">Được tài trợ</Badge>
+          </div>
+          <div class="space-y-2.5">
+            <a
+              v-for="b in sidebarBanners"
+              :key="b.id"
+              :href="b.targetUrl || '#'"
+              class="block rounded-lg overflow-hidden border border-border bg-card hover:border-primary/50 transition-all group"
+            >
+              <div v-if="b.imageUrl" class="relative h-28 bg-muted overflow-hidden">
+                <img
+                  :src="b.imageUrl"
+                  :alt="b.title"
+                  class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  loading="lazy"
+                />
+              </div>
+              <div class="p-2.5 space-y-1">
+                <h4 class="text-xs font-bold text-foreground line-clamp-1 group-hover:text-primary transition-colors">
+                  {{ b.title }}
+                </h4>
+                <p class="text-[10px] text-primary font-medium flex items-center gap-1">
+                  <span>Khám phá ngay</span>
+                  <ArrowRight class="w-2.5 h-2.5" />
+                </p>
+              </div>
+            </a>
           </div>
         </div>
       </aside>

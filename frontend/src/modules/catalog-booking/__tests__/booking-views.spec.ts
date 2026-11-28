@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
+import { catalogBookingApi } from '@/modules/catalog-booking/api'
 import TripCard from '../components/TripCard.vue'
 import MyBookingsView from '../views/MyBookingsView.vue'
 import CheckoutView from '../views/CheckoutView.vue'
@@ -363,6 +364,42 @@ describe('Customer Booking Flow Tests', () => {
 
       expect(wrapper.find('[data-testid="search-summary-header"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="filter-sidebar"]').exists()).toBe(true)
+    })
+
+    it('renders sidebar promotional banners when SEARCH_SIDEBAR banners are present', async () => {
+      catalogBookingApi.getPublicBanners = vi.fn().mockResolvedValue({
+        data: [
+          {
+            id: 301,
+            title: 'Bảo Hiểm Chuyến Đi Toàn Diện VeloBus Care',
+            imageUrl: 'https://images.unsplash.com/photo-1449965408869-eaa3f722e40d',
+            targetUrl: '/insurance',
+            position: 'SEARCH_SIDEBAR'
+          }
+        ]
+      })
+
+      const { default: TripListView } = await import('../views/TripListView.vue')
+      const wrapper = mount(TripListView, {
+        global: {
+          stubs: {
+            'router-link': true,
+            'Sheet': true,
+            'SheetTrigger': true,
+            'SheetContent': true,
+            'SheetHeader': true,
+            'SheetTitle': true,
+            'SheetDescription': true,
+            'SheetFooter': true,
+            'SheetClose': true
+          }
+        }
+      })
+      await flushPromises()
+
+      const sidebarBanners = wrapper.find('[data-testid="sidebar-banners"]')
+      expect(sidebarBanners.exists()).toBe(true)
+      expect(sidebarBanners.text()).toContain('VeloBus Care')
     })
   })
 })

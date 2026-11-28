@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { toast } from 'vue-sonner'
 import {
   MapPin,
@@ -15,7 +15,11 @@ import {
   AlertCircle,
   AlertTriangle,
   Save,
-  Info
+  Info,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  X
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -86,6 +90,52 @@ async function fetchStations() {
     stationsLoading.value = false
   }
 }
+
+// =========================================================================
+// 1.1 STATIONS SEARCH, FILTER & PAGINATION
+// =========================================================================
+const stationSearchQuery = ref('')
+const stationProvinceFilter = ref('ALL')
+const stationStatusFilter = ref('ALL')
+const stationCurrentPage = ref(1)
+const stationPageSize = ref(10)
+
+const uniqueStationProvinces = computed(() => {
+  const set = new Set(stations.value.map(s => s.province).filter(Boolean))
+  return Array.from(set).sort((a, b) => a.localeCompare(b, 'vi'))
+})
+
+const filteredStations = computed(() => {
+  let list = stations.value
+  const query = stationSearchQuery.value.trim().toLowerCase()
+  if (query) {
+    list = list.filter(s =>
+      (s.name && s.name.toLowerCase().includes(query)) ||
+      (s.code && s.code.toLowerCase().includes(query)) ||
+      (s.province && s.province.toLowerCase().includes(query))
+    )
+  }
+  if (stationProvinceFilter.value !== 'ALL') {
+    list = list.filter(s => s.province === stationProvinceFilter.value)
+  }
+  if (stationStatusFilter.value !== 'ALL') {
+    list = list.filter(s => s.status === stationStatusFilter.value)
+  }
+  return list
+})
+
+watch([stationSearchQuery, stationProvinceFilter, stationStatusFilter, stationPageSize], () => {
+  stationCurrentPage.value = 1
+})
+
+const stationTotalPages = computed(() => {
+  return Math.max(1, Math.ceil(filteredStations.value.length / stationPageSize.value))
+})
+
+const paginatedStations = computed(() => {
+  const start = (stationCurrentPage.value - 1) * stationPageSize.value
+  return filteredStations.value.slice(start, start + stationPageSize.value)
+})
 
 async function handleAddOrUpdateStation() {
   if (!hasPermission('STATION_CREATE_UPDATE_DELETE')) {
@@ -703,16 +753,75 @@ onMounted(async () => {
           </CardContent>
         </Card>
 
-        <!-- Table Stations -->
+        <!-- Table Stations with Search, Filter & Pagination -->
         <div class="lg:col-span-2 space-y-3">
           <Card class="border-border shadow-sm overflow-hidden">
-            <CardHeader class="p-4 border-b border-border flex flex-row items-center justify-between">
-              <CardTitle class="text-sm font-bold text-foreground">
-                Danh Mục Bến Xe Liên Tỉnh ({{ stations.length }})
-              </CardTitle>
-              <Button variant="ghost" size="sm" :disabled="stationsLoading" @click="fetchStations" class="h-8 text-xs">
-                <RefreshCw class="w-3.5 h-3.5 mr-1" :class="{ 'animate-spin': stationsLoading }" /> Làm mới
-              </Button>
+            <CardHeader class="p-4 border-b border-border space-y-3">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <CardTitle class="text-sm font-bold text-foreground flex items-center gap-2">
+                    <span>Danh Mục Bến Xe Liên Tỉnh ({{ stations.length }})</span>
+                    <Badge v-if="filteredStations.length !== stations.length" variant="secondary" class="text-[10px]">
+                      Khớp {{ filteredStations.length }}
+                    </Badge>
+                  </CardTitle>
+                  <p class="text-xs text-muted-foreground mt-0.5">
+                    Quản lý danh sách các bến xe, trạm trung chuyển trong hệ sinh thái toàn quốc.
+                  </p>
+                </div>
+                <Button variant="ghost" size="sm" :disabled="stationsLoading" @click="fetchStations" class="h-8 text-xs shrink-0 self-start sm:self-auto">
+                  <RefreshCw class="w-3.5 h-3.5 mr-1" :class="{ 'animate-spin': stationsLoading }" /> Làm mới
+                </Button>
+              </div>
+
+              <!-- Search & Filter Controls -->
+              <div v-if="stations.length > 0" class="grid grid-cols-1 sm:grid-cols-12 gap-2 pt-1">
+                <!-- Search by name/code -->
+                <div class="sm:col-span-6 relative">
+                  <Search class="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    v-model="stationSearchQuery"
+                    placeholder="Tìm theo tên bến, mã bến, tỉnh thành..."
+                    class="h-8 text-xs pl-8 bg-background"
+                    data-testid="input-station-search"
+                  />
+                  <button
+                    v-if="stationSearchQuery"
+                    @click="stationSearchQuery = ''"
+                    class="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs"
+                    title="Xóa tìm kiếm"
+                  >
+                    <X class="w-3 h-3" />
+                  </button>
+                </div>
+
+                <!-- Province Filter -->
+                <div class="sm:col-span-4">
+                  <select
+                    v-model="stationProvinceFilter"
+                    class="w-full h-8 px-2 text-xs rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                    data-testid="select-station-province-filter"
+                  >
+                    <option value="ALL">Tất cả tỉnh / thành ({{ uniqueStationProvinces.length }})</option>
+                    <option v-for="prov in uniqueStationProvinces" :key="prov" :value="prov">
+                      {{ prov }}
+                    </option>
+                  </select>
+                </div>
+
+                <!-- Status Filter -->
+                <div class="sm:col-span-2">
+                  <select
+                    v-model="stationStatusFilter"
+                    class="w-full h-8 px-2 text-xs rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                    data-testid="select-station-status-filter"
+                  >
+                    <option value="ALL">Mọi trạng thái</option>
+                    <option value="ACTIVE">Hoạt động</option>
+                    <option value="INACTIVE">Tạm khóa</option>
+                  </select>
+                </div>
+              </div>
             </CardHeader>
 
             <div v-if="stationsLoading" class="p-8 text-center text-xs text-muted-foreground">
@@ -730,6 +839,18 @@ onMounted(async () => {
               <EmptyState title="Chưa có bến xe nào" description="Nhập thông tin bên trái để tạo bến xe đầu tiên." />
             </div>
 
+            <div v-else-if="filteredStations.length === 0" class="p-8 text-center text-xs text-muted-foreground space-y-2">
+              <p>Không tìm thấy bến xe nào khớp với tiêu chí tìm kiếm.</p>
+              <Button
+                variant="outline"
+                size="sm"
+                @click="stationSearchQuery = ''; stationProvinceFilter = 'ALL'; stationStatusFilter = 'ALL'"
+                class="text-xs"
+              >
+                Đặt lại bộ lọc
+              </Button>
+            </div>
+
             <div v-else class="overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -742,7 +863,7 @@ onMounted(async () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  <TableRow v-for="s in stations" :key="s.id" class="hover:bg-muted/30">
+                  <TableRow v-for="s in paginatedStations" :key="s.id" class="hover:bg-muted/30">
                     <TableCell class="font-bold text-primary tabular-nums text-xs">
                       {{ s.code || s.id }}
                     </TableCell>
@@ -778,6 +899,64 @@ onMounted(async () => {
                   </TableRow>
                 </TableBody>
               </Table>
+            </div>
+
+            <!-- Station Pagination Toolbar -->
+            <div
+              v-if="filteredStations.length > 0"
+              class="p-3 border-t border-border bg-muted/10 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-muted-foreground"
+              data-testid="stations-pagination"
+            >
+              <div class="flex items-center gap-2">
+                <span>
+                  Hiển thị 
+                  <strong class="text-foreground font-mono">
+                    {{ (stationCurrentPage - 1) * stationPageSize + 1 }} - {{ Math.min(stationCurrentPage * stationPageSize, filteredStations.length) }}
+                  </strong> 
+                  trên tổng số <strong class="text-foreground font-mono">{{ filteredStations.length }}</strong> bến xe
+                </span>
+                <div class="flex items-center gap-1.5 ml-2">
+                  <label for="station-page-size" class="text-xs">Mỗi trang:</label>
+                  <select
+                    id="station-page-size"
+                    v-model.number="stationPageSize"
+                    class="h-7 px-1.5 text-xs rounded border border-input bg-background text-foreground focus:outline-none"
+                  >
+                    <option :value="10">10</option>
+                    <option :value="25">25</option>
+                    <option :value="50">50</option>
+                    <option :value="100">100</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  class="h-7 text-xs"
+                  :disabled="stationCurrentPage <= 1"
+                  @click="stationCurrentPage--"
+                  data-testid="btn-station-prev-page"
+                >
+                  <ChevronLeft class="w-3.5 h-3.5 mr-0.5" /> Trước
+                </Button>
+
+                <span class="px-2 font-mono font-semibold text-foreground text-xs">
+                  {{ stationCurrentPage }} / {{ stationTotalPages }}
+                </span>
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  class="h-7 text-xs"
+                  :disabled="stationCurrentPage >= stationTotalPages"
+                  @click="stationCurrentPage++"
+                  data-testid="btn-station-next-page"
+                >
+                  Sau <ChevronRight class="w-3.5 h-3.5 ml-0.5" />
+                </Button>
+              </div>
             </div>
           </Card>
         </div>

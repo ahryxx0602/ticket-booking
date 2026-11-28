@@ -307,3 +307,10 @@ INSERT INTO stations (code, name, city) VALUES
 ('SGN', 'Sân bay Quốc tế Tân Sơn Nhất', 'Hồ Chí Minh'),
 ('DAD', 'Sân bay Quốc tế Đà Nẵng', 'Đà Nẵng')
 ON DUPLICATE KEY UPDATE name=VALUES(name);
+
+-- Seed Data (Initial Promotional Banners)
+INSERT INTO banners (id, operator_id, title, image_url, target_url, position, start_date, end_date, priority, status) VALUES
+(1, NULL, 'Ưu Đãi Tuyến Đường Vàng: Hà Nội - Đà Nẵng', 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=800&q=80', '/search?from=HAN&to=DAD', 'HOMEPAGE_BANNER', '2026-01-01 00:00:00', '2027-12-31 23:59:59', 10, 'ACTIVE'),
+(2, NULL, 'Trải Nghiệm Dòng Xe Limousine VIP Cao Cấp', 'https://images.unsplash.com/photo-1570125909232-eb263c188f7e?auto=format&fit=crop&w=800&q=80', '/search?from=SGN&to=DAD', 'HOMEPAGE_BANNER', '2026-01-01 00:00:00', '2027-12-31 23:59:59', 5, 'ACTIVE'),
+(3, NULL, 'Bảo Hiểm Chuyến Đi Toàn Diện VeloBus Care', 'https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?auto=format&fit=crop&w=800&q=80', '/', 'SEARCH_SIDEBAR', '2026-01-01 00:00:00', '2027-12-31 23:59:59', 10, 'ACTIVE')
+ON DUPLICATE KEY UPDATE title=VALUES(title), image_url=VALUES(image_url), status=VALUES(status);
