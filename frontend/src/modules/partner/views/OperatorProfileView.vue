@@ -43,13 +43,6 @@ const form = ref({
   description: ''
 })
 
-// Optional local bank context for withdrawal convenience
-const savedBankContext = ref({
-  bankName: '',
-  accountNumber: '',
-  accountHolder: ''
-})
-
 async function fetchProfile() {
   isLoading.value = true
   loadError.value = ''
@@ -67,14 +60,6 @@ async function fetchProfile() {
       logoUrl: data.logoUrl || '',
       description: data.description || ''
     }
-
-    // Load saved bank context from storage if available
-    try {
-      const stored = localStorage.getItem(`velobus_partner_bank_${data.id}`)
-      if (stored) {
-        savedBankContext.value = JSON.parse(stored)
-      }
-    } catch (_) {}
   } catch (err) {
     loadError.value = err?.response?.data?.message || err?.message || 'Không thể tải hồ sơ đối tác từ máy chủ'
     toast.error('Lỗi khi tải hồ sơ đối tác: ' + loadError.value)
@@ -124,13 +109,6 @@ async function handleSaveProfile() {
       Object.assign(profile.value, updated)
     }
 
-    // Save optional bank context for withdrawal screen
-    if (profile.value?.id) {
-      try {
-        localStorage.setItem(`velobus_partner_bank_${profile.value.id}`, JSON.stringify(savedBankContext.value))
-      } catch (_) {}
-    }
-
     toast.success('Cập nhật hồ sơ nhà xe thành công')
   } catch (err) {
     formError.value = err?.response?.data?.message || err?.message || 'Lỗi khi lưu thông tin hồ sơ nhà xe'
@@ -161,6 +139,16 @@ function getStatusBadge(status) {
 }
 
 onMounted(() => {
+  // Purge any legacy unsupported persistent bank profile keys (FQA-04)
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i)
+      if (key && key.startsWith('velobus_partner_bank_')) {
+        localStorage.removeItem(key)
+      }
+    }
+  } catch (_) {}
+
   fetchProfile()
 })
 </script>
@@ -376,54 +364,25 @@ onMounted(() => {
             </div>
           </div>
 
-          <!-- Khối 2: Cấu hình tài khoản ngân hàng thụ hưởng cho yêu cầu rút tiền -->
+          <!-- Khối 2: Cơ chế tài khoản thụ hưởng giải ngân (FQA-04) -->
           <div class="bg-card border border-border rounded-xl p-5 shadow-sm space-y-4">
             <h3 class="text-xs font-bold uppercase tracking-wider text-foreground pb-2 border-b border-border flex items-center justify-between">
               <div class="flex items-center gap-2">
-                <CreditCard class="w-4 h-4 text-emerald-600" />
-                <span>Tài Khoản Ngân Hàng Nhận Quyết Toán (Escrow Payout)</span>
+                <CreditCard class="w-4 h-4 text-primary" />
+                <span>Quy Trình Giải Ngân Ví Escrow & Tài Khoản Thụ Hưởng</span>
               </div>
-              <Badge variant="outline" class="text-[10px] text-emerald-600 border-emerald-500/20 bg-emerald-500/10">
-                Lưu Phiên Đối Soát
+              <Badge variant="outline" class="text-[10px] text-muted-foreground">
+                Chuẩn Đối Soát
               </Badge>
             </h3>
 
             <Alert class="border-border bg-muted/20">
               <Info class="h-4 w-4 text-primary" />
-              <AlertTitle class="text-xs font-semibold text-foreground">Cơ chế giải ngân Escrow</AlertTitle>
-              <AlertDescription class="text-xs text-muted-foreground">
-                Khi thực hiện lệnh rút tiền tại màn hình Ví Đối Tác, thông tin tài khoản ngân hàng thụ hưởng này sẽ được tự động điền để gửi tới cổng phê duyệt giải ngân của Ban Quản Trị.
+              <AlertTitle class="text-xs font-semibold text-foreground">Chính sách bảo mật tài chính</AlertTitle>
+              <AlertDescription class="text-xs text-muted-foreground leading-relaxed mt-1">
+                Theo quy chuẩn vận hành an toàn tài chính, thông tin tài khoản ngân hàng thụ hưởng không lưu trữ cố định trong hồ sơ doanh nghiệp. Thông tin tài khoản được nhập và xác thực độc lập trên từng yêu cầu rút tiền tại màn hình <strong>Ví Đối Tác</strong> (<code>POST /partners/wallet/withdraw</code>) nhằm bảo đảm tính toàn vẹn kiểm toán và đối soát giao dịch giải ngân.
               </AlertDescription>
             </Alert>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label class="text-xs font-semibold text-foreground">Ngân hàng thụ hưởng</label>
-                <Input
-                  v-model="savedBankContext.bankName"
-                  placeholder="VD: Vietcombank (VCB)"
-                  class="mt-1 text-xs"
-                />
-              </div>
-
-              <div>
-                <label class="text-xs font-semibold text-foreground">Số tài khoản ngân hàng</label>
-                <Input
-                  v-model="savedBankContext.accountNumber"
-                  placeholder="VD: 0123456789"
-                  class="mt-1 font-mono text-xs"
-                />
-              </div>
-
-              <div class="md:col-span-2">
-                <label class="text-xs font-semibold text-foreground">Tên chủ tài khoản (In hoa không dấu)</label>
-                <Input
-                  v-model="savedBankContext.accountHolder"
-                  placeholder="VD: CONG TY CO PHAN XE KHACH PHUONG TRANG"
-                  class="mt-1 uppercase font-semibold text-xs font-mono"
-                />
-              </div>
-            </div>
           </div>
         </div>
       </div>

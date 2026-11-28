@@ -1,6 +1,5 @@
 <template>
   <ConfigProvider :scroll-body="false">
-    <Toast />
     <Sonner position="top-right" richColors />
     <router-view />
   </ConfigProvider>
@@ -10,7 +9,6 @@
 import { onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ConfigProvider } from 'reka-ui'
-import Toast from 'primevue/toast'
 import { Sonner } from '@/components/ui/sonner'
 import { useAuthStore } from '@/modules/auth/store'
 

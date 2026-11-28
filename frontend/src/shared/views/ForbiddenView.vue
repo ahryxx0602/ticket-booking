@@ -1,16 +1,16 @@
 <template>
   <div class="min-h-[70vh] flex items-center justify-center p-6 text-center">
-    <div class="max-w-md w-full space-y-5 bg-white border border-rose-200 rounded-2xl p-8 shadow-sm">
-      <div class="w-16 h-16 mx-auto rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 text-2xl font-black">
-        <i class="pi pi-shield text-3xl"></i>
+    <div class="max-w-md w-full space-y-5 bg-card border border-destructive/20 rounded-2xl p-8 shadow-sm">
+      <div class="w-16 h-16 mx-auto rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center justify-center text-destructive text-2xl font-black">
+        <ShieldAlert class="w-8 h-8 text-destructive" />
       </div>
       <div class="space-y-2">
-        <span class="inline-block px-3 py-1 text-xs font-bold uppercase tracking-wider rounded-full bg-rose-100 text-rose-700">
+        <span class="inline-block px-3 py-1 text-xs font-bold uppercase tracking-wider rounded-full bg-destructive/10 text-destructive">
           Mã Lỗi 403 • Quyền Hạn Bị Từ Chối
         </span>
-        <h2 class="text-xl font-bold text-slate-900">Không Có Quyền Truy Cập</h2>
-        <p class="text-sm text-slate-600 leading-relaxed">
-          Tài khoản hiện tại của bạn (<span class="font-semibold text-slate-900">{{ roleDisplay }}</span>) không đủ thẩm quyền để xem hoặc thao tác trên phân hệ này.
+        <h2 class="text-xl font-bold text-foreground">Không Có Quyền Truy Cập</h2>
+        <p class="text-sm text-muted-foreground leading-relaxed">
+          Tài khoản hiện tại của bạn (<span class="font-semibold text-foreground">{{ roleDisplay }}</span>) không đủ thẩm quyền để xem hoặc thao tác trên phân hệ này.
         </p>
       </div>
       <div class="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -20,14 +20,14 @@
           data-testid="forbidden-exit-preview-btn"
           @click="exitPreviewAndGoBack"
         >
-          <span>⚡ Thoát Xem Thử Role (Về Super Admin)</span>
+          <span>Thoát Xem Thử Role (Về Super Admin)</span>
         </AppButton>
         <AppButton variant="primary" @click="goHome">
-          <i class="pi pi-home mr-1"></i>
+          <Home class="w-4 h-4 mr-1 inline" />
           <span>{{ homeBtnLabel }}</span>
         </AppButton>
         <AppButton variant="secondary" @click="switchAccount">
-          <i class="pi pi-sign-out mr-1"></i>
+          <LogOut class="w-4 h-4 mr-1 inline" />
           <span>Đăng Nhập Tài Khoản Khác</span>
         </AppButton>
       </div>
@@ -38,6 +38,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { ShieldAlert, Home, LogOut } from 'lucide-vue-next'
 import { useAuthStore } from '@/modules/auth/store'
 import AppButton from '@/shared/components/AppButton.vue'
 

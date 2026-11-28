@@ -164,7 +164,7 @@ class BookingControllerTest {
 
     @Test
     void getMyBookings_shouldReturnPagedBookings() throws Exception {
-        when(getMyBookingsUseCase.execute("customer1", 0, 10))
+        when(getMyBookingsUseCase.execute("customer1", 0, 10, null))
                 .thenReturn(PageResponse.<BookingResponse>builder().items(List.of()).page(0).size(10).build());
 
         mockMvc.perform(get("/api/v1/bookings/my-bookings")

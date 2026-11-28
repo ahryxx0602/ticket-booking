@@ -424,6 +424,7 @@ export const useAuthStore = defineStore('auth', () => {
     liveProfile,
     permissionCatalog,
     isAuthenticated,
+    jwtPayload,
     role,
     customRole,
     roleName,

@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "type-check": "vue-tsc --noEmit",
-    "test:unit": "vitest run",
+    "test:unit": "vitest run --no-file-parallelism",
     "test:e2e": "playwright test",
     "test:e2e:fullstack": "playwright test -c playwright.fullstack.config.js",
     "test:visual": "playwright test --grep @visual"

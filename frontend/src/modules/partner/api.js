@@ -41,6 +41,9 @@ export const partnerApi = {
   },
 
   // Trips
+  getMyTrips(params) {
+    return httpClient.get('/partners/trips', { params })
+  },
   createPartnerTrip(payload) {
     return httpClient.post('/partners/trips', payload)
   },

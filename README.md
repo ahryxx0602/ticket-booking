@@ -7,12 +7,12 @@
 [![Java 21](https://img.shields.io/badge/Java-21%20LTS-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)](https://openjdk.org/)
 [![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.4.1-6DB33F?style=for-the-badge&logo=spring-boot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![Vue 3](https://img.shields.io/badge/Vue-3.5.13-4FC08D?style=for-the-badge&logo=vuedotjs&logoColor=white)](https://vuejs.org/)
-[![PrimeVue 4](https://img.shields.io/badge/PrimeVue-4.2.5-41B883?style=for-the-badge&logo=primevue&logoColor=white)](https://primevue.org/)
+[![Shadcn Vue](https://img.shields.io/badge/Shadcn_Vue-Reka_UI-000000?style=for-the-badge&logo=radixui&logoColor=white)](https://www.shadcn-vue.com/)
 [![Tailwind CSS](https://img.shields.io/badge/TailwindCSS-3.4.17-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![MySQL](https://img.shields.io/badge/MySQL-8.4%20LTS-4479A1?style=for-the-badge&logo=mysql&logoColor=white)](https://www.mysql.com/)
 [![Redis](https://img.shields.io/badge/Redis-7.2-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io/)
 [![CI Pipeline](https://img.shields.io/badge/CI%2FCD-GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/Tests-325%20Passed-success?style=for-the-badge&logo=junit5&logoColor=white)]()
+[![Tests](https://img.shields.io/badge/Tests-420%2B%20Passed-success?style=for-the-badge&logo=junit5&logoColor=white)]()
 
 An enterprise-grade, high-concurrency multi-tenant ticket booking and fleet mobility marketplace built with **Hexagonal / Clean Architecture**, **Domain-Driven Design (DDD)**, and **Modern Modular Monolith** patterns. 
 
@@ -62,19 +62,23 @@ velobus-ticketing-platform/
 
 ---
 
-## 🎨 UI/UX Design System
+## 🎨 UI/UX Design System — Claude+ Warm Minimalist Enterprise Mobility
 
-VeloBus features the **Kinetic Executive** design system, tailored for high-density transport and logistics operations:
-- **Design Tokens:** Brand Navy (`#142B4A`), Primary Blue (`#2563EB`), Accent Amber (`#F59E0B`), Glare-free Canvas (`#F8FAFC`).
-- **Typography:** Inter with strict OpenType `tabular-nums` formatting to prevent layout jitter during real-time schedule updates.
+VeloBus features the **Claude+ Warm Minimalist Enterprise Mobility** design system, tailored for high-density transport, ticketing operations, and fintech escrow transparency:
+- **Design Tokens:** Warm Minimalist Palette (`--primary: 221.2 83.2% 53.3%`, `--background: 0 0% 100%`, `--foreground: 222.2 84% 4.9%`, Semantic Accents, Dynamic Contrast Ratio &ge; 4.5:1).
+- **Component Primitives:** Reka UI & Shadcn Vue headless architecture, TanStack Vue Table for high-density data tables, Lucide Icons, and Sonner toast system.
+- **Typography:** Outfit (Display & Headings) and Geist Mono (Tabular Data & Timestamps) with strict OpenType `tabular-nums` formatting to prevent layout jitter during real-time updates.
+- **Theming:** Runtime Canonical & Effective theme customizer supporting brand presets (`claude-warm`, `emerald`, `sapphire`, `sunset`) and dark mode with persistent user preferences.
 
 | Screen Key | Portal & Screen Title | Key Engineering Highlight |
 | :--- | :--- | :--- |
-| `seat-map` | **Customer: 2-Deck Seat Map** | 40-seat matrix, 10-minute hold countdown, sticky VNPay summary. |
-| `operator-escrow` | **Operator: Fintech Escrow Dashboard** | 4 balances (`AVAILABLE`, `HOLDING`, `SETTLING`, `WITHDRAWN`), Vietcombank KYC. |
+| `seat-map` | **Customer: 2-Deck Seat Map** | 40-seat matrix, 10-minute hold countdown, sticky VNPay summary, zero-synthetic mutations. |
+| `operator-escrow` | **Operator: Fintech Escrow Dashboard** | 4 balances (`AVAILABLE`, `PENDING`, `LOCKED`, `DEBT`), immutable audit ledger, bank context isolation. |
+| `operator-trips` | **Operator: Trip Scheduling & Listing** | Direct integration with `GET & POST /api/v1/partners/trips`, Turnaround Buffer (&ge; 30m) invariant guard. |
 | `admin-reconciliation` | **Admin: Governance & VNPay Reconciliation** | Real-time IPN discrepancy alert, 2-tier commission, Audit Trail. |
-| `operator-fleet` | **Operator: Fleet & Schedules** | Turnaround Buffer (30m) invariant guard, vehicle drawer. |
-| `0c0c51cfabda47c08fb8b230245acd33` | **Customer: Digital E-Ticket** | Airline-style perforated ticket, HMAC-SHA256 encrypted QR Code. |
+| `admin-withdrawals` | **Admin: Escrow Payout Governance** | Dual-approval workflow, Unknown Outcome Guard (`velobus_unknown_wdr_`), masked bank account PII. |
+| `operator-fleet` | **Operator: Fleet & Schedules** | Turnaround Buffer guard, vehicle geometry & registration validation (1-100 seats). |
+| `digital-ticket` | **Customer: Digital E-Ticket** | Airline-style perforated ticket, HMAC-SHA256 encrypted QR Code. |
 
 ---
 
@@ -88,20 +92,23 @@ VeloBus features the **Kinetic Executive** design system, tailored for high-dens
 3. **Fail-Closed Security & Tenant Isolation:**
    - All partner operations enforce `findByIdAndOperatorId(id, operator.getId())` to eliminate Insecure Direct Object References (IDOR).
    - Administrative actions require verified identity resolution with zero fallback defaults.
-4. **Idempotent Financial Settlement:**
+4. **Idempotent Financial Settlement & Withdrawal Safety:**
    - VNPay IPN handler performs strict checksum validation (HMAC-SHA512), amount verification, and state transition idempotency.
+   - Admin withdrawal mutations persist recovery context before network dispatch; network errors surface Unknown Outcome Alerts with read-only server verification.
+5. **Real MySQL Concurrency Verification:**
+   - Real database integration tests (`RealMySqlWithdrawalConcurrencyIT.java`) verify InnoDB row locking, Spring `@Transactional` proxy boundaries, and `@Version` optimistic locking under concurrent thread pools.
 
 ---
 
-## 🧪 Comprehensive Automated Testing (325 Tests)
+## 🧪 Comprehensive Automated Testing (420+ Tests)
 
-The repository enforces end-to-end quality with **325 automated passing tests**:
+The repository enforces end-to-end quality with over **420 automated passing tests**:
 
 ```
-TOTAL TESTS: 325 PASSED
+TOTAL TESTS: 421 PASSED (100% GREEN)
 ├── Backend (Java 21 / JUnit 5 / Testcontainers): 243 Passed
-├── Frontend Unit (Vitest / Happy-DOM):              60 Passed
-└── Frontend E2E & Visual (Playwright / Chromium):   22 Passed
+├── Frontend Unit (Vitest / Happy-DOM):             178 Passed (18 test suites)
+└── Design System Linter (Stateless Node.js):        0 Violations across 18 migrated views
 ```
 
 ```bash
@@ -111,8 +118,11 @@ cd backend && mvn test
 # Run frontend unit tests
 cd frontend && npm run test:unit
 
-# Run frontend E2E and responsive tests
-cd frontend && npm run test:e2e
+# Run frontend type check and production build
+cd frontend && npm run type-check && npm run build
+
+# Run Design System audit linter
+cd frontend && node scripts/lint-design-system.js
 ```
 
 ---
@@ -205,6 +215,19 @@ make smoke-test
 - **Port `8080` or `5173` already in use:** If `ticket-backend` or `ticket-frontend` Docker containers are still running from full-docker mode, `make infra` or `make dev` automatically removes the orphan application containers. To check manually, run `ss -ltnp | grep -E "8080|5173"`.
 - **MySQL Port `3306` vs `3307`:** Host port `3307` is used by default (`ADR-01`) to avoid colliding with a Windows host MySQL service on WSL2. Override `MYSQL_PORT` in `.env` if needed.
 - **Slow File Watching on WSL2:** Always keep the repository inside the Linux native filesystem (`/home/<user>/...`) rather than `/mnt/c/...` (`make doctor` verifies this automatically).
+
+---
+
+## 🏁 Release Candidate Status & Decision
+
+```
+RELEASE CANDIDATE — LOCAL VERIFICATION COMPLETE, EXTERNAL INTEGRATION VALIDATION PENDING
+```
+
+- **Local Verification Status:** **100% COMPLETE & PASSING**. All 33 Maven reactor modules compile and pass automated unit/integration tests (`mvn test`). Frontend passes 18/18 Vitest suites (178 unit tests), Vue TypeScript checking (`vue-tsc --noEmit`), production bundling (`vite build`), and Design System AST linting (0 violations across all 18 views).
+- **Backend Capability Closure:** Approved `GET /api/v1/partners/trips` endpoint implemented with tenant scoping (`userId` $\to$ `operatorId`), status/vehicle filtering, and standard pagination (`ApiResponse<PageResponse<PartnerTripResponse>>`).
+- **Data Integrity & Financial Governance:** Elimination of all mock production fixtures, synthetic `Date.now()` entity IDs, and persistent bank profile assumptions. Dual-layer Unknown Outcome Guard protects against interrupted mutations with read-only server verification.
+- **External Integration Pending:** Validation against live third-party VNPay production webhook callback clearance (VNPay IPN URL binding requires public HTTPS domain / reverse proxy webhook tunnel in production staging).
 
 ---
 

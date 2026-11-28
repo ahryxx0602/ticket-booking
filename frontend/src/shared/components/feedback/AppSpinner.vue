@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import ProgressSpinner from 'primevue/progressspinner'
+import { Loader2 } from 'lucide-vue-next'
 
 withDefaults(
   defineProps<{
@@ -26,14 +26,12 @@ withDefaults(
     role="status"
     :aria-label="message || 'Đang tải...'"
   >
-    <ProgressSpinner
+    <Loader2
+      class="animate-spin text-primary shrink-0"
       :style="{ width: size, height: size }"
-      :strokeWidth="strokeWidth"
-      fill="transparent"
-      animationDuration=".8s"
-      aria-label="Loading"
+      aria-hidden="true"
     />
-    <span v-if="message" class="text-sm text-slate-500 font-medium">
+    <span v-if="message" class="text-sm text-muted-foreground font-medium">
       {{ message }}
     </span>
   </div>

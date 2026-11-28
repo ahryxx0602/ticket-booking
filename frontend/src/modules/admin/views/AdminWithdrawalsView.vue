@@ -72,7 +72,15 @@ const unresolvedList = computed(() => {
 })
 
 const currentAdminId = computed(() => {
-  return authStore.user?.id || authStore.userId || 'admin'
+  return authStore.user?.id != null
+    ? String(authStore.user.id)
+    : (authStore.userId != null
+      ? String(authStore.userId)
+      : (authStore.jwtPayload?.userId != null
+        ? String(authStore.jwtPayload.userId)
+        : (authStore.jwtPayload?.id != null
+          ? String(authStore.jwtPayload.id)
+          : (authStore.jwtPayload?.sub != null ? String(authStore.jwtPayload.sub) : null))))
 })
 
 const WITHDRAWAL_FILTERS = [
@@ -88,20 +96,36 @@ function getStorageKey(adminId, withdrawalId) {
 
 function loadPersistedUnknownOutcomes() {
   try {
-    const adminId = String(currentAdminId.value)
+    const adminId = currentAdminId.value
+    if (!adminId) {
+      unresolvedOperations.value = new Map()
+      return
+    }
     const prefix = `velobus_unknown_wdr_${adminId}_`
-    const legacyPrefix = 'velobus_unknown_wdr_admin_'
     const recovered = new Map()
 
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i)
-      if (key && (key.startsWith(prefix) || key.startsWith(legacyPrefix) || key.startsWith('velobus_unknown_wdr_'))) {
+      if (key && key.startsWith(prefix)) {
         const raw = localStorage.getItem(key)
         if (raw) {
           try {
             const context = JSON.parse(raw)
-            if (context && context.withdrawalId) {
-              recovered.set(context.withdrawalId, context)
+            // Strict recovery context schema validation (FQA-03)
+            if (
+              context &&
+              context.withdrawalId != null &&
+              String(context.withdrawalId).length > 0 &&
+              (context.action === 'APPROVE' || context.action === 'REJECT') &&
+              typeof context.amount === 'number' &&
+              typeof context.timestamp === 'number'
+            ) {
+              recovered.set(String(context.withdrawalId), {
+                withdrawalId: context.withdrawalId,
+                action: context.action,
+                amount: context.amount,
+                timestamp: context.timestamp
+              })
             }
           } catch (_) {}
         }
@@ -109,40 +133,40 @@ function loadPersistedUnknownOutcomes() {
     }
     unresolvedOperations.value = recovered
   } catch (_) {
-    // localStorage may be restricted or corrupted
+    // localStorage may be restricted in private/sandbox mode
   }
 }
 
 function persistUnknownOutcome(context) {
-  try {
-    const adminId = currentAdminId.value
-    const key = getStorageKey(adminId, context.withdrawalId)
+  const adminId = currentAdminId.value
+  if (adminId && context && context.withdrawalId != null) {
+    const safeContext = {
+      withdrawalId: context.withdrawalId,
+      action: context.action === 'APPROVE' ? 'APPROVE' : 'REJECT',
+      amount: Number(context.amount) || 0,
+      timestamp: typeof context.timestamp === 'number' ? context.timestamp : Date.now()
+    }
+    const key = getStorageKey(adminId, safeContext.withdrawalId)
     try {
-      localStorage.setItem(key, JSON.stringify(context))
+      localStorage.setItem(key, JSON.stringify(safeContext))
     } catch (_) {}
-  } catch (_) {}
-  const updated = new Map(unresolvedOperations.value)
-  updated.set(context.withdrawalId, context)
-  unresolvedOperations.value = updated
+    const updated = new Map(unresolvedOperations.value)
+    updated.set(String(safeContext.withdrawalId), safeContext)
+    unresolvedOperations.value = updated
+  }
 }
 
 function clearPersistedUnknownOutcome(withdrawalId) {
-  try {
-    const adminId = String(currentAdminId.value)
-    const keysToRemove = [
-      getStorageKey(adminId, withdrawalId),
-      `velobus_unknown_wdr_admin_${withdrawalId}`,
-      `velobus_unknown_wdr_1_${withdrawalId}`
-    ]
-    for (const key of keysToRemove) {
-      try {
-        localStorage.removeItem(key)
-      } catch (_) {}
-    }
-  } catch (_) {}
-  const updated = new Map(unresolvedOperations.value)
-  updated.delete(withdrawalId)
-  unresolvedOperations.value = updated
+  const adminId = currentAdminId.value
+  if (adminId && withdrawalId != null) {
+    const key = getStorageKey(adminId, withdrawalId)
+    try {
+      localStorage.removeItem(key)
+    } catch (_) {}
+    const updated = new Map(unresolvedOperations.value)
+    updated.delete(String(withdrawalId))
+    unresolvedOperations.value = updated
+  }
 }
 
 // Authoritative API fetching (D2-PRE-03)
@@ -246,6 +270,11 @@ function openConfirmDialog(item, action) {
     return
   }
 
+  if (!currentAdminId.value) {
+    toast.error('Không thể xác thực danh tính quản trị viên. Vui lòng đăng nhập lại.')
+    return
+  }
+
   const isApprove = action === 'APPROVE'
   if (isApprove && !hasPermission('WITHDRAWAL_APPROVE')) {
     toast.error('Thiếu quyền phê duyệt giải ngân WITHDRAWAL_APPROVE')
@@ -261,7 +290,7 @@ function openConfirmDialog(item, action) {
     return
   }
 
-  if (unresolvedOperations.value.has(item.id)) {
+  if (unresolvedOperations.value.has(String(item.id))) {
     toast.error('Lệnh này đang bị khóa an toàn do kết quả xử lý trước đó chưa xác định. Vui lòng xác thực trước.')
     return
   }
@@ -287,6 +316,11 @@ async function executeWithdrawalMutation() {
   const { item, action, adminNote } = confirmDialog.value
   if (!item) return
 
+  if (!currentAdminId.value) {
+    confirmDialog.value.error = 'Không thể xác thực danh tính quản trị viên.'
+    return
+  }
+
   const isApprove = action === 'APPROVE'
   if (isApprove && !hasPermission('WITHDRAWAL_APPROVE')) {
     confirmDialog.value.error = 'Thiếu quyền WITHDRAWAL_APPROVE'
@@ -308,15 +342,16 @@ async function executeWithdrawalMutation() {
   confirmDialog.value.isSubmitting = true
   confirmDialog.value.error = ''
 
-  const noteToSend = adminNote ? adminNote.trim() : (isApprove ? 'Duyệt chi giải ngân thành công qua tài khoản ngân hàng' : 'Từ chối giải ngân')
+  const noteToSend = adminNote && adminNote.trim().length > 0
+    ? adminNote.trim()
+    : (isApprove ? 'Duyệt chi giải ngân sổ cái nội bộ' : 'Từ chối giải ngân')
 
-  // Persist context before mutation dispatch (D2-PRE-02)
+  // Persist minimal recovery context before mutation dispatch (D2-PRE-02 / FQA-03)
   const operationContext = {
     withdrawalId: item.id,
     action: isApprove ? 'APPROVE' : 'REJECT',
     amount: item.amount,
-    timestamp: Date.now(),
-    note: noteToSend
+    timestamp: Date.now()
   }
   persistUnknownOutcome(operationContext)
 
@@ -328,8 +363,17 @@ async function executeWithdrawalMutation() {
     const resData = res?.data?.data !== undefined ? res.data.data : res?.data
     const expectedStatus = isApprove ? 'APPROVED' : 'REJECTED'
 
-    if (resData && resData.status && resData.status !== expectedStatus) {
+    if (!resData || typeof resData !== 'object') {
+      throw new Error('Máy chủ trả về phản hồi không hợp lệ')
+    }
+    if (resData.id == null || String(resData.id) !== String(item.id)) {
+      throw new Error(`Mã định danh trong phản hồi không khớp (#${resData.id} !== #${item.id})`)
+    }
+    if (resData.status !== expectedStatus) {
       throw new Error(`Trạng thái phản hồi không khớp kỳ vọng (${resData.status} !== ${expectedStatus})`)
+    }
+    if (resData.amount == null || resData.operatorId == null) {
+      throw new Error('Dữ liệu phản hồi thiếu thông tin bắt buộc (amount hoặc operatorId)')
     }
 
     // Definitive server success -> clear persistent recovery guard
@@ -346,15 +390,15 @@ async function executeWithdrawalMutation() {
     }
   } catch (err) {
     const isNetworkOrTimeout = !err.response || err.code === 'ECONNABORTED' || err.message?.includes('timeout') || err.message?.includes('Network Error')
+    const isServerError = err?.response?.status && err.response.status >= 500
 
-    if (isNetworkOrTimeout) {
+    if (isNetworkOrTimeout || isServerError) {
       // Retain guard in localStorage and surface Unknown Outcome Alert
       confirmDialog.value.isOpen = false
       confirmDialog.value.item = null
-      toast.error('Kết nối máy chủ bị gián đoạn hoặc timeout. Lệnh đã được khóa an toàn để xác thực.')
+      toast.error('Kết nối máy chủ bị gián đoạn hoặc lỗi 5xx. Lệnh đã được khóa an toàn để xác thực.')
     } else {
-      // Definitive backend business rejection (e.g. 400 Invalid Status, 404, 403)
-      // Keep dialog open so administrator can review note and error message
+      // Definitive backend business rejection (e.g. 400 Invalid Status, 404, 403, 409, 422)
       clearPersistedUnknownOutcome(item.id)
       confirmDialog.value.error = err?.response?.data?.message || err?.message || 'Thao tác giải ngân bị máy chủ từ chối.'
     }
@@ -609,7 +653,7 @@ onMounted(() => {
                 <template v-if="w.status === 'PENDING'">
                   <!-- Locked due to unknown outcome -->
                   <Badge
-                    v-if="unresolvedOperations.has(w.id)"
+                    v-if="unresolvedOperations.has(String(w.id))"
                     variant="outline"
                     class="border-destructive/40 text-destructive text-[11px]"
                   >

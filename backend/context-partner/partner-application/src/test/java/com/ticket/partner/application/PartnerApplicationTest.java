@@ -69,7 +69,8 @@ class PartnerApplicationTest {
         );
         queryService = new PartnerQueryServiceImpl(
                 operatorRepository, vehicleRepository, driverRepository,
-                walletRepository, transactionRepository, withdrawalRepository, bannerRepository, systemSettingRepository
+                walletRepository, transactionRepository, withdrawalRepository, bannerRepository, systemSettingRepository,
+                partnerCatalogPort
         );
         paymentEventListener = new PartnerPaymentEventListener(
                 partnerCatalogPort, queryService, walletRepository, transactionRepository
@@ -308,5 +309,34 @@ class PartnerApplicationTest {
         assertNotNull(resp);
         assertEquals(999L, resp.getId());
         assertEquals("FUTA-SGN-DL", resp.getTripCode());
+    }
+
+    @Test
+    @DisplayName("FQA-06: Operator Query Service - getMyTrips paginated with ownership filtering")
+    void testGetMyTripsPaginated() {
+        BusOperator op = BusOperator.builder().id(1L).userId(10L).businessName("FUTA").status(OperatorStatus.ACTIVE).build();
+        when(operatorRepository.findByUserId(10L)).thenReturn(Optional.of(op));
+
+        PartnerTripDto tripDto = PartnerTripDto.builder()
+                .id(101L)
+                .tripCode("FUTA-01")
+                .operatorId(1L)
+                .vehicleId(5L)
+                .departureStationId(1L)
+                .arrivalStationId(2L)
+                .departureTime(LocalDateTime.now().plusDays(1))
+                .arrivalTime(LocalDateTime.now().plusDays(1).plusHours(6))
+                .basePrice(BigDecimal.valueOf(300000))
+                .status("SCHEDULED")
+                .build();
+
+        when(partnerCatalogPort.findOperatorTrips(eq(1L), eq("SCHEDULED"), eq(5L), eq(0), eq(10)))
+                .thenReturn(com.ticket.shared.dto.PageResponse.of(List.of(tripDto), 0, 10, 1));
+
+        com.ticket.shared.dto.PageResponse<PartnerTripResponse> pageResp = queryService.getMyTrips(10L, "SCHEDULED", 5L, 0, 10);
+        assertNotNull(pageResp);
+        assertEquals(1, pageResp.getTotalElements());
+        assertEquals(1, pageResp.getItems().size());
+        assertEquals("FUTA-01", pageResp.getItems().get(0).getTripCode());
     }
 }

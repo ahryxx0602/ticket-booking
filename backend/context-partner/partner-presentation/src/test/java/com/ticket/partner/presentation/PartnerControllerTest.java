@@ -137,4 +137,36 @@ class PartnerControllerTest {
                 .andExpect(jsonPath("$.data.amount").value(500000))
                 .andExpect(jsonPath("$.data.status").value("PENDING"));
     }
+
+    @Test
+    @DisplayName("FQA-06: GET /api/v1/partners/trips - Returns paginated trips for authenticated operator")
+    void testGetMyTripsPaginated() throws Exception {
+        PartnerTripResponse trip = PartnerTripResponse.builder()
+                .id(999L)
+                .tripCode("HN-DN-01")
+                .operatorId(1L)
+                .vehicleId(5L)
+                .departureStationId(1L)
+                .arrivalStationId(2L)
+                .basePrice(BigDecimal.valueOf(350000))
+                .status("SCHEDULED")
+                .build();
+        com.ticket.shared.dto.PageResponse<PartnerTripResponse> pageResp =
+                com.ticket.shared.dto.PageResponse.of(List.of(trip), 0, 10, 1);
+
+        when(queryService.getMyTrips(eq(10L), eq("SCHEDULED"), eq(5L), eq(0), eq(10)))
+                .thenReturn(pageResp);
+
+        mockMvc.perform(get("/api/v1/partners/trips")
+                        .principal(mockPrincipal)
+                        .param("status", "SCHEDULED")
+                        .param("vehicleId", "5")
+                        .param("page", "0")
+                        .param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.items[0].id").value(999))
+                .andExpect(jsonPath("$.data.items[0].tripCode").value("HN-DN-01"))
+                .andExpect(jsonPath("$.data.totalElements").value(1));
+    }
 }

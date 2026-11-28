@@ -17,6 +17,7 @@ public interface PartnerQueryService {
     List<WalletTransactionResponse> getMyWalletTransactions(Long userId);
     List<WithdrawalResponse> getMyWithdrawalRequests(Long userId);
     List<BannerResponse> getMyBanners(Long userId);
+    com.ticket.shared.dto.PageResponse<PartnerTripResponse> getMyTrips(Long userId, String status, Long vehicleId, int page, int size);
     
     // Admin & Public queries
     List<OperatorResponse> getAllOperators();

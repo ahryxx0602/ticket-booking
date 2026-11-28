@@ -115,7 +115,8 @@ const paymentStatusError = ref('')
 const canAttemptPayment = computed(() => {
   if (paymentStatusLoading.value || paymentStatusError.value) return false
   if (!paymentStatusInfo.value) return false
-  return paymentStatusInfo.value.canAttemptPayment !== false
+  if (paymentStatusInfo.value.bookingReference && paymentStatusInfo.value.bookingReference !== bookingReference.value) return false
+  return paymentStatusInfo.value.canAttemptPayment === true
 })
 
 function stopPolling() {

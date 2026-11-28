@@ -166,6 +166,12 @@ async function handleSaveVehicle() {
     return
   }
 
+  const calculatedSeats = Number(vehicleForm.value.totalSeats)
+  if (!calculatedSeats || calculatedSeats <= 0 || calculatedSeats > 100) {
+    vehicleFormError.value = 'Tổng số ghế xe phải từ 1 đến 100 theo tiêu chuẩn đăng kiểm'
+    return
+  }
+
   const payload = {
     plateNumber: plate.toUpperCase(),
     modelName: model,

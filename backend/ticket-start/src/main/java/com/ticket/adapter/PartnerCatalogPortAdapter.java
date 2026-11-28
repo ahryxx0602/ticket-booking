@@ -95,4 +95,41 @@ public class PartnerCatalogPortAdapter implements PartnerCatalogPort {
         TripJpaEntity saved = tripRepository.save(entity);
         return saved.getId();
     }
+
+    @Override
+    public com.ticket.shared.dto.PageResponse<com.ticket.partner.domain.port.PartnerTripDto> findOperatorTrips(Long operatorId, String status, Long vehicleId, int page, int size) {
+        if (operatorId == null) {
+            return com.ticket.shared.dto.PageResponse.of(java.util.Collections.emptyList(), page, size, 0);
+        }
+        com.ticket.catalog.domain.model.TripStatus tripStatus = null;
+        if (status != null && !status.isBlank()) {
+            try {
+                tripStatus = com.ticket.catalog.domain.model.TripStatus.valueOf(status.trim().toUpperCase());
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+
+        int validPage = Math.max(0, page);
+        int validSize = size <= 0 ? 10 : Math.min(size, 100);
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(validPage, validSize);
+
+        org.springframework.data.domain.Page<TripJpaEntity> resultPage = tripRepository.findByOperatorIdWithFilters(operatorId, tripStatus, vehicleId, pageable);
+
+        List<com.ticket.partner.domain.port.PartnerTripDto> dtoList = resultPage.getContent().stream()
+                .map(t -> com.ticket.partner.domain.port.PartnerTripDto.builder()
+                        .id(t.getId())
+                        .tripCode(t.getTripCode())
+                        .operatorId(t.getOperatorId())
+                        .vehicleId(t.getVehicleId())
+                        .departureStationId(t.getDepartureStation() != null ? t.getDepartureStation().getId() : null)
+                        .arrivalStationId(t.getArrivalStation() != null ? t.getArrivalStation().getId() : null)
+                        .departureTime(t.getDepartureTime())
+                        .arrivalTime(t.getArrivalTime())
+                        .basePrice(t.getBasePrice())
+                        .status(t.getStatus() != null ? t.getStatus().name() : "SCHEDULED")
+                        .build())
+                .toList();
+
+        return com.ticket.shared.dto.PageResponse.of(dtoList, validPage, validSize, resultPage.getTotalElements());
+    }
 }
